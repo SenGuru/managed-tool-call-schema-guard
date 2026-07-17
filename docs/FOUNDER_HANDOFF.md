@@ -6,7 +6,7 @@ The repository provides a canonical TypeScript engine, strict JSON Schema valida
 
 ## Explicitly deferred
 
-There is no deployed service, authentication, durable database, remote ruleset distribution, cross-customer intelligence, hosted audit history, dashboard, billing, alerts, rate limits, signed audit ledger, or production reliability claim. Adapter coverage is representative, and drift is structural rather than learned from production outcomes.
+The managed control-plane behaviors now work locally, including authentication, database history, aggregate signatures, signed rulesets, policy, dashboard, metering, quotas, rate limits, alerts, exports, retention, and backup/restore. There is still no deployed service, payment settlement, public TLS ingress, cloud KMS, external alert delivery, distributed coordination, multi-region recovery, or production reliability certification. Adapter coverage is representative, and drift is structural rather than learned from production outcomes.
 
 ## Exact next validation step
 

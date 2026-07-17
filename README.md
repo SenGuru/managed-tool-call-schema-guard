@@ -16,6 +16,7 @@ This is a locally working MVP for a falsification test—not a production hosted
 - MCP, OpenAI Agents, PydanticAI, and Google ADK normalization fixtures.
 - CLI, local HTTP API, TypeScript SDK, and thin Python client to the canonical TypeScript engine.
 - Published conformance/adversarial corpus, CI action, property tests, and benchmark.
+- A separate local managed control plane with tenant API keys, organization policy, SQLite history, signed audit chains, schema registry, privacy-thresholded compatibility intelligence, Ed25519-signed rulesets, usage plans, rate limits, local alerts, exports, retention, backup/restore, and a functional dashboard.
 
 ## Quickstart
 
@@ -60,6 +61,21 @@ The local audit file is created with owner-only mode and contains no argument va
 - `POST /v1/drift`: `{ "previous": { ... }, "current": { ... } }`.
 - `GET /healthz`: local liveness only.
 
+## Managed local quickstart
+
+The managed control plane is separate from the open local API. It requires a database path and a 32-character-or-longer master secret.
+
+```bash
+export SCHEMA_GUARD_DATABASE="$PWD/work/managed.db"
+export SCHEMA_GUARD_MASTER_SECRET="replace-with-a-random-secret-at-least-32-characters"
+npm run managed:bootstrap -- --tenant-id demo --tenant-name "Demo tenant" --plan trial
+npm run managed
+```
+
+The bootstrap command prints the API key once; only an HMAC-derived verifier is stored. Open `http://127.0.0.1:8788/dashboard`, or call the managed endpoint with `Authorization: Bearer <key>`.
+
+Managed routes include validation, schema registration/drift, audit history and CSV export, chain verification, aggregate intelligence, usage/billing statements, alerts, signed rulesets, API-key lifecycle, organization policy, plan control, and retention purge. See [`docs/MANAGED_LOCAL.md`](docs/MANAGED_LOCAL.md).
+
 Protocol JSON Schemas live in [`protocol/v1`](protocol/v1). See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/SECURITY.md`](docs/SECURITY.md), and [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
 ## Python access
@@ -100,6 +116,6 @@ Place this local validator and hosted-style endpoint in 5–10 real workflows. C
 
 ## Current limitations
 
-Adapter fixtures cover representative current declaration shapes, not every framework release. Drift classification is structural, not observed runtime compatibility. Audit persistence is a local JSONL sink; hosted history, auth, organization policy, dashboard, billing, alerts, and signed remote rulesets are deferred and not mocked.
+Adapter fixtures cover representative current declaration shapes, not every framework release. Drift classification is structural, not observed runtime compatibility. The managed control plane is fully local: payment-provider settlement, TLS/public ingress, external email/Slack delivery, cloud secret/KMS integration, multi-process distributed rate limiting, and multi-region availability still require explicitly chosen external infrastructure. They are labeled `integration_required`, not mocked as complete.
 
 License: MIT.

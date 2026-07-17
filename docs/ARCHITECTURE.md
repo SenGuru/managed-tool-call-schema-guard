@@ -21,7 +21,7 @@ Every result includes an audit ID, policy result, repaired-field provenance, eng
 
 This repository contains the public layer: protocol, engine, repair registry, policy hooks, adapters, drift comparison, conformance corpus, CLI, local API, SDKs, action, and local audit output.
 
-Hosted ruleset distribution, cross-customer signatures, remote audit history/alerts, organization policy, authentication, billing, dashboard, and production operations remain separate. The local API resembles the hosted contract but does not claim managed capabilities.
+The open packages remain independent. `packages/managed` implements the private boundary locally: tenant authentication, organization policy, durable audit/history, drift signatures, signed rulesets, plans, local alerts, exports, and dashboard. Provider-specific payment, public ingress, cloud KMS, distributed coordination, and multi-region operations remain external integrations.
 
 ## Failure behavior
 

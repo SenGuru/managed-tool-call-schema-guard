@@ -24,4 +24,8 @@ SHA-256 fingerprints are correlation aids, not encryption. Low-entropy values ma
 - Retain local audits only as long as necessary and protect file permissions/backups.
 - Pin dependencies with `package-lock.json`; run the full check and dependency audit before releases.
 
+## Managed local controls
+
+The managed package stores no raw arguments. API keys are HMAC-derived, tenant queries are scoped, caller policy cannot widen organization policy, compatibility aggregates require a distinct-tenant threshold, audit history is chained and signed, and ruleset private keys are encrypted at rest. SQLite files, the master secret, backups, and host process memory remain sensitive assets.
+
 Report vulnerabilities privately to the repository owner. Do not include live secrets or customer payloads in reports.
