@@ -7,8 +7,8 @@
   "properties": {
     "protocol_version": { "const": "2026-07-18" },
     "tool_name": { "type": "string", "minLength": 1 },
-    "tool_schema": { "type": ["object", "boolean"] },
-    "raw_arguments": { "type": ["object", "string"] },
+    "tool_schema": { "anyOf": [{ "type": "object" }, { "type": "boolean" }] },
+    "raw_arguments": { "anyOf": [{ "type": "object" }, { "type": "string" }] },
     "policy": { "$ref": "#/$defs/policy" },
     "context": {
       "type": "object",

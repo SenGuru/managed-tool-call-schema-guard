@@ -8,12 +8,13 @@
   ],
   "scripts": {
     "build": "tsc -b",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm test",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:python",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
+    "test:python": "npm run build && PYTHONPATH=python python3 -m unittest discover -s python/tests",
     "benchmark": "tsx benchmarks/core.ts",
     "demo": "tsx examples/demo.ts",
     "schemaguard": "tsx packages/cli/src/cli.ts",
@@ -26,6 +27,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.1.1",
+    "ajv": "^8.20.0",
     "eslint": "^10.7.0",
     "fast-check": "^4.9.0",
     "prettier": "^3.9.5",
