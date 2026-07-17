@@ -1,0 +1,16 @@
+node_modules/
+.venv/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+.schema-guard-audit.jsonl
+work/

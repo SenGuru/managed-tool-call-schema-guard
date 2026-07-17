@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schema-guard.dev/protocol/v1/validate-request.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tool_name", "tool_schema", "raw_arguments"],
+  "properties": {
+    "protocol_version": { "const": "2026-07-18" },
+    "tool_name": { "type": "string", "minLength": 1 },
+    "tool_schema": { "type": ["object", "boolean"] },
+    "raw_arguments": { "type": ["object", "string"] },
+    "policy": { "$ref": "#/$defs/policy" },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "adapter": { "enum": ["json_schema", "mcp", "openai_agents", "pydantic_ai", "google_adk"] },
+        "tool_version": { "type": "string" },
+        "schema_revision": { "type": "string" }
+      }
+    }
+  },
+  "$defs": {
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowed_repairs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "coerce.string_to_number",
+              "coerce.string_to_integer",
+              "coerce.string_to_boolean",
+              "coerce.singleton_to_array"
+            ]
+          }
+        },
+        "max_repairs": { "type": "integer", "minimum": 0 },
+        "deny_argument_paths": { "type": "array", "items": { "type": "string", "pattern": "^/" } },
+        "require_closed_schema": { "type": "boolean" }
+      }
+    }
+  }
+}

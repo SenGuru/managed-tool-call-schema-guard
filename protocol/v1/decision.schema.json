@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schema-guard.dev/protocol/v1/decision.schema.json",
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "decision",
+    "repaired_fields",
+    "policy_result",
+    "audit_id",
+    "audit"
+  ],
+  "properties": {
+    "protocol_version": { "const": "2026-07-18" },
+    "decision": { "enum": ["valid", "valid_with_repair", "rejected"] },
+    "valid_arguments": { "type": "object" },
+    "repaired_fields": { "type": "array" },
+    "reason_code": { "type": "string" },
+    "reason": { "type": "string" },
+    "repair_hint": { "type": "string" },
+    "policy_result": { "type": "object" },
+    "audit_id": { "type": "string", "pattern": "^aud_" },
+    "audit": { "type": "object" }
+  }
+}
