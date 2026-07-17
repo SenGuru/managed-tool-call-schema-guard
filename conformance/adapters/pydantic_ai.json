@@ -1,0 +1,9 @@
+{
+  "name": "get_weather",
+  "description": "Weather",
+  "parameters_json_schema": {
+    "type": "object",
+    "required": ["city"],
+    "properties": { "city": { "type": "string" } }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "get_weather",
+  "description": "Weather",
+  "parameters": {
+    "type": "OBJECT",
+    "required": ["city"],
+    "properties": { "city": { "type": "STRING" } }
+  }
+}

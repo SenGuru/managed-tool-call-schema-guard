@@ -1,0 +1,88 @@
+[
+  {
+    "id": "valid",
+    "schema": {
+      "type": "object",
+      "required": ["count"],
+      "properties": { "count": { "type": "integer" } }
+    },
+    "arguments": { "count": 2 },
+    "decision": "valid"
+  },
+  {
+    "id": "numeric_repair",
+    "schema": {
+      "type": "object",
+      "required": ["count"],
+      "properties": { "count": { "type": "integer" } }
+    },
+    "arguments": { "count": "2" },
+    "decision": "valid_with_repair"
+  },
+  {
+    "id": "nested_repair",
+    "schema": {
+      "type": "object",
+      "required": ["options"],
+      "properties": {
+        "options": {
+          "type": "object",
+          "required": ["limit"],
+          "properties": { "limit": { "type": "integer" } }
+        }
+      }
+    },
+    "arguments": { "options": { "limit": "10" } },
+    "decision": "valid_with_repair"
+  },
+  {
+    "id": "missing_required",
+    "schema": {
+      "type": "object",
+      "required": ["destination"],
+      "properties": { "destination": { "type": "string" } }
+    },
+    "arguments": {},
+    "decision": "rejected"
+  },
+  {
+    "id": "wrong_type",
+    "schema": {
+      "type": "object",
+      "required": ["count"],
+      "properties": { "count": { "type": "integer" } }
+    },
+    "arguments": { "count": "two" },
+    "decision": "rejected"
+  },
+  {
+    "id": "leading_zero_ambiguous",
+    "schema": {
+      "type": "object",
+      "required": ["postal_code"],
+      "properties": { "postal_code": { "type": "integer" } }
+    },
+    "arguments": { "postal_code": "02139" },
+    "decision": "rejected"
+  },
+  {
+    "id": "uppercase_boolean_rejected",
+    "schema": {
+      "type": "object",
+      "required": ["confirmed"],
+      "properties": { "confirmed": { "type": "boolean" } }
+    },
+    "arguments": { "confirmed": "TRUE" },
+    "decision": "rejected"
+  },
+  {
+    "id": "singleton_array_disabled",
+    "schema": {
+      "type": "object",
+      "required": ["tags"],
+      "properties": { "tags": { "type": "array", "items": { "type": "string" } } }
+    },
+    "arguments": { "tags": "safe" },
+    "decision": "rejected"
+  }
+]

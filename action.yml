@@ -1,0 +1,7 @@
+name: Schema Guard conformance
+description: Run Schema Guard checks and the published conformance corpus
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: npm ci && npm run typecheck && npm test

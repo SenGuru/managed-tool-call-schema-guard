@@ -1,0 +1,13 @@
+{
+  "type": "function",
+  "function": {
+    "name": "get_weather",
+    "description": "Weather",
+    "parameters": {
+      "type": "object",
+      "required": ["city"],
+      "properties": { "city": { "type": "string" } },
+      "additionalProperties": false
+    }
+  }
+}

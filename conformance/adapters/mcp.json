@@ -1,0 +1,9 @@
+{
+  "name": "get_weather",
+  "description": "Weather",
+  "inputSchema": {
+    "type": "object",
+    "required": ["city"],
+    "properties": { "city": { "type": "string" } }
+  }
+}
