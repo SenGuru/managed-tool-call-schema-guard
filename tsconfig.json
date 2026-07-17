@@ -4,6 +4,7 @@
     { "path": "packages/core" },
     { "path": "packages/cli" },
     { "path": "packages/api" },
-    { "path": "packages/sdk-typescript" }
+    { "path": "packages/sdk-typescript" },
+    { "path": "packages/managed" }
   ]
 }

@@ -18,14 +18,20 @@
     "benchmark": "tsx benchmarks/core.ts",
     "demo": "tsx examples/demo.ts",
     "schemaguard": "tsx packages/cli/src/cli.ts",
-    "api": "tsx packages/api/src/server.ts"
+    "api": "tsx packages/api/src/server.ts",
+    "managed": "tsx packages/managed/src/server.ts",
+    "managed:bootstrap": "tsx packages/managed/src/bootstrap.ts"
   },
   "engines": {
     "node": ">=20"
   },
   "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^12.6.2"
+  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^26.1.1",
     "ajv": "^8.20.0",
     "eslint": "^10.7.0",
@@ -35,5 +41,8 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.64.0",
     "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.11.1"
   }
 }
