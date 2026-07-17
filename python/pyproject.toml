@@ -1,0 +1,9 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "schema-guard-client"
+version = "0.1.0"
+description = "Thin Python client for the canonical Schema Guard engine"
+requires-python = ">=3.9"

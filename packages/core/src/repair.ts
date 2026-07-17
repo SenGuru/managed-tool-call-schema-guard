@@ -19,14 +19,15 @@ function save(
   rule_id: RepairRuleId,
   before: JsonValue,
   after: JsonValue,
+  targetType?: string,
 ): JsonValue {
   ctx.repairs.push({
     path,
     rule_id,
     from_type: kind(before),
-    to_type: kind(after),
+    to_type: targetType ?? kind(after),
     original_value_hash: sha256(before),
-    explanation: `${rule_id} applied because the target schema explicitly requires ${kind(after)}`,
+    explanation: `${rule_id} applied because the target schema explicitly requires ${targetType ?? kind(after)}`,
   });
   return after;
 }
@@ -43,7 +44,7 @@ function scalar(
     if (!Number.isFinite(converted) || (expected === 'integer' && !Number.isInteger(converted)))
       return value;
     const rule = expected === 'integer' ? 'coerce.string_to_integer' : 'coerce.string_to_number';
-    return ctx.allowed.has(rule) ? save(ctx, path, rule, value, converted) : value;
+    return ctx.allowed.has(rule) ? save(ctx, path, rule, value, converted, expected) : value;
   }
   if (typeof value === 'string' && expected === 'boolean' && /^(true|false)$/u.test(value))
     return ctx.allowed.has('coerce.string_to_boolean')

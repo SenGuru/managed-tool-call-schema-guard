@@ -100,7 +100,9 @@ function compare(
         `${path}/${key}`,
         'property_added',
         afterRequired.has(key) ? 'breaking' : 'non_breaking',
-        'optional declared property was added',
+        afterRequired.has(key)
+          ? 'required declared property was added'
+          : 'optional declared property was added',
       );
   const beforeEnum = new Set(Array.isArray(before.enum) ? before.enum.map(printable) : []);
   const afterEnum = new Set(Array.isArray(after.enum) ? after.enum.map(printable) : []);

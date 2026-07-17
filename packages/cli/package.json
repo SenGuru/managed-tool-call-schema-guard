@@ -1,0 +1,14 @@
+{
+  "name": "@schema-guard/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "schemaguard": "./dist/cli.js"
+  },
+  "dependencies": {
+    "@schema-guard/core": "0.1.0"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  }
+}

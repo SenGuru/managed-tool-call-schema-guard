@@ -74,6 +74,25 @@ const hint = (found: ValidationIssue[]): string =>
 export function validateToolCall(request: ValidateRequest): GuardDecision {
   let args: JsonObject = {};
   try {
+    if (
+      typeof request.tool_name !== 'string' ||
+      request.tool_name.length === 0 ||
+      !Object.hasOwn(request, 'tool_schema') ||
+      !Object.hasOwn(request, 'raw_arguments')
+    ) {
+      const safeRequest: ValidateRequest = {
+        tool_name: typeof request.tool_name === 'string' ? request.tool_name : '<invalid>',
+        tool_schema: Object.hasOwn(request, 'tool_schema') ? request.tool_schema : {},
+        raw_arguments: {},
+      };
+      return reject({
+        request: safeRequest,
+        args,
+        reasonCode: 'SCHEMA_INVALID',
+        reason: 'request must contain a non-empty tool_name, tool_schema, and raw_arguments',
+        hint: 'conform the request to protocol/v1/validate-request.schema.json',
+      });
+    }
     if (request.protocol_version && request.protocol_version !== PROTOCOL_VERSION)
       return reject({
         request,

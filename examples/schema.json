@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["origin", "destination", "passengers"],
+  "properties": {
+    "origin": { "type": "string" },
+    "destination": { "type": "string" },
+    "passengers": { "type": "integer", "minimum": 1 }
+  }
+}

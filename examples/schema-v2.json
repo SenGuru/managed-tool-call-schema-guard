@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["origin", "destination", "passengers", "cabin"],
+  "properties": {
+    "origin": { "type": "string" },
+    "destination": { "type": "string" },
+    "passengers": { "type": "integer", "minimum": 1 },
+    "cabin": { "type": "string", "enum": ["economy", "business"] }
+  }
+}
