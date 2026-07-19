@@ -5,6 +5,10 @@
   "bin": {
     "schemaguard": "./dist/cli.js"
   },
+  "files": [
+    "dist"
+  ],
+  "license": "MIT",
   "dependencies": {
     "@schema-guard/core": "0.1.0"
   },

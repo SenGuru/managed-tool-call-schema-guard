@@ -6,6 +6,7 @@
     "tests/**/*.ts",
     "examples/**/*.ts",
     "benchmarks/**/*.ts",
+    "scripts/**/*.ts",
     "vitest.config.ts"
   ]
 }

@@ -5,6 +5,11 @@ Date: 2026-07-19
 ## Deterministic release suite
 
 - Clean dependency install succeeds on Node.js 22.23.1 and npm 10.9.8.
+- A fresh local clone with no generated `dist` directories completes install,
+  build, lint, all tests, CLI validation/drift, demo, and Python quickstarts.
+- Dry-run package manifests are checked automatically. Core, SDK, and CLI
+  tarballs were also installed together in an isolated consumer project; the
+  packed SDK local client and packed CLI both returned `valid_with_repair`.
 - Formatting, lint, TypeScript compilation, 56 Vitest tests, and Python parity pass.
 - The suite covers protocol envelopes, conformance fixtures, adapters, policy,
   safe repairs, unsafe precision, local `$ref`, drift, execution gating, HTTP,
@@ -57,6 +62,18 @@ calls, and 4 drift classifications, with zero machine-verifier mismatches.
 - Managed SQLite database, WAL, SHM, and backup files inherited a normal umask
   and could be group/world readable. The store now forces owner-only `0600`
   permissions and verifies them in the backup/restore regression test.
+- The release command depended on ignored build artifacts because typed lint ran
+  before workspace declarations existed. Lint and every advertised executable
+  surface now compile their workspace dependencies before running, and the
+  sequence is verified from a fresh clone.
+- The dashboard retained the previous tenant's panels after a later
+  authentication failure. It now clears all tenant data before each load and
+  again on failure; a real-browser valid-key/invalid-key transition confirms the
+  stale data is removed.
+- The SDK tarball omitted its compiled entry point even though `main` referenced
+  it, and publishable packages lacked included license text. Publish manifests
+  now explicitly include compiled output and MIT license files; an automated
+  package gate rejects incomplete core, SDK, or CLI artifacts.
 
 ## Honest boundary
 

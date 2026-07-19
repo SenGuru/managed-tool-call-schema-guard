@@ -325,7 +325,11 @@ describe('managed local control plane', () => {
         }
       ).usage.validation_count,
     ).toBe(1);
-    expect((await fetch(`${base}/dashboard`)).status).toBe(200);
+    const dashboard = await fetch(`${base}/dashboard`);
+    expect(dashboard.status).toBe(200);
+    const dashboardBody = await dashboard.text();
+    expect(dashboardBody).toContain("clearPanels();q('status').className=''");
+    expect(dashboardBody).toContain("catch(e){clearPanels();q('status').className='bad'");
   });
 
   it('prevents callers from widening organization repair policy', async () => {

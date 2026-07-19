@@ -59,3 +59,7 @@ The live Codex/Claude mutation test records decisions and fake-tool execution in
 ## ADR-015: Managed local storage is private by default
 
 SQLite database, WAL, SHM, alert, and backup files contain sensitive tenant metadata even though raw arguments are excluded. The managed store forces owner-only file permissions instead of relying on the host umask. Hosted deployments still require protected directories, encrypted volumes, reviewed backup access, and external secret management.
+
+## ADR-016: Release commands must work without generated artifacts
+
+Ignored `dist` output cannot be part of the assumed checkout state. Typed lint builds workspace declarations first, and executable root scripts compile before invoking TypeScript entry points. Release verification includes a fresh local clone so an existing developer tree cannot mask missing build prerequisites.

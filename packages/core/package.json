@@ -13,6 +13,7 @@
   "files": [
     "dist"
   ],
+  "license": "MIT",
   "scripts": {
     "build": "tsc -b"
   },
