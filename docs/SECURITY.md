@@ -6,6 +6,7 @@
 - A repair must be registered, enabled, type-directed by the schema, recorded, and followed by full revalidation.
 - Policies only narrow behavior.
 - Unexpected failures return `rejected`.
+- Unsafe or lossy numeric conversions are not repairs.
 - Audit envelopes contain hashes and argument paths, not values.
 - The engine never executes the target tool.
 
@@ -26,6 +27,6 @@ SHA-256 fingerprints are correlation aids, not encryption. Low-entropy values ma
 
 ## Managed local controls
 
-The managed package stores no raw arguments. API keys are HMAC-derived, tenant queries are scoped, caller policy cannot widen organization policy, compatibility aggregates require a distinct-tenant threshold, audit history is chained and signed, and ruleset private keys are encrypted at rest. SQLite files, the master secret, backups, and host process memory remain sensitive assets.
+The managed package stores no raw arguments. API keys use direct indexed lookup of master-secret HMACs, tenant queries and rulesets are scoped, caller policy cannot widen organization policy, and compatibility aggregates require a distinct-tenant threshold. Audit history is chained and signed with column/envelope consistency checks. Ruleset private keys are encrypted at rest and public verification keys are checked against an authenticated trust record. SQLite files, the master secret, backups, and host process memory remain sensitive assets.
 
 Report vulnerabilities privately to the repository owner. Do not include live secrets or customer payloads in reports.

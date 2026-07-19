@@ -75,17 +75,44 @@ export function normalizeTool(adapter: AdapterName, source: unknown): Normalized
 
 function normalizeGoogleSchema(value: AnySchema): AnySchema {
   if (typeof value === 'boolean') return value;
+  const input = value as Record<string, unknown>;
+  const schemaMaps = new Set([
+    'properties',
+    'patternProperties',
+    'dependentSchemas',
+    '$defs',
+    'definitions',
+  ]);
+  const schemaArrays = new Set(['prefixItems', 'allOf', 'anyOf', 'oneOf']);
+  const schemaValues = new Set([
+    'items',
+    'contains',
+    'additionalProperties',
+    'propertyNames',
+    'not',
+    'if',
+    'then',
+    'else',
+  ]);
   const output: Record<string, unknown> = {};
-  for (const [key, child] of Object.entries(value)) {
+  for (const [key, child] of Object.entries(input)) {
     if (key === 'type' && typeof child === 'string') output[key] = child.toLowerCase();
-    else if (key === 'properties' && object(child))
+    else if (key === 'type' && Array.isArray(child))
+      output[key] = (child as unknown[]).map((item: unknown) =>
+        typeof item === 'string' ? item.toLowerCase() : item,
+      );
+    else if (schemaMaps.has(key) && object(child))
       output[key] = Object.fromEntries(
         Object.entries(child).map(([property, propertySchema]) => [
           property,
           normalizeGoogleSchema(schema(propertySchema, `google_adk property ${property}`)),
         ]),
       );
-    else if (key === 'items' && (object(child) || typeof child === 'boolean'))
+    else if (schemaArrays.has(key) && Array.isArray(child))
+      output[key] = child.map((entry) =>
+        normalizeGoogleSchema(schema(entry, `google_adk ${key} entry`)),
+      );
+    else if (schemaValues.has(key) && (object(child) || typeof child === 'boolean'))
       output[key] = normalizeGoogleSchema(child as AnySchema);
     else output[key] = child;
   }

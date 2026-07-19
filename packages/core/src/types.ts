@@ -12,6 +12,7 @@ export type ReasonCode =
   | 'ARGUMENTS_JSON_INVALID'
   | 'SCHEMA_INVALID'
   | 'SCHEMA_VALIDATION_FAILED'
+  | 'RESOURCE_LIMIT_EXCEEDED'
   | 'REPAIR_LIMIT_EXCEEDED'
   | 'POLICY_DENIED'
   | 'INTERNAL_ERROR';
@@ -108,7 +109,16 @@ export interface DriftChange {
     | 'enum_narrowed'
     | 'enum_widened'
     | 'additional_properties_restricted'
-    | 'additional_properties_relaxed';
+    | 'additional_properties_relaxed'
+    | 'constraint_tightened'
+    | 'constraint_relaxed'
+    | 'constraint_changed'
+    | 'const_added'
+    | 'const_removed'
+    | 'const_changed'
+    | 'schema_restricted'
+    | 'schema_relaxed'
+    | 'unclassified_change';
   compatibility: 'breaking' | 'non_breaking' | 'review';
   detail: string;
 }

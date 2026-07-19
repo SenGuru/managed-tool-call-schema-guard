@@ -104,4 +104,26 @@ export const migrations = [
       );
     `,
   },
+  {
+    version: 4,
+    sql: `
+      ALTER TABLE signing_keys ADD COLUMN trust_hmac TEXT;
+      CREATE TABLE tenant_rulesets (
+        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        version TEXT NOT NULL,
+        body_json TEXT NOT NULL,
+        issued_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        signature TEXT NOT NULL,
+        PRIMARY KEY(tenant_id, version)
+      );
+      CREATE INDEX tenant_rulesets_latest ON tenant_rulesets(tenant_id, issued_at DESC);
+    `,
+  },
+  {
+    version: 5,
+    sql: `
+      ALTER TABLE audit_chain_anchors ADD COLUMN signature TEXT;
+    `,
+  },
 ] as const;

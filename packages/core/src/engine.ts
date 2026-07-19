@@ -1,12 +1,14 @@
 import { Ajv2020, type AnySchema, type ErrorObject } from 'ajv/dist/2020.js';
 import { createAuditEnvelope } from './audit.js';
 import { sha256 } from './hash.js';
-import { evaluatePolicy } from './policy.js';
+import { assertJsonSafety, assertSafeSchemaPatterns, JsonResourceLimitError } from './limits.js';
+import { evaluatePolicy, policyValidationError } from './policy.js';
 import { applyRepairs } from './repair.js';
 import {
   PROTOCOL_VERSION,
   type GuardDecision,
   type JsonObject,
+  type PolicyResult,
   type ReasonCode,
   type RepairRecord,
   type ValidateRequest,
@@ -14,11 +16,17 @@ import {
 } from './types.js';
 
 const ajv = new Ajv2020({ allErrors: true, strict: true, validateSchema: true });
+function withoutPolicy(request: ValidateRequest): ValidateRequest {
+  const safe = { ...request };
+  delete safe.policy;
+  return safe;
+}
 
 function parseArguments(raw: ValidateRequest['raw_arguments']): JsonObject {
   const parsed: unknown = typeof raw === 'string' ? JSON.parse(raw) : raw;
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed))
     throw new TypeError('tool arguments must be a JSON object');
+  assertJsonSafety(parsed, 'tool arguments');
   return structuredClone(parsed) as JsonObject;
 }
 function toIssues(errors: ErrorObject[] | null | undefined): ValidationIssue[] {
@@ -37,13 +45,28 @@ function reject(input: {
   hint: string;
   repairs?: RepairRecord[];
   validationErrors?: ValidationIssue[];
+  policyResult?: PolicyResult;
 }): GuardDecision {
   const repairs = input.repairs ?? [];
-  const policy = evaluatePolicy(input.request.policy, input.args, repairs);
+  const policy = input.policyResult ?? evaluatePolicy(input.request.policy, input.args, repairs);
+  let auditSchema: AnySchema = {};
+  let auditArguments: JsonObject = {};
+  try {
+    assertJsonSafety(input.request.tool_schema, 'audit schema');
+    auditSchema = input.request.tool_schema;
+  } catch {
+    // Unsafe input is represented by the decision reason, never recursively hashed.
+  }
+  try {
+    assertJsonSafety(input.args, 'audit arguments');
+    auditArguments = input.args;
+  } catch {
+    // Unsafe input is represented by the decision reason, never recursively hashed.
+  }
   const audit = createAuditEnvelope({
     toolName: input.request.tool_name,
-    schema: input.request.tool_schema,
-    arguments: input.args,
+    schema: auditSchema,
+    arguments: auditArguments,
     decision: 'rejected',
     repairs,
     policyHash: policy.applied_policy_hash,
@@ -62,8 +85,60 @@ function reject(input: {
     ...(input.validationErrors ? { validation_errors: input.validationErrors } : {}),
   };
 }
-function closed(schema: AnySchema): boolean {
-  return typeof schema === 'object' && schema !== null && schema.additionalProperties === false;
+function firstOpenObject(
+  schema: AnySchema,
+  path = '#',
+  seen = new Set<object>(),
+): string | undefined {
+  if (typeof schema === 'boolean' || seen.has(schema)) return undefined;
+  const schemaObject = schema as Record<string, unknown>;
+  seen.add(schemaObject);
+  const schemaType = schemaObject.type;
+  const types: unknown[] = Array.isArray(schemaType) ? schemaType : [schemaType];
+  if (
+    (types.includes('object') || schemaObject.properties) &&
+    schemaObject.additionalProperties !== false
+  )
+    return path;
+  const maps = ['properties', 'patternProperties', '$defs', 'definitions', 'dependentSchemas'];
+  for (const key of maps) {
+    const children = schemaObject[key];
+    if (children && typeof children === 'object' && !Array.isArray(children))
+      for (const [name, child] of Object.entries(children))
+        if (typeof child === 'boolean' || (child && typeof child === 'object')) {
+          const found = firstOpenObject(child as AnySchema, `${path}/${key}/${name}`, seen);
+          if (found) return found;
+        }
+  }
+  for (const key of [
+    'items',
+    'contains',
+    'additionalProperties',
+    'propertyNames',
+    'not',
+    'if',
+    'then',
+    'else',
+  ]) {
+    const child = schemaObject[key];
+    if (
+      typeof child === 'boolean' ||
+      (child && typeof child === 'object' && !Array.isArray(child))
+    ) {
+      const found = firstOpenObject(child as AnySchema, `${path}/${key}`, seen);
+      if (found) return found;
+    }
+  }
+  for (const key of ['prefixItems', 'allOf', 'anyOf', 'oneOf']) {
+    const children = schemaObject[key];
+    if (Array.isArray(children))
+      for (const [index, child] of children.entries())
+        if (typeof child === 'boolean' || (child && typeof child === 'object')) {
+          const found = firstOpenObject(child as AnySchema, `${path}/${key}/${index}`, seen);
+          if (found) return found;
+        }
+  }
+  return undefined;
 }
 const hint = (found: ValidationIssue[]): string =>
   found
@@ -74,9 +149,18 @@ const hint = (found: ValidationIssue[]): string =>
 export function validateToolCall(request: ValidateRequest): GuardDecision {
   let args: JsonObject = {};
   try {
+    if (request === null || typeof request !== 'object' || Array.isArray(request))
+      return reject({
+        request: { tool_name: '<invalid>', tool_schema: {}, raw_arguments: {} },
+        args,
+        reasonCode: 'SCHEMA_INVALID',
+        reason: 'validation request must be an object',
+        hint: 'conform the request to protocol/v1/validate-request.schema.json',
+      });
     if (
       typeof request.tool_name !== 'string' ||
       request.tool_name.length === 0 ||
+      request.tool_name.length > 256 ||
       !Object.hasOwn(request, 'tool_schema') ||
       !Object.hasOwn(request, 'raw_arguments')
     ) {
@@ -93,6 +177,15 @@ export function validateToolCall(request: ValidateRequest): GuardDecision {
         hint: 'conform the request to protocol/v1/validate-request.schema.json',
       });
     }
+    const policyError = policyValidationError(request.policy);
+    if (policyError)
+      return reject({
+        request: withoutPolicy(request),
+        args,
+        reasonCode: 'SCHEMA_INVALID',
+        reason: policyError,
+        hint: 'supply a valid guard policy',
+      });
     if (request.protocol_version && request.protocol_version !== PROTOCOL_VERSION)
       return reject({
         request,
@@ -108,30 +201,38 @@ export function validateToolCall(request: ValidateRequest): GuardDecision {
         request,
         args,
         reasonCode:
-          typeof request.raw_arguments === 'string' && error instanceof SyntaxError
-            ? 'ARGUMENTS_JSON_INVALID'
-            : 'ARGUMENTS_NOT_OBJECT',
+          error instanceof JsonResourceLimitError
+            ? 'RESOURCE_LIMIT_EXCEEDED'
+            : typeof request.raw_arguments === 'string' && error instanceof SyntaxError
+              ? 'ARGUMENTS_JSON_INVALID'
+              : 'ARGUMENTS_NOT_OBJECT',
         reason: error instanceof Error ? error.message : 'invalid arguments',
         hint: 'supply raw_arguments as a JSON object or a JSON string containing an object',
       });
     }
     let validate;
     try {
+      assertJsonSafety(request.tool_schema, 'tool schema');
+      assertSafeSchemaPatterns(request.tool_schema);
       validate = ajv.compile(request.tool_schema as AnySchema);
     } catch (error) {
       return reject({
         request,
         args,
-        reasonCode: 'SCHEMA_INVALID',
+        reasonCode:
+          error instanceof JsonResourceLimitError ? 'RESOURCE_LIMIT_EXCEEDED' : 'SCHEMA_INVALID',
         reason: error instanceof Error ? error.message : 'invalid tool schema',
         hint: 'supply a valid JSON Schema Draft 2020-12 schema',
       });
     }
     if (validate(args)) {
       const policy = evaluatePolicy(request.policy, args, []);
-      if (request.policy?.require_closed_schema && !closed(request.tool_schema)) {
+      const openPath = request.policy?.require_closed_schema
+        ? firstOpenObject(request.tool_schema)
+        : undefined;
+      if (openPath) {
         policy.outcome = 'denied';
-        policy.reasons.push('policy requires additionalProperties: false at the root');
+        policy.reasons.push(`policy requires additionalProperties: false at ${openPath}`);
       }
       if (policy.outcome === 'denied')
         return reject({
@@ -140,6 +241,7 @@ export function validateToolCall(request: ValidateRequest): GuardDecision {
           reasonCode: 'POLICY_DENIED',
           reason: policy.reasons.join('; '),
           hint: 'remove denied fields or use an approved schema and policy',
+          policyResult: policy,
         });
       const audit = createAuditEnvelope({
         toolName: request.tool_name,
@@ -190,9 +292,12 @@ export function validateToolCall(request: ValidateRequest): GuardDecision {
       });
     }
     const policy = evaluatePolicy(request.policy, repairedArgs, repaired.repairs);
-    if (request.policy?.require_closed_schema && !closed(request.tool_schema)) {
+    const openPath = request.policy?.require_closed_schema
+      ? firstOpenObject(request.tool_schema)
+      : undefined;
+    if (openPath) {
       policy.outcome = 'denied';
-      policy.reasons.push('policy requires additionalProperties: false at the root');
+      policy.reasons.push(`policy requires additionalProperties: false at ${openPath}`);
     }
     if (policy.outcome === 'denied')
       return reject({
@@ -205,6 +310,7 @@ export function validateToolCall(request: ValidateRequest): GuardDecision {
         reason: policy.reasons.join('; '),
         hint: 'tighten the input or explicitly revise the guard policy',
         repairs: repaired.repairs,
+        policyResult: policy,
       });
     const audit = createAuditEnvelope({
       toolName: request.tool_name,
@@ -223,13 +329,14 @@ export function validateToolCall(request: ValidateRequest): GuardDecision {
       audit_id: audit.audit_id,
       audit,
     };
-  } catch {
+  } catch (error) {
+    const resourceLimited = error instanceof JsonResourceLimitError;
     return reject({
-      request,
+      request: withoutPolicy(request),
       args,
-      reasonCode: 'INTERNAL_ERROR',
-      reason: 'the guard failed closed after an internal error',
-      hint: `retry safely and report request fingerprint ${sha256({ tool: request.tool_name, schema: request.tool_schema })}`,
+      reasonCode: resourceLimited ? 'RESOURCE_LIMIT_EXCEEDED' : 'INTERNAL_ERROR',
+      reason: resourceLimited ? error.message : 'the guard failed closed after an internal error',
+      hint: `retry safely and report tool fingerprint ${sha256(request.tool_name)}`,
     });
   }
 }

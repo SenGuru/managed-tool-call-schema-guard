@@ -1,5 +1,6 @@
 export * from './types.js';
 export * from './hash.js';
+export * from './limits.js';
 export * from './repair.js';
 export * from './policy.js';
 export * from './audit.js';

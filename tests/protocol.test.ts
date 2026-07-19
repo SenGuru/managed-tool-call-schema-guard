@@ -23,15 +23,32 @@ describe('wire protocol schemas', () => {
   });
   it('every engine result conforms to the published decision envelope', () => {
     const validate = ajv.compile(load('decision'));
-    const decision = validateToolCall({
-      tool_name: 'counter',
-      tool_schema: {
-        type: 'object',
-        required: ['count'],
-        properties: { count: { type: 'integer' } },
-      },
-      raw_arguments: { count: '4' },
-    });
-    expect(validate(decision), JSON.stringify(validate.errors)).toBe(true);
+    const schema = {
+      type: 'object',
+      additionalProperties: false,
+      required: ['count'],
+      properties: { count: { type: 'integer' } },
+    } as const;
+    const decisions = [
+      validateToolCall({ tool_name: 'counter', tool_schema: schema, raw_arguments: { count: 4 } }),
+      validateToolCall({
+        tool_name: 'counter',
+        tool_schema: schema,
+        raw_arguments: { count: '4' },
+      }),
+      validateToolCall({ tool_name: 'counter', tool_schema: schema, raw_arguments: {} }),
+      validateToolCall({
+        tool_name: 'counter',
+        tool_schema: schema,
+        raw_arguments: { count: 4 },
+        policy: { deny_argument_paths: ['/count'] },
+      }),
+    ];
+    for (const decision of decisions) {
+      expect(validate(decision), JSON.stringify(validate.errors)).toBe(true);
+      expect(decision.audit_id).toBe(decision.audit.audit_id);
+      expect(decision.decision).toBe(decision.audit.decision);
+      expect(decision.policy_result.applied_policy_hash).toBe(decision.audit.policy_hash);
+    }
   });
 });

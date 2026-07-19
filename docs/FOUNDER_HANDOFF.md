@@ -2,11 +2,11 @@
 
 ## Genuine working scope
 
-The repository provides a canonical TypeScript engine, strict JSON Schema validation, allowlisted typed repairs, policy narrowing, privacy-minimized audits, structural drift reports, four adapter fixtures, CLI, local API, TypeScript SDK, thin Python client, protocol schemas, conformance corpus, tests, benchmark, and local demos.
+The repository provides a canonical TypeScript engine, strict JSON Schema validation, allowlisted typed repairs, policy narrowing, privacy-minimized audits, conservative structural drift reports, four adapter fixtures, CLI, local API, TypeScript SDK, thin Python client, protocol schemas, conformance corpus, tests, benchmark, local demos, and a repeatable Codex/Claude MCP mutation harness.
 
 ## Explicitly deferred
 
-The managed control-plane behaviors now work locally, including authentication, database history, aggregate signatures, signed rulesets, policy, dashboard, metering, quotas, rate limits, alerts, exports, retention, and backup/restore. There is still no deployed service, payment settlement, public TLS ingress, cloud KMS, external alert delivery, distributed coordination, multi-region recovery, or production reliability certification. Adapter coverage is representative, and drift is structural rather than learned from production outcomes.
+The managed control-plane behaviors now work locally, including authentication, database history, aggregate signatures, signed rulesets, policy, dashboard, metering, quotas, rate limits, alerts, exports, retention, and backup/restore. There is still no deployed service, payment settlement, public TLS ingress, cloud KMS, external alert delivery, distributed coordination, multi-region recovery, or production reliability certification. Adapter coverage is representative, and drift is structural rather than learned from production outcomes. The release suite currently has 54 deterministic tests. A 24-call real-agent run passed its machine verifier; this is strong local evidence, not production certification.
 
 ## Exact next validation step
 

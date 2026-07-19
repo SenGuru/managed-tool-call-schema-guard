@@ -8,10 +8,11 @@
   ],
   "scripts": {
     "build": "tsc -b",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:python",
+    "check": "npm run format:check && npm run lint && npm run check:scripts && npm run typecheck && npm test && npm run test:python",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
+    "check:scripts": "node --check examples/agent-loop/mcp-guard-server.mjs && node --check examples/agent-loop/run-live.mjs && node --check examples/agent-loop/verify-results.mjs",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
     "test:python": "npm run build && PYTHONPATH=python python3 -m unittest discover -s python/tests",
@@ -20,15 +21,14 @@
     "schemaguard": "tsx packages/cli/src/cli.ts",
     "api": "tsx packages/api/src/server.ts",
     "managed": "tsx packages/managed/src/server.ts",
-    "managed:bootstrap": "tsx packages/managed/src/bootstrap.ts"
+    "managed:bootstrap": "tsx packages/managed/src/bootstrap.ts",
+    "agent-test:live": "node examples/agent-loop/run-live.mjs",
+    "agent-test:verify": "node examples/agent-loop/verify-results.mjs"
   },
   "engines": {
     "node": ">=20"
   },
   "license": "MIT",
-  "dependencies": {
-    "better-sqlite3": "^12.6.2"
-  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/better-sqlite3": "^7.6.13",

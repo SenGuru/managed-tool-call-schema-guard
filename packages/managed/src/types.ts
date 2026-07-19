@@ -1,5 +1,12 @@
 export type PlanId = 'trial' | 'team';
 export type Scope = 'validate' | 'read:audit' | 'write:schema' | 'read:intelligence' | 'admin';
+export const ALL_SCOPES: Scope[] = [
+  'validate',
+  'read:audit',
+  'write:schema',
+  'read:intelligence',
+  'admin',
+];
 
 export interface Principal {
   tenantId: string;

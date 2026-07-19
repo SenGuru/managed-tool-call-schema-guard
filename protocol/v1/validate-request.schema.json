@@ -6,7 +6,7 @@
   "required": ["tool_name", "tool_schema", "raw_arguments"],
   "properties": {
     "protocol_version": { "const": "2026-07-18" },
-    "tool_name": { "type": "string", "minLength": 1 },
+    "tool_name": { "type": "string", "minLength": 1, "maxLength": 256 },
     "tool_schema": { "anyOf": [{ "type": "object" }, { "type": "boolean" }] },
     "raw_arguments": { "anyOf": [{ "type": "object" }, { "type": "string" }] },
     "policy": { "$ref": "#/$defs/policy" },
@@ -37,8 +37,12 @@
             ]
           }
         },
-        "max_repairs": { "type": "integer", "minimum": 0 },
-        "deny_argument_paths": { "type": "array", "items": { "type": "string", "pattern": "^/" } },
+        "max_repairs": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "deny_argument_paths": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^/", "maxLength": 1024 }
+        },
         "require_closed_schema": { "type": "boolean" }
       }
     }

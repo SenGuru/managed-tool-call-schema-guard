@@ -1,9 +1,23 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { validateToolCall, type GuardPolicy, type ValidateRequest } from '@schema-guard/core';
+import {
+  assertJsonSafety,
+  JsonResourceLimitError,
+  policyValidationError,
+  validateToolCall,
+  type GuardPolicy,
+  type ValidateRequest,
+} from '@schema-guard/core';
 import { dashboardHtml } from './dashboard.js';
 import { FixedWindowRateLimiter } from './rate-limit.js';
 import { ManagedError, ManagedStore } from './store.js';
-import type { ManagedConfig, PlanId, Principal, Scope, SignedRuleSet } from './types.js';
+import {
+  ALL_SCOPES,
+  type ManagedConfig,
+  type PlanId,
+  type Principal,
+  type Scope,
+  type SignedRuleSet,
+} from './types.js';
 
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -56,6 +70,15 @@ function asRecord(value: unknown): Record<string, unknown> {
     throw new ManagedError(400, 'object_required', 'request body must be an object');
   return value;
 }
+function enforceJsonSafety(value: unknown, label: string): void {
+  try {
+    assertJsonSafety(value, label);
+  } catch (error) {
+    if (error instanceof JsonResourceLimitError)
+      throw new ManagedError(413, 'resource_limit_exceeded', error.message);
+    throw new ManagedError(400, 'invalid_json_value', `${label} must contain only JSON values`);
+  }
+}
 function mergePolicy(organization: GuardPolicy, caller: GuardPolicy | undefined): GuardPolicy {
   const merged: GuardPolicy = {};
   if (organization.allowed_repairs && caller?.allowed_repairs)
@@ -95,14 +118,27 @@ export function createManagedServer(config: ManagedConfig) {
     void handle(request, response);
   });
   async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    let timedOut = false;
     const timer = setTimeout(() => {
+      timedOut = true;
       if (!response.headersSent)
         json(response, 503, {
           error: 'request_timeout',
           message: 'request exceeded the local service deadline',
         });
       else response.destroy();
+      if (!request.destroyed) request.destroy();
     }, config.requestTimeoutMs ?? 10_000);
+    const guardedBody = async (): Promise<unknown> => {
+      const value = await readBody(request);
+      if (timedOut)
+        throw new ManagedError(
+          503,
+          'request_timeout',
+          'request exceeded the local service deadline',
+        );
+      return value;
+    };
     try {
       const url = pathOf(request);
       if (request.method === 'GET' && url.pathname === '/healthz') {
@@ -128,22 +164,30 @@ export function createManagedServer(config: ManagedConfig) {
       limiter.consume(principal);
       if (request.method === 'POST' && url.pathname === '/v1/validate') {
         store.requireScope(principal, 'validate');
-        store.consumeValidation(principal);
-        const input = asRecord(await readBody(request));
+        const input = asRecord(await guardedBody());
         const validationRequest = input as unknown as ValidateRequest;
+        const callerPolicyError = policyValidationError(validationRequest.policy);
+        if (callerPolicyError) throw new ManagedError(400, 'invalid_policy', callerPolicyError);
         validationRequest.policy = mergePolicy(principal.policy, validationRequest.policy);
         const decision = validateToolCall(validationRequest);
-        store.recordDecision(principal, decision);
+        store.recordValidation(principal, decision);
         json(response, decision.decision === 'rejected' ? 422 : 200, decision);
         return;
       }
       if (request.method === 'POST' && url.pathname === '/v1/schemas') {
         store.requireScope(principal, 'write:schema');
-        const input = asRecord(await readBody(request));
+        const input = asRecord(await guardedBody());
         if (
           typeof input.tool_name !== 'string' ||
+          input.tool_name.length === 0 ||
+          input.tool_name.length > 256 ||
           typeof input.adapter !== 'string' ||
+          !['json_schema', 'mcp', 'openai_agents', 'pydantic_ai', 'google_adk'].includes(
+            input.adapter,
+          ) ||
           typeof input.version !== 'string' ||
+          input.version.length === 0 ||
+          input.version.length > 128 ||
           (!object(input.schema) && typeof input.schema !== 'boolean')
         )
           throw new ManagedError(
@@ -151,6 +195,7 @@ export function createManagedServer(config: ManagedConfig) {
             'invalid_schema_registration',
             'tool_name, adapter, version, and schema are required',
           );
+        enforceJsonSafety(input.schema, 'registered schema');
         json(
           response,
           201,
@@ -216,7 +261,7 @@ export function createManagedServer(config: ManagedConfig) {
         return;
       }
       if (request.method === 'GET' && url.pathname === '/v1/rulesets/latest') {
-        const ruleset = store.latestRuleset();
+        const ruleset = store.latestRuleset(principal);
         if (!ruleset)
           throw new ManagedError(404, 'ruleset_not_found', 'no ruleset has been published');
         if (!store.verifyRuleset(ruleset))
@@ -230,7 +275,7 @@ export function createManagedServer(config: ManagedConfig) {
       }
       if (request.method === 'POST' && url.pathname === '/v1/admin/rulesets') {
         store.requireScope(principal, 'admin');
-        const input = asRecord(await readBody(request)) as unknown as Omit<
+        const input = asRecord(await guardedBody()) as unknown as Omit<
           SignedRuleSet,
           'key_id' | 'public_key' | 'signature'
         >;
@@ -245,15 +290,17 @@ export function createManagedServer(config: ManagedConfig) {
             'invalid_ruleset',
             'version, issued_at, expires_at, and rules are required',
           );
-        json(response, 201, store.publishRuleset(input));
+        json(response, 201, store.publishRuleset(principal, input));
         return;
       }
       if (request.method === 'POST' && url.pathname === '/v1/admin/api-keys') {
         store.requireScope(principal, 'admin');
-        const input = asRecord(await readBody(request));
+        const input = asRecord(await guardedBody());
         if (
           !Array.isArray(input.scopes) ||
-          !input.scopes.every((scope) => typeof scope === 'string')
+          !input.scopes.every(
+            (scope) => typeof scope === 'string' && ALL_SCOPES.includes(scope as Scope),
+          )
         )
           throw new ManagedError(400, 'invalid_scopes', 'scopes must be an array of scope names');
         json(response, 201, store.issueApiKey(principal, input.scopes as Scope[]));
@@ -265,13 +312,15 @@ export function createManagedServer(config: ManagedConfig) {
         return;
       }
       if (request.method === 'PUT' && url.pathname === '/v1/admin/policy') {
-        const input = asRecord(await readBody(request)) as GuardPolicy;
+        const input = asRecord(await guardedBody()) as GuardPolicy;
+        const policyError = policyValidationError(input);
+        if (policyError) throw new ManagedError(400, 'invalid_policy', policyError);
         store.updateTenantPolicy(principal, input);
         json(response, 200, { updated: true, applies_on_next_request: true });
         return;
       }
       if (request.method === 'PUT' && url.pathname === '/v1/admin/plan') {
-        const input = asRecord(await readBody(request));
+        const input = asRecord(await guardedBody());
         if (input.plan !== 'trial' && input.plan !== 'team')
           throw new ManagedError(400, 'invalid_plan', 'plan must be trial or team');
         store.updatePlan(principal, input.plan as PlanId);
@@ -285,11 +334,12 @@ export function createManagedServer(config: ManagedConfig) {
       }
       if (request.method === 'POST' && url.pathname === '/v1/admin/retention/purge') {
         store.requireScope(principal, 'admin');
-        json(response, 200, { deleted: store.purgeExpired() });
+        json(response, 200, { deleted: store.purgeExpired(principal) });
         return;
       }
       json(response, 404, { error: 'not_found', message: 'route not found' });
     } catch (error) {
+      if (timedOut || response.writableEnded || response.destroyed) return;
       const managed =
         error instanceof ManagedError
           ? error

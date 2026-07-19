@@ -8,15 +8,16 @@ This is a locally working MVP for a falsification test—not a production hosted
 
 - JSON Schema Draft 2020-12 validation through strict AJV compilation.
 - `valid`, `valid_with_repair`, and `rejected` decisions with stable reason codes.
-- Exact string-to-number, string-to-integer, and lowercase string-to-boolean repairs. Singleton-to-array is available only by explicit policy.
+- Exact, round-trip-safe string-to-number and safe string-to-integer repairs plus lowercase string-to-boolean repair. Singleton-to-array is available only by explicit policy.
 - Revalidation after repair; no semantic-value invention.
 - Repair limits, denied argument paths, and closed-schema policy.
 - Value-free audit envelopes with hashes, shape, versions, rules, and audit IDs.
-- Structural drift classification for properties, required fields, types, enums, and `additionalProperties`.
+- Conservative drift classification for properties, required fields, types, enums, constants, bounds, and `additionalProperties`; unknown changed constructs require review.
 - MCP, OpenAI Agents, PydanticAI, and Google ADK normalization fixtures.
 - CLI, local HTTP API, TypeScript SDK, and thin Python client to the canonical TypeScript engine.
 - Published conformance/adversarial corpus, CI action, property tests, and benchmark.
 - A separate local managed control plane with tenant API keys, organization policy, SQLite history, signed audit chains, schema registry, privacy-thresholded compatibility intelligence, Ed25519-signed rulesets, usage plans, rate limits, local alerts, exports, retention, backup/restore, and a functional dashboard.
+- A repeatable real-agent MCP mutation harness for Codex and Claude that proves rejected calls never reach a strict fake downstream tool.
 
 ## Quickstart
 
@@ -77,6 +78,21 @@ The bootstrap command prints the API key once; only an HMAC-derived verifier is 
 Managed routes include validation, schema registration/drift, audit history and CSV export, chain verification, aggregate intelligence, usage/billing statements, alerts, signed rulesets, API-key lifecycle, organization policy, plan control, and retention purge. See [`docs/MANAGED_LOCAL.md`](docs/MANAGED_LOCAL.md).
 
 Protocol JSON Schemas live in [`protocol/v1`](protocol/v1). See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/SECURITY.md`](docs/SECURITY.md), and [`docs/DECISIONS.md`](docs/DECISIONS.md).
+
+## Real agent black-box test
+
+With authenticated Codex and Claude CLIs installed, run:
+
+```bash
+npm run build
+npm run agent-test:live
+```
+
+Both agents make malformed, repairable, policy-denied, drifted, MCP, and Google
+ADK calls through the local MCP guard. The machine verifier requires 12/12
+outcomes per agent, proves only five calls execute, and scans the minimized logs
+for a dummy secret sentinel. See [`examples/agent-loop`](examples/agent-loop)
+and [`docs/VALIDATION_REPORT.md`](docs/VALIDATION_REPORT.md).
 
 ## Python access
 

@@ -8,10 +8,10 @@ The managed package is an operational local proof of the private product boundar
 - Scoped keys can be issued and revoked. The active key cannot revoke itself.
 - Organization policy is stored server-side and merged so caller policy can only narrow it.
 - SQLite uses foreign keys, WAL, busy timeout, migrations, integrity checks, and online backup.
-- Audit events contain the value-free core envelope and form a per-tenant HMAC-signed hash chain. Retention preserves a checkpoint anchor so the surviving chain remains verifiable.
+- Validation quota use and audit insertion commit atomically. Audit events contain the value-free core envelope and form a per-tenant HMAC-signed hash chain; verification also checks indexed columns against the envelope. Retention is tenant-scoped and preserves a checkpoint anchor so the surviving chain remains verifiable.
 - Tool schemas are registered per tenant. Structural drift produces privacy-safe signatures and local alerts.
 - Aggregate compatibility intelligence is released only when a signature appears in at least three distinct tenants by default. Results contain no tenant identifiers.
-- Rulesets use an Ed25519 signing key. The private key is encrypted at rest with AES-256-GCM under the master secret; responses include the public key for independent verification.
+- Rulesets are tenant-scoped and use an Ed25519 signing key. The private key is encrypted at rest with AES-256-GCM under the master secret; embedded public keys must match the authenticated local trust record, and expired rulesets are not served.
 - Trial/team plans, monthly quotas, fixed-window per-key limits, usage statements, JSON/CSV audit export, local-file alerts, liveness/readiness, request size/deadline controls, graceful shutdown, and a tenant dashboard are operational.
 
 ## Bootstrap and run

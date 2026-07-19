@@ -10,7 +10,7 @@ AJV compiles schemas strictly. This avoids presenting a partial hand-written val
 
 ## ADR-003: Repair by explicit registry
 
-Default rules are exact string-to-number, string-to-integer, and lowercase string-to-boolean conversions. Singleton-to-array exists but is disabled by default. Trimming, renaming, defaults, splitting, enum guessing, and object parsing are excluded because they may change meaning.
+Default rules are exact string-to-number, string-to-integer, and lowercase string-to-boolean conversions. Numeric repair requires an exact decimal round trip; integer repair also requires JavaScript's safe-integer range. Singleton-to-array exists but is disabled by default. Trimming, renaming, defaults, splitting, enum guessing, and object parsing are excluded because they may change meaning.
 
 ## ADR-004: Audit values excluded by default
 
@@ -18,7 +18,7 @@ Audit envelopes contain SHA-256 fingerprints, paths, reasons, rules, and version
 
 ## ADR-005: Structural drift is evidence, not inference
 
-Compare canonical schemas and classify required/property/type/enum/additional-properties changes. Do not claim runtime compatibility beyond explicit rules.
+Compare canonical schemas and classify required/property/type/enum/const/bound/additional-properties changes. Boolean schemas are explicit. A changed construct without a proven compatibility rule is `review`, never silently `backward_compatible`.
 
 ## ADR-006: Local API is not a hosted product claim
 
@@ -38,4 +38,20 @@ Purging an expired prefix stores its last signed hash as the tenant anchor. Veri
 
 ## ADR-010: Rulesets use asymmetric signatures
 
-Local rulesets are signed with Ed25519. The private key is AES-256-GCM encrypted under the configured master secret; the public key travels with the ruleset so clients can verify without sharing the service secret.
+Local rulesets are signed with Ed25519. The private key is AES-256-GCM encrypted under the configured master secret. The public key travels with the ruleset, but the service verifies it against a master-secret-authenticated local trust record rather than trusting an embedded replacement key.
+
+## ADR-011: Repair local references, reject ambiguous unions
+
+The repair walker resolves local JSON Pointers such as `#/$defs/count` with cycle protection. It does not guess a repair branch across `oneOf`, `anyOf`, or conditional schemas; full AJV validation remains authoritative.
+
+## ADR-012: Bound hostile JSON before recursive work
+
+Schemas, declarations, and arguments are limited to 10,000 nodes and 64 levels before compilation, normalization, drift hashing, or audit hashing. Schema regular expressions are length-bounded and conservatively screened before AJV executes them. HTTP bodies are capped at 1 MB. These are local safety bounds, not a substitute for process isolation at public ingress.
+
+## ADR-013: Tenant-scoped managed mutations
+
+Rulesets and retention purge are tenant-scoped. Validation usage and audit insertion commit atomically. Audit verification cross-checks indexed display columns against the signed value-free envelope so modifying either representation is detectable.
+
+## ADR-014: Machine logs outrank agent summaries
+
+The live Codex/Claude mutation test records decisions and fake-tool execution inside the MCP guard server. Its verifier uses those privacy-minimized logs; agent-written summaries are informative only and cannot determine a pass.

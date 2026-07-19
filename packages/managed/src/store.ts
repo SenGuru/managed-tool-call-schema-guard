@@ -3,6 +3,7 @@ import { appendFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import {
   detectSchemaDrift,
+  policyValidationError,
   sha256,
   type AuditEnvelope,
   type GuardDecision,
@@ -18,7 +19,14 @@ import {
   verifyRulesetSignature,
 } from './crypto.js';
 import { migrations } from './migrations.js';
-import type { ManagedConfig, PlanId, Principal, Scope, SignedRuleSet } from './types.js';
+import {
+  ALL_SCOPES,
+  type ManagedConfig,
+  type PlanId,
+  type Principal,
+  type Scope,
+  type SignedRuleSet,
+} from './types.js';
 
 type Row = Record<string, unknown>;
 const now = (): string => new Date().toISOString();
@@ -30,12 +38,20 @@ const text = (value: unknown, fallback = ''): string =>
 export class ManagedStore {
   readonly db: Database.Database;
   constructor(private readonly config: ManagedConfig) {
+    if (!config.databasePath || config.masterSecret.length < 32)
+      throw new TypeError('databasePath and a 32+ character masterSecret are required');
+    if (
+      config.aggregateTenantThreshold !== undefined &&
+      (!Number.isInteger(config.aggregateTenantThreshold) || config.aggregateTenantThreshold < 2)
+    )
+      throw new TypeError('aggregateTenantThreshold must be an integer of at least 2');
     this.db = new Database(config.databasePath);
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
     this.db.pragma('busy_timeout = 5000');
     this.migrate();
     this.ensureSigningKey();
+    this.ensureAuditAnchorsTrusted();
   }
 
   close(): void {
@@ -60,13 +76,67 @@ export class ManagedStore {
       }
   }
   private ensureSigningKey(): void {
-    if (this.db.prepare('SELECT id FROM signing_keys LIMIT 1').get()) return;
+    const existing = this.db
+      .prepare('SELECT id,public_key_pem,trust_hmac FROM signing_keys LIMIT 1')
+      .get() as Row | undefined;
+    if (existing) {
+      if (!existing.trust_hmac)
+        this.db.prepare('UPDATE signing_keys SET trust_hmac=? WHERE id=?').run(
+          hmac(this.config.masterSecret, 'signing-key-trust-v1', {
+            id: existing.id,
+            public_key: existing.public_key_pem,
+          }),
+          existing.id,
+        );
+      return;
+    }
     const key = createEncryptedSigningKey(this.config.masterSecret);
     this.db
       .prepare(
-        'INSERT INTO signing_keys(id,public_key_pem,encrypted_private_key,created_at) VALUES(?,?,?,?)',
+        'INSERT INTO signing_keys(id,public_key_pem,encrypted_private_key,created_at,trust_hmac) VALUES(?,?,?,?,?)',
       )
-      .run(key.keyId, key.publicKey, key.encryptedPrivateKey, now());
+      .run(
+        key.keyId,
+        key.publicKey,
+        key.encryptedPrivateKey,
+        now(),
+        hmac(this.config.masterSecret, 'signing-key-trust-v1', {
+          id: key.keyId,
+          public_key: key.publicKey,
+        }),
+      );
+  }
+  private auditAnchorSignature(
+    tenantId: string,
+    lastDeletedHash: string,
+    sequence: number,
+  ): string {
+    return hmac(this.config.masterSecret, 'audit-chain-anchor-v1', {
+      tenant_id: tenantId,
+      last_deleted_hash: lastDeletedHash,
+      deleted_through_sequence: sequence,
+    });
+  }
+  private ensureAuditAnchorsTrusted(): void {
+    const rows = this.db
+      .prepare(
+        'SELECT tenant_id,last_deleted_hash,deleted_through_sequence FROM audit_chain_anchors WHERE signature IS NULL',
+      )
+      .all() as Row[];
+    const update = this.db.prepare(
+      'UPDATE audit_chain_anchors SET signature=? WHERE tenant_id=? AND signature IS NULL',
+    );
+    this.db.transaction(() => {
+      for (const row of rows)
+        update.run(
+          this.auditAnchorSignature(
+            text(row.tenant_id),
+            text(row.last_deleted_hash),
+            Number(row.deleted_through_sequence),
+          ),
+          row.tenant_id,
+        );
+    })();
   }
 
   bootstrapTenant(input: {
@@ -79,6 +149,18 @@ export class ManagedStore {
     policy?: GuardPolicy;
   }): void {
     const limits: Record<PlanId, number> = { trial: 1_000, team: 100_000 };
+    if (
+      !/^[A-Za-z0-9_-]{1,64}$/u.test(input.id) ||
+      input.name.length === 0 ||
+      input.name.length > 256 ||
+      input.apiKey.length === 0 ||
+      input.apiKey.length > 4096 ||
+      (input.retentionDays !== undefined &&
+        (!Number.isInteger(input.retentionDays) ||
+          input.retentionDays < 0 ||
+          input.retentionDays > 3650))
+    )
+      throw new ManagedError(400, 'invalid_tenant', 'tenant bootstrap fields are invalid');
     const scopes = input.scopes ?? [
       'validate',
       'read:audit',
@@ -86,6 +168,9 @@ export class ManagedStore {
       'read:intelligence',
       'admin',
     ];
+    this.assertScopes(scopes);
+    const policyError = policyValidationError(input.policy);
+    if (policyError) throw new ManagedError(400, 'invalid_policy', policyError);
     this.db.transaction(() => {
       this.db
         .prepare(
@@ -120,12 +205,11 @@ export class ManagedStore {
 
   authenticate(apiKey: string): Principal | undefined {
     const keyHash = hashApiKey(this.config.masterSecret, apiKey);
-    const rows = this.db
+    const row = this.db
       .prepare(
-        `SELECT k.id key_id,k.key_hash,k.scopes_json,t.id tenant_id,t.name tenant_name,t.plan,t.monthly_limit,t.retention_days,t.policy_json FROM api_keys k JOIN tenants t ON t.id=k.tenant_id WHERE k.revoked_at IS NULL`,
+        `SELECT k.id key_id,k.scopes_json,t.id tenant_id,t.name tenant_name,t.plan,t.monthly_limit,t.retention_days,t.policy_json FROM api_keys k JOIN tenants t ON t.id=k.tenant_id WHERE k.key_hash=? AND k.revoked_at IS NULL`,
       )
-      .all() as Row[];
-    const row = rows.find((candidate) => constantTimeEqual(String(candidate.key_hash), keyHash));
+      .get(keyHash) as Row | undefined;
     if (!row) return undefined;
     return {
       tenantId: String(row.tenant_id),
@@ -144,6 +228,7 @@ export class ManagedStore {
     scopes: Scope[],
   ): { key_id: string; api_key: string; scopes: Scope[] } {
     this.requireScope(principal, 'admin');
+    this.assertScopes(scopes);
     const apiKey = generateApiKey();
     const keyId = `key_${sha256(principal.tenantId + apiKey).slice(-16)}`;
     this.db
@@ -178,6 +263,8 @@ export class ManagedStore {
   }
   updateTenantPolicy(principal: Principal, policy: GuardPolicy): void {
     this.requireScope(principal, 'admin');
+    const error = policyValidationError(policy);
+    if (error) throw new ManagedError(400, 'invalid_policy', error);
     this.db
       .prepare('UPDATE tenants SET policy_json=? WHERE id=?')
       .run(JSON.stringify(policy), principal.tenantId);
@@ -193,6 +280,14 @@ export class ManagedStore {
   requireScope(principal: Principal, scope: Scope): void {
     if (!principal.scopes.includes(scope) && !principal.scopes.includes('admin'))
       throw new ManagedError(403, 'scope_denied', `scope ${scope} is required`);
+  }
+  private assertScopes(scopes: Scope[]): void {
+    if (
+      !scopes.length ||
+      scopes.some((scope) => !ALL_SCOPES.includes(scope)) ||
+      new Set(scopes).size !== scopes.length
+    )
+      throw new ManagedError(400, 'invalid_scopes', 'scopes contain an unknown or empty value');
   }
 
   consumeValidation(principal: Principal): void {
@@ -275,6 +370,12 @@ export class ManagedStore {
         });
     })();
   }
+  recordValidation(principal: Principal, decision: GuardDecision): void {
+    this.db.transaction(() => {
+      this.consumeValidation(principal);
+      this.recordDecision(principal, decision);
+    })();
+  }
 
   listAudits(principal: Principal, limit = 100): Row[] {
     const rows = this.db
@@ -282,26 +383,57 @@ export class ManagedStore {
         `SELECT sequence,audit_id,occurred_at,decision,reason_code,repair_rules_json,envelope_json,event_hash,previous_hash,signature FROM audit_events WHERE tenant_id=? ORDER BY sequence DESC LIMIT ?`,
       )
       .all(principal.tenantId, Math.min(Math.max(limit, 1), 1000)) as Row[];
-    return rows.map(({ repair_rules_json, envelope_json, ...row }) => ({
-      ...row,
-      repair_rules: parse(repair_rules_json),
-      envelope: parse(envelope_json),
-    }));
+    return rows.map((row) => {
+      const envelope = parse(row.envelope_json) as AuditEnvelope;
+      return {
+        sequence: row.sequence,
+        audit_id: envelope.audit_id,
+        occurred_at: envelope.timestamp,
+        decision: envelope.decision,
+        reason_code: envelope.reason_code ?? null,
+        repair_rules: envelope.repair_rule_ids,
+        envelope,
+        event_hash: row.event_hash,
+        previous_hash: row.previous_hash,
+        signature: row.signature,
+      };
+    });
   }
   verifyAuditChain(principal: Principal): {
     valid: boolean;
     checked: number;
     first_invalid_sequence?: number;
+    anchor_invalid?: boolean;
   } {
     const rows = this.db
       .prepare('SELECT * FROM audit_events WHERE tenant_id=? ORDER BY sequence ASC')
       .all(principal.tenantId) as Row[];
     const anchor = this.db
-      .prepare('SELECT last_deleted_hash FROM audit_chain_anchors WHERE tenant_id=?')
+      .prepare(
+        'SELECT last_deleted_hash,deleted_through_sequence,signature FROM audit_chain_anchors WHERE tenant_id=?',
+      )
       .get(principal.tenantId) as Row | undefined;
+    if (anchor) {
+      const expectedAnchorSignature = this.auditAnchorSignature(
+        principal.tenantId,
+        text(anchor.last_deleted_hash),
+        Number(anchor.deleted_through_sequence),
+      );
+      if (!constantTimeEqual(text(anchor.signature), expectedAnchorSignature))
+        return { valid: false, checked: 0, anchor_invalid: true };
+    }
     let previousHash = text(anchor?.last_deleted_hash, 'GENESIS');
     for (const row of rows) {
-      const envelope = parse(row.envelope_json) as AuditEnvelope;
+      let envelope: AuditEnvelope;
+      try {
+        envelope = parse(row.envelope_json) as AuditEnvelope;
+      } catch {
+        return {
+          valid: false,
+          checked: rows.indexOf(row),
+          first_invalid_sequence: Number(row.sequence),
+        };
+      }
       const body = { tenant_id: principal.tenantId, audit: envelope, previous_hash: previousHash };
       const expectedHash = hmac(this.config.masterSecret, 'audit-event-hash-v1', body);
       const expectedSignature = hmac(this.config.masterSecret, 'audit-event-signature-v1', {
@@ -311,7 +443,12 @@ export class ManagedStore {
       if (
         !constantTimeEqual(expectedHash, String(row.event_hash)) ||
         !constantTimeEqual(expectedSignature, String(row.signature)) ||
-        text(row.previous_hash) !== previousHash
+        text(row.previous_hash) !== previousHash ||
+        text(row.audit_id) !== envelope.audit_id ||
+        text(row.occurred_at) !== envelope.timestamp ||
+        text(row.decision) !== envelope.decision ||
+        (row.reason_code === null ? undefined : text(row.reason_code)) !== envelope.reason_code ||
+        !sameStringArray(parse(row.repair_rules_json), envelope.repair_rule_ids)
       )
         return {
           valid: false,
@@ -404,7 +541,12 @@ export class ManagedStore {
     );
   }
 
-  publishRuleset(input: Omit<SignedRuleSet, 'key_id' | 'public_key' | 'signature'>): SignedRuleSet {
+  publishRuleset(
+    principal: Principal,
+    input: Omit<SignedRuleSet, 'key_id' | 'public_key' | 'signature'>,
+  ): SignedRuleSet {
+    this.requireScope(principal, 'admin');
+    this.assertRuleset(input);
     const key = this.db
       .prepare(
         'SELECT id,public_key_pem,encrypted_private_key FROM signing_keys ORDER BY created_at DESC LIMIT 1',
@@ -417,9 +559,10 @@ export class ManagedStore {
     };
     this.db
       .prepare(
-        'INSERT INTO rulesets(version,body_json,issued_at,expires_at,signature) VALUES(?,?,?,?,?)',
+        'INSERT INTO tenant_rulesets(tenant_id,version,body_json,issued_at,expires_at,signature) VALUES(?,?,?,?,?,?)',
       )
       .run(
+        principal.tenantId,
         signed.version,
         JSON.stringify(signed),
         signed.issued_at,
@@ -428,13 +571,25 @@ export class ManagedStore {
       );
     return signed;
   }
-  latestRuleset(): SignedRuleSet | undefined {
+  latestRuleset(principal: Principal): SignedRuleSet | undefined {
     const row = this.db
-      .prepare('SELECT body_json FROM rulesets ORDER BY issued_at DESC LIMIT 1')
-      .get() as Row | undefined;
+      .prepare(
+        'SELECT body_json FROM tenant_rulesets WHERE tenant_id=? AND issued_at<=? AND expires_at>? ORDER BY issued_at DESC LIMIT 1',
+      )
+      .get(principal.tenantId, now(), now()) as Row | undefined;
     return row ? (parse(row.body_json) as SignedRuleSet) : undefined;
   }
   verifyRuleset(ruleset: SignedRuleSet): boolean {
+    if (Date.parse(ruleset.expires_at) <= Date.now()) return false;
+    const key = this.db
+      .prepare('SELECT id,public_key_pem,trust_hmac FROM signing_keys WHERE id=?')
+      .get(ruleset.key_id) as Row | undefined;
+    if (!key || text(key.public_key_pem) !== ruleset.public_key) return false;
+    const expectedTrust = hmac(this.config.masterSecret, 'signing-key-trust-v1', {
+      id: key.id,
+      public_key: key.public_key_pem,
+    });
+    if (!constantTimeEqual(text(key.trust_hmac), expectedTrust)) return false;
     const { signature } = ruleset;
     const body = {
       version: ruleset.version,
@@ -445,6 +600,40 @@ export class ManagedStore {
       public_key: ruleset.public_key,
     };
     return verifyRulesetSignature(ruleset.public_key, body, signature);
+  }
+  private assertRuleset(input: Omit<SignedRuleSet, 'key_id' | 'public_key' | 'signature'>): void {
+    const issued = Date.parse(input.issued_at);
+    const expires = Date.parse(input.expires_at);
+    const knownRules = new Set([
+      'coerce.string_to_number',
+      'coerce.string_to_integer',
+      'coerce.string_to_boolean',
+      'coerce.singleton_to_array',
+    ]);
+    if (
+      !Number.isFinite(issued) ||
+      !Number.isFinite(expires) ||
+      input.version.length === 0 ||
+      input.version.length > 128 ||
+      issued > Date.now() + 300_000 ||
+      expires <= issued ||
+      expires <= Date.now() ||
+      !input.rules.length ||
+      input.rules.some(
+        (rule) =>
+          !knownRules.has(rule.id) ||
+          typeof rule.enabled_by_default !== 'boolean' ||
+          typeof rule.description !== 'string' ||
+          rule.description.length === 0 ||
+          rule.description.length > 500,
+      ) ||
+      new Set(input.rules.map((rule) => rule.id)).size !== input.rules.length
+    )
+      throw new ManagedError(
+        400,
+        'invalid_ruleset',
+        'ruleset dates or repair rule declarations are invalid',
+      );
   }
 
   alerts(principal: Principal): Row[] {
@@ -470,33 +659,54 @@ export class ManagedStore {
     await mkdir(dirname(this.config.alertFile), { recursive: true, mode: 0o700 });
     await appendFile(this.config.alertFile, `${JSON.stringify(alert)}\n`, { mode: 0o600 });
   }
-  purgeExpired(): number {
+  purgeExpired(principal: Principal): number {
+    this.requireScope(principal, 'admin');
+    if (!this.verifyAuditChain(principal).valid)
+      throw new ManagedError(
+        409,
+        'audit_chain_invalid',
+        'refusing to purge an invalid audit chain',
+      );
     return this.db.transaction(() => {
-      const tenants = this.db.prepare('SELECT id,retention_days FROM tenants').all() as Row[];
       let deleted = 0;
-      for (const tenant of tenants) {
-        const cutoff = new Date(
-          Date.now() - Number(tenant.retention_days) * 86_400_000,
-        ).toISOString();
-        const boundary = this.db
-          .prepare(
-            'SELECT sequence,event_hash FROM audit_events WHERE tenant_id=? AND occurred_at<? ORDER BY sequence DESC LIMIT 1',
-          )
-          .get(String(tenant.id), cutoff) as Row | undefined;
-        if (!boundary) continue;
-        const result = this.db
-          .prepare('DELETE FROM audit_events WHERE tenant_id=? AND sequence<=?')
-          .run(String(tenant.id), Number(boundary.sequence));
-        this.db
-          .prepare(
-            `INSERT INTO audit_chain_anchors(tenant_id,last_deleted_hash,deleted_through_sequence,updated_at) VALUES(?,?,?,?) ON CONFLICT(tenant_id) DO UPDATE SET last_deleted_hash=excluded.last_deleted_hash,deleted_through_sequence=excluded.deleted_through_sequence,updated_at=excluded.updated_at`,
-          )
-          .run(String(tenant.id), String(boundary.event_hash), Number(boundary.sequence), now());
-        deleted += result.changes;
-      }
+      const cutoff = new Date(Date.now() - principal.retentionDays * 86_400_000).toISOString();
+      const boundary = this.db
+        .prepare(
+          `SELECT sequence,event_hash FROM audit_events WHERE tenant_id=? AND json_valid(envelope_json) AND json_extract(envelope_json,'$.timestamp')<? ORDER BY sequence DESC LIMIT 1`,
+        )
+        .get(principal.tenantId, cutoff) as Row | undefined;
+      if (!boundary) return 0;
+      const result = this.db
+        .prepare('DELETE FROM audit_events WHERE tenant_id=? AND sequence<=?')
+        .run(principal.tenantId, Number(boundary.sequence));
+      const anchorSignature = this.auditAnchorSignature(
+        principal.tenantId,
+        String(boundary.event_hash),
+        Number(boundary.sequence),
+      );
+      this.db
+        .prepare(
+          `INSERT INTO audit_chain_anchors(tenant_id,last_deleted_hash,deleted_through_sequence,updated_at,signature) VALUES(?,?,?,?,?) ON CONFLICT(tenant_id) DO UPDATE SET last_deleted_hash=excluded.last_deleted_hash,deleted_through_sequence=excluded.deleted_through_sequence,updated_at=excluded.updated_at,signature=excluded.signature`,
+        )
+        .run(
+          principal.tenantId,
+          String(boundary.event_hash),
+          Number(boundary.sequence),
+          now(),
+          anchorSignature,
+        );
+      deleted += result.changes;
       return deleted;
     })();
   }
+}
+
+function sameStringArray(left: unknown, right: string[]): boolean {
+  return (
+    Array.isArray(left) &&
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
 }
 
 export class ManagedError extends Error {

@@ -1,7 +1,8 @@
 import { mkdtemp } from 'node:fs/promises';
+import { request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { validateToolCall } from '../packages/core/src/index.js';
 import { createManagedServer } from '../packages/managed/src/server.js';
 import { FixedWindowRateLimiter } from '../packages/managed/src/rate-limit.js';
@@ -10,6 +11,7 @@ import { ManagedError, ManagedStore } from '../packages/managed/src/store.js';
 const secret = 'test-master-secret-that-is-at-least-32-characters';
 const open: { close(): Promise<void> }[] = [];
 afterEach(async () => {
+  vi.useRealTimers();
   for (const service of open.splice(0)) await service.close();
 });
 async function database(): Promise<string> {
@@ -46,24 +48,41 @@ describe('managed local control plane', () => {
     const store = new ManagedStore({ databasePath: await database(), masterSecret: secret });
     store.bootstrapTenant({ id: 'a', name: 'A', plan: 'trial', apiKey: 'key-a', retentionDays: 1 });
     const principal = store.authenticate('key-a')!;
-    for (const count of ['1', '2']) {
-      const decision = validateToolCall({
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2000-01-01T00:00:00.000Z'));
+    store.recordValidation(
+      principal,
+      validateToolCall({
         tool_name: 'counter',
         tool_schema: { type: 'object', properties: { count: { type: 'integer' } } },
-        raw_arguments: { count },
-      });
-      store.consumeValidation(principal);
-      store.recordDecision(principal, decision);
-    }
+        raw_arguments: { count: '1' },
+      }),
+    );
+    vi.useRealTimers();
+    store.recordValidation(
+      principal,
+      validateToolCall({
+        tool_name: 'counter',
+        tool_schema: { type: 'object', properties: { count: { type: 'integer' } } },
+        raw_arguments: { count: '2' },
+      }),
+    );
     expect(store.verifyAuditChain(principal)).toMatchObject({ valid: true, checked: 2 });
-    const first = store.db
-      .prepare('SELECT sequence FROM audit_events ORDER BY sequence LIMIT 1')
-      .get() as { sequence: number };
-    store.db
-      .prepare("UPDATE audit_events SET occurred_at='2000-01-01T00:00:00.000Z' WHERE sequence=?")
-      .run(first.sequence);
-    expect(store.purgeExpired()).toBe(1);
+    expect(store.purgeExpired(principal)).toBe(1);
     expect(store.verifyAuditChain(principal)).toMatchObject({ valid: true, checked: 1 });
+    const anchor = store.db
+      .prepare("SELECT signature FROM audit_chain_anchors WHERE tenant_id='a'")
+      .get() as { signature: string };
+    store.db
+      .prepare("UPDATE audit_chain_anchors SET signature='tampered' WHERE tenant_id='a'")
+      .run();
+    expect(store.verifyAuditChain(principal)).toMatchObject({
+      valid: false,
+      anchor_invalid: true,
+    });
+    store.db
+      .prepare("UPDATE audit_chain_anchors SET signature=? WHERE tenant_id='a'")
+      .run(anchor.signature);
     store.db.prepare("UPDATE audit_events SET envelope_json='{}' WHERE tenant_id='a'").run();
     expect(store.verifyAuditChain(principal).valid).toBe(false);
     store.close();
@@ -128,7 +147,9 @@ describe('managed local control plane', () => {
   it('signs rulesets and rejects tampered signatures', async () => {
     const store = new ManagedStore({ databasePath: await database(), masterSecret: secret });
     const issued = new Date();
-    const ruleset = store.publishRuleset({
+    store.bootstrapTenant({ id: 'a', name: 'A', plan: 'trial', apiKey: 'key-a' });
+    const principal = store.authenticate('key-a')!;
+    const ruleset = store.publishRuleset(principal, {
       version: 'local-1',
       issued_at: issued.toISOString(),
       expires_at: new Date(issued.getTime() + 86_400_000).toISOString(),
@@ -142,6 +163,62 @@ describe('managed local control plane', () => {
     });
     expect(store.verifyRuleset(ruleset)).toBe(true);
     expect(store.verifyRuleset({ ...ruleset, version: 'tampered' })).toBe(false);
+    store.db
+      .prepare("UPDATE signing_keys SET public_key_pem='attacker key' WHERE id=?")
+      .run(ruleset.key_id);
+    expect(store.verifyRuleset(ruleset)).toBe(false);
+    store.close();
+  });
+
+  it('scopes retention purges and rulesets to the authenticated tenant', async () => {
+    const store = new ManagedStore({ databasePath: await database(), masterSecret: secret });
+    store.bootstrapTenant({ id: 'a', name: 'A', plan: 'trial', apiKey: 'key-a', retentionDays: 1 });
+    store.bootstrapTenant({ id: 'b', name: 'B', plan: 'trial', apiKey: 'key-b', retentionDays: 1 });
+    const a = store.authenticate('key-a')!;
+    const b = store.authenticate('key-b')!;
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2000-01-01T00:00:00.000Z'));
+    store.recordValidation(
+      a,
+      validateToolCall({ tool_name: 'x', tool_schema: { type: 'object' }, raw_arguments: {} }),
+    );
+    vi.useRealTimers();
+    store.recordValidation(
+      b,
+      validateToolCall({ tool_name: 'x', tool_schema: { type: 'object' }, raw_arguments: {} }),
+    );
+    expect(store.purgeExpired(a)).toBe(1);
+    expect(store.listAudits(a)).toHaveLength(0);
+    expect(store.listAudits(b)).toHaveLength(1);
+    const issued = new Date();
+    store.publishRuleset(a, {
+      version: 'tenant-a-1',
+      issued_at: issued.toISOString(),
+      expires_at: new Date(issued.getTime() + 86_400_000).toISOString(),
+      rules: [
+        {
+          id: 'coerce.string_to_integer',
+          enabled_by_default: true,
+          description: 'Exact integer strings',
+        },
+      ],
+    });
+    expect(store.latestRuleset(a)?.version).toBe('tenant-a-1');
+    expect(store.latestRuleset(b)).toBeUndefined();
+    store.close();
+  });
+
+  it('detects tampering in denormalized audit columns', async () => {
+    const store = new ManagedStore({ databasePath: await database(), masterSecret: secret });
+    store.bootstrapTenant({ id: 'a', name: 'A', plan: 'trial', apiKey: 'key-a' });
+    const principal = store.authenticate('key-a')!;
+    store.recordValidation(
+      principal,
+      validateToolCall({ tool_name: 'x', tool_schema: { type: 'object' }, raw_arguments: {} }),
+    );
+    store.db.prepare("UPDATE audit_events SET decision='rejected' WHERE tenant_id='a'").run();
+    expect(store.verifyAuditChain(principal).valid).toBe(false);
+    expect(store.listAudits(principal)[0]?.decision).toBe('valid');
     store.close();
   });
 
@@ -226,5 +303,43 @@ describe('managed local control plane', () => {
     });
     expect(response.status).toBe(422);
     expect(((await response.json()) as { decision: string }).decision).toBe('rejected');
+  });
+
+  it('times out an incomplete request without validation or audit side effects', async () => {
+    const service = createManagedServer({
+      databasePath: await database(),
+      masterSecret: secret,
+      requestTimeoutMs: 20,
+    });
+    open.push(service);
+    service.store.bootstrapTenant({ id: 'a', name: 'A', plan: 'trial', apiKey: 'key-a' });
+    const principal = service.store.authenticate('key-a')!;
+    await new Promise<void>((resolve) => service.server.listen(0, '127.0.0.1', resolve));
+    const address = service.server.address();
+    if (!address || typeof address === 'string') throw new Error('missing address');
+    const status = await new Promise<number>((resolve, reject) => {
+      const request = httpRequest(
+        {
+          host: '127.0.0.1',
+          port: address.port,
+          path: '/v1/validate',
+          method: 'POST',
+          headers: {
+            authorization: 'Bearer key-a',
+            'content-type': 'application/json',
+            'content-length': '1000',
+          },
+        },
+        (response) => {
+          response.resume();
+          response.once('end', () => resolve(response.statusCode ?? 0));
+        },
+      );
+      request.once('error', reject);
+      request.write('{"tool_name":');
+    });
+    expect(status).toBe(503);
+    expect(service.store.usage(principal).validation_count).toBe(0);
+    expect(service.store.listAudits(principal)).toHaveLength(0);
   });
 });

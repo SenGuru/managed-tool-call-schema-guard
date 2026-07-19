@@ -34,6 +34,26 @@ describe('repair properties', () => {
       { numRuns: 300 },
     );
   });
+  it('integers outside the JavaScript safe range are never repaired', () => {
+    fc.assert(
+      fc.property(
+        fc.bigInt({
+          min: BigInt(Number.MAX_SAFE_INTEGER) + 1n,
+          max: BigInt(Number.MAX_SAFE_INTEGER) + 1_000_000n,
+        }),
+        (value) => {
+          expect(
+            validateToolCall({
+              tool_name: 'integer',
+              tool_schema: schema,
+              raw_arguments: { value: value.toString() },
+            }).decision,
+          ).toBe('rejected');
+        },
+      ),
+      { numRuns: 300 },
+    );
+  });
   it('input objects are never mutated', () => {
     fc.assert(
       fc.property(fc.integer(), (value) => {

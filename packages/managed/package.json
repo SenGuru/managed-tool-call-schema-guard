@@ -8,6 +8,6 @@
   },
   "dependencies": {
     "@schema-guard/core": "0.1.0",
-    "better-sqlite3": "^12.6.2"
+    "better-sqlite3": "^12.11.1"
   }
 }

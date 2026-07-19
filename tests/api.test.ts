@@ -5,7 +5,10 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 let server: Server | undefined;
-afterEach(() => server?.close());
+afterEach(() => {
+  server?.close();
+  delete process.env.SCHEMA_GUARD_AUDIT_FILE;
+});
 describe('HTTP API', () => {
   it('serves validation decisions without payload reflection in audit', async () => {
     server = createSchemaGuardServer();
@@ -29,6 +32,7 @@ describe('HTTP API', () => {
     const result = (await response.json()) as { decision: string; audit: unknown };
     expect(result.decision).toBe('valid_with_repair');
     expect(JSON.stringify(result.audit)).not.toContain('counter');
+    expect(response.headers.get('content-security-policy')).toContain("default-src 'none'");
   });
   it('creates a configured audit directory and persists only the envelope', async () => {
     const root = await mkdtemp(join(tmpdir(), 'schema-guard-'));
@@ -50,6 +54,29 @@ describe('HTTP API', () => {
     const persisted = await readFile(auditPath, 'utf8');
     expect(persisted).not.toContain('never-log-me');
     expect(persisted).not.toContain('private_tool');
-    delete process.env.SCHEMA_GUARD_AUDIT_FILE;
+  });
+  it('returns explicit client errors for invalid normalization and drift requests', async () => {
+    server = createSchemaGuardServer();
+    await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('missing address');
+    const base = `http://127.0.0.1:${address.port}`;
+    const headers = { 'content-type': 'application/json' };
+    const normalization = await fetch(`${base}/v1/normalize`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ adapter: 'unknown', tool: {} }),
+    });
+    expect(normalization.status).toBe(400);
+    expect((await normalization.json()) as unknown).toMatchObject({
+      error: 'invalid_normalization_request',
+    });
+    const drift = await fetch(`${base}/v1/drift`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ previous: null, current: {} }),
+    });
+    expect(drift.status).toBe(400);
+    expect((await drift.json()) as unknown).toMatchObject({ error: 'invalid_drift_request' });
   });
 });
