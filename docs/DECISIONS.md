@@ -63,3 +63,19 @@ SQLite database, WAL, SHM, alert, and backup files contain sensitive tenant meta
 ## ADR-016: Release commands must work without generated artifacts
 
 Ignored `dist` output cannot be part of the assumed checkout state. Typed lint builds workspace declarations first, and executable root scripts compile before invoking TypeScript entry points. Release verification includes a fresh local clone so an existing developer tree cannot mask missing build prerequisites.
+
+## ADR-017: Open enforcement, compounding managed intelligence
+
+The deterministic protocol, validator, repair registry, adapters, SDKs, CLI, local audit, and public conformance fixtures remain independently runnable without Schema Guard infrastructure. Basic validation and isolated coercion rules are deliberately not treated as defensibility.
+
+The managed product earns differentiation through maintained repair signatures, cross-provider/framework/version conformance evidence, drift history and recommendations, verifiable audit trust, signed policy distribution, and operational team workflows. Aggregate evidence remains value-free and privacy-thresholded. The repository's local control plane proves the product spine; it does not imply a production corpus, deployed reliability, or product-market fit.
+
+## ADR-018: Persist value-free observations, not payloads
+
+Managed validation accepts bounded provider/framework/version labels as optional operational context. Repair and rejection clusters persist only those labels, deterministic reason and repair identifiers, and generalized validation issue shapes; tool names, argument values, validation messages, and tenant identity never enter a cross-tenant signature. Conformance summaries are idempotent and contain counts and signature identifiers rather than captured calls. Schema scoring reads the tenant's existing registry and returns hashes and findings without reproducing semantic schema values.
+
+Recommendations remain advisory. They may identify weak declarations, recurring caller shapes, or breaking drift, but they cannot change enforcement until a reviewed deterministic rule and conformance regression justify it.
+
+## ADR-019: Environment policy only narrows
+
+Every tenant starts with development, staging, and production environment records and may add bounded named environments. A validation request can select one environment; its stored policy is merged between organization policy and caller policy using the same intersection/minimum/union rules. An unknown environment fails closed. Environment controls cannot widen repairs or bypass schema validation.

@@ -19,9 +19,13 @@ Every result includes an audit ID, policy result, repaired-field provenance, eng
 
 ## Public versus managed boundary
 
-This repository contains the public layer: protocol, engine, repair registry, policy hooks, adapters, drift comparison, conformance corpus, CLI, local API, SDKs, action, and local audit output.
+The public offline layer contains the protocol, engine, repair registry, policy hooks, adapters, drift comparison, conformance corpus, CLI, local API, SDKs, action, and local audit output. These packages do not require a managed account, control-plane connection, or remotely supplied decision. They remain independently useful during a managed outage.
 
-The open packages remain independent. `packages/managed` implements the private boundary locally: tenant authentication, organization policy, durable audit/history, drift signatures, signed rulesets, plans, local alerts, exports, and dashboard. Provider-specific payment, public ingress, cloud KMS, distributed coordination, and multi-region operations remain external integrations.
+`packages/managed` implements the private product boundary locally: tenant authentication, organization policy, durable audit/history, schema registry, drift and failure signatures, privacy-thresholded aggregate intelligence, signed rulesets, plans, local alerts, exports, and dashboard. The managed layer may distribute signed policy and recommendations, but tenant policy can only narrow the core contract.
+
+Basic validation is not treated as the moat. The intended compounding layer is a maintained repair-signature corpus, provider/framework/version conformance evidence, drift history and recommendations, verifiable audit trust, and the team workflow around those assets. The repository contains the operational spine and seed fixtures, not a production-scale proprietary corpus. See [`PRODUCT_DIRECTION.md`](PRODUCT_DIRECTION.md).
+
+Provider-specific payment, public ingress, cloud KMS, distributed coordination, external notifications, scheduled fleet conformance, and multi-region operations remain external integrations or future implementation. Local managed behavior does not imply deployment or an SLA.
 
 ## Failure behavior
 
