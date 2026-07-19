@@ -1,4 +1,4 @@
-import { mkdtemp } from 'node:fs/promises';
+import { chmod, mkdtemp, stat, writeFile } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -229,11 +229,61 @@ describe('managed local control plane', () => {
     store.bootstrapTenant({ id: 'a', name: 'A', plan: 'trial', apiKey: 'key-a' });
     expect(store.integrityCheck()).toBe(true);
     await store.backup(destination);
+    expect((await stat(source)).mode & 0o777).toBe(0o600);
+    expect((await stat(`${source}-wal`)).mode & 0o777).toBe(0o600);
+    expect((await stat(`${source}-shm`)).mode & 0o777).toBe(0o600);
+    expect((await stat(destination)).mode & 0o777).toBe(0o600);
     store.close();
     const restored = new ManagedStore({ databasePath: destination, masterSecret: secret });
     expect(restored.authenticate('key-a')?.tenantId).toBe('a');
     expect(restored.integrityCheck()).toBe(true);
     restored.close();
+  });
+
+  it('repairs permissions on a pre-existing managed alert file', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'schema-guard-managed-alert-'));
+    const alertFile = join(root, 'alerts.jsonl');
+    await writeFile(alertFile, '');
+    await chmod(alertFile, 0o644);
+    const store = new ManagedStore({
+      databasePath: join(root, 'managed.db'),
+      masterSecret: secret,
+      alertFile,
+    });
+    store.bootstrapTenant({ id: 'a', name: 'A', plan: 'trial', apiKey: 'key-a' });
+    const principal = store.authenticate('key-a')!;
+    store.recordValidation(
+      principal,
+      validateToolCall({
+        tool_name: 'counter',
+        tool_schema: { type: 'object', required: ['count'] },
+        raw_arguments: {},
+      }),
+    );
+    await vi.waitFor(async () => expect((await stat(alertFile)).mode & 0o777).toBe(0o600));
+    store.close();
+  });
+
+  it('serves a ruleset immediately when its ISO timestamps omit milliseconds', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-19T03:26:45.500Z'));
+    const store = new ManagedStore({ databasePath: await database(), masterSecret: secret });
+    store.bootstrapTenant({ id: 'a', name: 'A', plan: 'trial', apiKey: 'key-a' });
+    const principal = store.authenticate('key-a')!;
+    store.publishRuleset(principal, {
+      version: 'second-precision-1',
+      issued_at: '2026-07-19T03:26:45Z',
+      expires_at: '2026-07-20T03:26:45Z',
+      rules: [
+        {
+          id: 'coerce.string_to_integer',
+          enabled_by_default: true,
+          description: 'Exact integer strings',
+        },
+      ],
+    });
+    expect(store.latestRuleset(principal)?.version).toBe('second-precision-1');
+    store.close();
   });
 
   it('serves authenticated validation, usage, audit verification, and dashboard routes', async () => {

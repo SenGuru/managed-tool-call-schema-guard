@@ -7,7 +7,7 @@ The managed package is an operational local proof of the private product boundar
 - Tenant API keys are verified through master-secret HMACs; plaintext keys are shown only once and are not persisted.
 - Scoped keys can be issued and revoked. The active key cannot revoke itself.
 - Organization policy is stored server-side and merged so caller policy can only narrow it.
-- SQLite uses foreign keys, WAL, busy timeout, migrations, integrity checks, and online backup.
+- SQLite uses foreign keys, WAL, busy timeout, migrations, integrity checks, and online backup. Database, WAL, SHM, alert, and backup files default to owner-only permissions.
 - Validation quota use and audit insertion commit atomically. Audit events contain the value-free core envelope and form a per-tenant HMAC-signed hash chain; verification also checks indexed columns against the envelope. Retention is tenant-scoped and preserves a checkpoint anchor so the surviving chain remains verifiable.
 - Tool schemas are registered per tenant. Structural drift produces privacy-safe signatures and local alerts.
 - Aggregate compatibility intelligence is released only when a signature appears in at least three distinct tenants by default. Results contain no tenant identifiers.

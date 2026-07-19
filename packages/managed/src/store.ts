@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
-import { appendFile, mkdir } from 'node:fs/promises';
+import { chmodSync, existsSync } from 'node:fs';
+import { appendFile, chmod, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import {
   detectSchemaDrift,
@@ -46,7 +47,9 @@ export class ManagedStore {
     )
       throw new TypeError('aggregateTenantThreshold must be an integer of at least 2');
     this.db = new Database(config.databasePath);
+    this.secureDatabaseFiles();
     this.db.pragma('journal_mode = WAL');
+    this.secureDatabaseFiles();
     this.db.pragma('foreign_keys = ON');
     this.db.pragma('busy_timeout = 5000');
     this.migrate();
@@ -63,6 +66,16 @@ export class ManagedStore {
   }
   async backup(destination: string): Promise<void> {
     await this.db.backup(destination);
+    chmodSync(destination, 0o600);
+  }
+  private secureDatabaseFiles(): void {
+    if (this.config.databasePath === ':memory:') return;
+    for (const path of [
+      this.config.databasePath,
+      `${this.config.databasePath}-wal`,
+      `${this.config.databasePath}-shm`,
+    ])
+      if (existsSync(path)) chmodSync(path, 0o600);
   }
   private migrate(): void {
     let current = Number(this.db.pragma('user_version', { simple: true }));
@@ -574,7 +587,7 @@ export class ManagedStore {
   latestRuleset(principal: Principal): SignedRuleSet | undefined {
     const row = this.db
       .prepare(
-        'SELECT body_json FROM tenant_rulesets WHERE tenant_id=? AND issued_at<=? AND expires_at>? ORDER BY issued_at DESC LIMIT 1',
+        'SELECT body_json FROM tenant_rulesets WHERE tenant_id=? AND julianday(issued_at)<=julianday(?) AND julianday(expires_at)>julianday(?) ORDER BY julianday(issued_at) DESC LIMIT 1',
       )
       .get(principal.tenantId, now(), now()) as Row | undefined;
     return row ? (parse(row.body_json) as SignedRuleSet) : undefined;
@@ -658,6 +671,7 @@ export class ManagedStore {
     if (!this.config.alertFile) return;
     await mkdir(dirname(this.config.alertFile), { recursive: true, mode: 0o700 });
     await appendFile(this.config.alertFile, `${JSON.stringify(alert)}\n`, { mode: 0o600 });
+    await chmod(this.config.alertFile, 0o600);
   }
   purgeExpired(principal: Principal): number {
     this.requireScope(principal, 'admin');

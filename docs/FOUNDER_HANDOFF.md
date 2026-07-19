@@ -6,7 +6,7 @@ The repository provides a canonical TypeScript engine, strict JSON Schema valida
 
 ## Explicitly deferred
 
-The managed control-plane behaviors now work locally, including authentication, database history, aggregate signatures, signed rulesets, policy, dashboard, metering, quotas, rate limits, alerts, exports, retention, and backup/restore. There is still no deployed service, payment settlement, public TLS ingress, cloud KMS, external alert delivery, distributed coordination, multi-region recovery, or production reliability certification. Adapter coverage is representative, and drift is structural rather than learned from production outcomes. The release suite currently has 54 deterministic tests. A 24-call real-agent run passed its machine verifier; this is strong local evidence, not production certification.
+The managed control-plane behaviors now work locally, including authentication, database history, aggregate signatures, signed rulesets, policy, dashboard, metering, quotas, rate limits, alerts, exports, retention, and backup/restore. There is still no deployed service, payment settlement, public TLS ingress, cloud KMS, external alert delivery, distributed coordination, multi-region recovery, or production reliability certification. Adapter coverage is representative, and drift is structural rather than learned from production outcomes. The release suite currently has 56 deterministic tests. A 24-call real-agent run passed its machine verifier; 500-request open-API and 100-request managed concurrency passes also completed without mismatches. This is strong local evidence, not production certification.
 
 ## Exact next validation step
 

@@ -55,3 +55,7 @@ Rulesets and retention purge are tenant-scoped. Validation usage and audit inser
 ## ADR-014: Machine logs outrank agent summaries
 
 The live Codex/Claude mutation test records decisions and fake-tool execution inside the MCP guard server. Its verifier uses those privacy-minimized logs; agent-written summaries are informative only and cannot determine a pass.
+
+## ADR-015: Managed local storage is private by default
+
+SQLite database, WAL, SHM, alert, and backup files contain sensitive tenant metadata even though raw arguments are excluded. The managed store forces owner-only file permissions instead of relying on the host umask. Hosted deployments still require protected directories, encrypted volumes, reviewed backup access, and external secret management.
