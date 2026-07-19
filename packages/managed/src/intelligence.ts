@@ -488,7 +488,7 @@ export function aggregateCompatibilityMatrix(
       const status =
         totalCases < 10
           ? ('insufficient_data' as const)
-          : failed === 0 && rejected === 0
+          : failed === 0
             ? ('compatible' as const)
             : passRate >= 0.9
               ? ('degraded' as const)

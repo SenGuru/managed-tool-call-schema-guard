@@ -217,5 +217,22 @@ describe('managed compatibility intelligence', () => {
         },
       ]),
     ).toThrow('cannot exceed total cases');
+    expect(
+      aggregateCompatibilityMatrix([
+        {
+          provider: 'anthropic',
+          provider_version: '1',
+          framework: 'mcp',
+          framework_version: '1',
+          adapter: 'mcp',
+          suite_version: '1',
+          executed_at: '2026-07-19T00:00:00Z',
+          passed: 12,
+          failed: 0,
+          repaired: 3,
+          rejected: 5,
+        },
+      ]),
+    ).toEqual([expect.objectContaining({ status: 'compatible', rejected: 5, pass_rate: 1 })]);
   });
 });

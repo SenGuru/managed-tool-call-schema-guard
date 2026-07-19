@@ -1,9 +1,11 @@
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import { validateToolCall } from '../packages/core/src/index.js';
 import { createManagedServer } from '../packages/managed/src/server.js';
+import { migrations } from '../packages/managed/src/migrations.js';
 import { ManagedStore } from '../packages/managed/src/store.js';
 
 const secret = 'intelligence-test-secret-that-is-at-least-32-chars';
@@ -18,6 +20,32 @@ async function database(): Promise<string> {
 }
 
 describe('managed intelligence workflow', () => {
+  it('upgrades an existing version-5 database through intelligence and environment migrations', async () => {
+    const path = await database();
+    const legacy = new Database(path);
+    for (const migration of migrations.filter(({ version }) => version <= 5)) {
+      legacy.exec(migration.sql);
+      legacy.pragma(`user_version = ${migration.version}`);
+    }
+    legacy.close();
+    const store = new ManagedStore({ databasePath: path, masterSecret: secret });
+    expect(store.db.pragma('user_version', { simple: true })).toBe(7);
+    store.bootstrapTenant({ id: 'upgraded', name: 'Upgraded', plan: 'team', apiKey: 'key' });
+    const principal = store.authenticate('key')!;
+    expect(store.listEnvironments(principal).map(({ name }) => name)).toEqual([
+      'development',
+      'production',
+      'staging',
+    ]);
+    expect(
+      store.db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='failure_clusters'")
+        .get(),
+    ).toBeTruthy();
+    expect(store.integrityCheck()).toBe(true);
+    store.close();
+  });
+
   it('releases detailed failure clusters only after the cross-tenant privacy threshold', async () => {
     const store = new ManagedStore({
       databasePath: await database(),

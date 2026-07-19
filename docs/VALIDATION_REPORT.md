@@ -10,25 +10,39 @@ Date: 2026-07-19
 - Dry-run package manifests are checked automatically. Core, SDK, and CLI
   tarballs were also installed together in an isolated consumer project; the
   packed SDK local client and packed CLI both returned `valid_with_repair`.
-- Formatting, lint, TypeScript compilation, 56 Vitest tests, and Python parity pass.
+- Formatting, lint, TypeScript compilation, 67 Vitest tests, and the Python client test pass.
 - The suite covers protocol envelopes, conformance fixtures, adapters, policy,
   safe repairs, unsafe precision, local `$ref`, drift, execution gating, HTTP,
   managed tenant isolation, quotas, audit tamper detection, retention anchors,
-  ruleset signing, backup/restore, and property-generated inputs.
+  ruleset signing, backup/restore, version-5-to-7 database migration,
+  environment policy, privacy-thresholded failure clustering, schema scoring,
+  recommended fixes, compatibility matrices, and property-generated inputs.
 - The dependency audit reports zero known vulnerabilities.
-- Three 10,000-iteration local core benchmark runs measured 11.7–12.8 µs p50,
-  25.1–26.6 µs p95, and 54.4–67.2 µs p99 on the validation machine; this is
-  not a hosted SLA.
+- The latest 10,000-iteration local core benchmark measured 6.9 µs p50,
+  9.6 µs p95, and 16.3 µs p99 on the validation machine; this is not a hosted
+  SLA or managed-service latency measurement.
 - A live open-API concurrency pass accepted 500/500 repairable requests,
   persisted 500 parseable value-free audit rows, and produced 500 unique audit
   IDs. A managed concurrency pass accepted 100/100 repairable requests,
   atomically counted and listed all 100, and verified the full 100-event audit
   chain.
+- The expanded managed product-spine pass processed 303 validations across
+  three tenants, including 300 concurrent repairs for one tenant. It retained
+  301/301 unique tenant-A audit IDs, verified the 301-event signed chain and
+  SQLite integrity, released a 302-event failure cluster only after the
+  three-tenant threshold, classified breaking drift, generated a recommended
+  fix, built a compatible provider/framework matrix, rejected an extra-field
+  secret sentinel, and found the sentinel in neither the database nor WAL/SHM.
 - Manual HTTP release checks covered invalid JSON, the 1 MB body cap, security
   headers, normalization, drift, authentication, tenant isolation, scoped-key
   revocation, organization policy, schema alerts, three-tenant privacy
   thresholds, signed rulesets, CSV export, usage, billing boundaries, retention,
   and secret-sentinel scans.
+- Real-browser dashboard QA loaded usage, signed-chain status, alerts, failure
+  clusters, schema quality, drift, compatibility, recommendations, and recent
+  decisions from the local service. Replacing the valid key with an invalid key
+  cleared every tenant panel and showed the authentication error; the browser
+  reported no console warnings or errors.
 
 ## Real agent-in-the-loop run
 
@@ -74,6 +88,10 @@ calls, and 4 drift classifications, with zero machine-verifier mismatches.
   it, and publishable packages lacked included license text. Publish manifests
   now explicitly include compiled output and MIT license files; an automated
   package gate rejects incomplete core, SDK, or CLI artifacts.
+- Compatibility status originally treated correctly rejected adversarial
+  cases as conformance failures. A zero-failure suite with expected rejections
+  now remains `compatible`; rejection and repair counts stay visible as
+  behavioral evidence, with a regression test locking the distinction.
 
 ## Honest boundary
 
