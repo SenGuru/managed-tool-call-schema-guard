@@ -15,8 +15,13 @@
       "additionalProperties": false,
       "properties": {
         "adapter": { "enum": ["json_schema", "mcp", "openai_agents", "pydantic_ai", "google_adk"] },
-        "tool_version": { "type": "string" },
-        "schema_revision": { "type": "string" }
+        "tool_version": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "schema_revision": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "provider": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "provider_version": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "framework": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "framework_version": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "environment": { "type": "string", "minLength": 1, "maxLength": 64 }
       }
     }
   },

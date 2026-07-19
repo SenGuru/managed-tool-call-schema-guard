@@ -8,7 +8,7 @@
   ],
   "scripts": {
     "build": "tsc -b",
-    "check": "npm run format:check && npm run lint && npm run check:scripts && npm run check:packages && npm run typecheck && npm test && npm run test:python",
+    "check": "npm run format:check && npm run lint && npm run check:scripts && npm run check:packages && npm run typecheck && npm run conformance:check && npm test && npm run test:python",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prelint": "npm run build",
@@ -19,6 +19,8 @@
     "test": "vitest run",
     "test:python": "npm run build && PYTHONPATH=python python3 -m unittest discover -s python/tests",
     "benchmark": "npm run build --silent && tsx benchmarks/core.ts",
+    "conformance": "tsx scripts/run-conformance.ts",
+    "conformance:check": "tsx scripts/run-conformance.ts --baseline conformance/baseline.json",
     "demo": "npm run build --silent && tsx examples/demo.ts",
     "schemaguard": "npm run build --silent && tsx packages/cli/src/cli.ts",
     "api": "npm run build --silent && tsx packages/api/src/server.ts",

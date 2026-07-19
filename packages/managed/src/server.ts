@@ -10,6 +10,7 @@ import {
 import { dashboardHtml } from './dashboard.js';
 import { FixedWindowRateLimiter } from './rate-limit.js';
 import { ManagedError, ManagedStore } from './store.js';
+import type { ConformanceRun } from './intelligence.js';
 import {
   ALL_SCOPES,
   type ManagedConfig,
@@ -77,6 +78,38 @@ function enforceJsonSafety(value: unknown, label: string): void {
     if (error instanceof JsonResourceLimitError)
       throw new ManagedError(413, 'resource_limit_exceeded', error.message);
     throw new ManagedError(400, 'invalid_json_value', `${label} must contain only JSON values`);
+  }
+}
+function validateObservationContext(value: unknown): void {
+  if (value === undefined) return;
+  if (!object(value)) throw new ManagedError(400, 'invalid_context', 'context must be an object');
+  const adapter = value.adapter;
+  if (
+    adapter !== undefined &&
+    (typeof adapter !== 'string' ||
+      !['json_schema', 'mcp', 'openai_agents', 'pydantic_ai', 'google_adk'].includes(adapter))
+  )
+    throw new ManagedError(400, 'invalid_context', 'context adapter is unknown');
+  for (const key of [
+    'tool_version',
+    'schema_revision',
+    'provider',
+    'provider_version',
+    'framework',
+    'framework_version',
+    'environment',
+  ]) {
+    const item = value[key];
+    const maximum = key === 'environment' ? 64 : 128;
+    if (
+      item !== undefined &&
+      (typeof item !== 'string' || item.length === 0 || item.length > maximum)
+    )
+      throw new ManagedError(
+        400,
+        'invalid_context',
+        `context ${key} must be a non-empty string of at most ${maximum} characters`,
+      );
   }
 }
 function mergePolicy(organization: GuardPolicy, caller: GuardPolicy | undefined): GuardPolicy {
@@ -166,11 +199,18 @@ export function createManagedServer(config: ManagedConfig) {
         store.requireScope(principal, 'validate');
         const input = asRecord(await guardedBody());
         const validationRequest = input as unknown as ValidateRequest;
+        validateObservationContext(input.context);
         const callerPolicyError = policyValidationError(validationRequest.policy);
         if (callerPolicyError) throw new ManagedError(400, 'invalid_policy', callerPolicyError);
-        validationRequest.policy = mergePolicy(principal.policy, validationRequest.policy);
+        const environmentPolicy = validationRequest.context?.environment
+          ? store.environmentPolicy(principal, validationRequest.context.environment)
+          : {};
+        validationRequest.policy = mergePolicy(
+          mergePolicy(principal.policy, environmentPolicy),
+          validationRequest.policy,
+        );
         const decision = validateToolCall(validationRequest);
-        store.recordValidation(principal, decision);
+        store.recordValidation(principal, decision, validationRequest.context);
         json(response, decision.decision === 'rejected' ? 422 : 200, decision);
         return;
       }
@@ -229,9 +269,19 @@ export function createManagedServer(config: ManagedConfig) {
       if (request.method === 'GET' && url.pathname === '/v1/intelligence') {
         store.requireScope(principal, 'read:intelligence');
         json(response, 200, {
+          ...store.tenantIntelligence(principal),
           privacy_threshold: config.aggregateTenantThreshold ?? 3,
-          signatures: store.aggregateIntelligence(),
+          network_failure_clusters: store.aggregateFailureIntelligence(),
+          network_signatures: store.aggregateIntelligence(),
         });
+        return;
+      }
+      if (request.method === 'POST' && url.pathname === '/v1/conformance-runs') {
+        store.requireScope(principal, 'admin');
+        const input = asRecord(await guardedBody());
+        enforceJsonSafety(input, 'conformance run');
+        const result = store.recordConformanceRun(principal, input as unknown as ConformanceRun);
+        json(response, result.recorded ? 201 : 200, result);
         return;
       }
       if (request.method === 'GET' && url.pathname === '/v1/usage') {
@@ -241,6 +291,10 @@ export function createManagedServer(config: ManagedConfig) {
           usage: store.usage(principal),
           payment_processing: 'not_configured_local_mode',
         });
+        return;
+      }
+      if (request.method === 'GET' && url.pathname === '/v1/environments') {
+        json(response, 200, { environments: store.listEnvironments(principal) });
         return;
       }
       if (request.method === 'GET' && url.pathname === '/v1/billing/statement') {
@@ -304,6 +358,30 @@ export function createManagedServer(config: ManagedConfig) {
         )
           throw new ManagedError(400, 'invalid_scopes', 'scopes must be an array of scope names');
         json(response, 201, store.issueApiKey(principal, input.scopes as Scope[]));
+        return;
+      }
+      if (request.method === 'POST' && url.pathname === '/v1/admin/environments') {
+        const input = asRecord(await guardedBody());
+        if (typeof input.name !== 'string')
+          throw new ManagedError(400, 'invalid_environment', 'environment name is required');
+        const policy = input.policy === undefined ? {} : asRecord(input.policy);
+        json(response, 201, store.createEnvironment(principal, input.name, policy));
+        return;
+      }
+      if (
+        request.method === 'PUT' &&
+        url.pathname.startsWith('/v1/admin/environments/') &&
+        url.pathname.endsWith('/policy')
+      ) {
+        const environmentId = decodeURIComponent(
+          url.pathname.slice('/v1/admin/environments/'.length, -'/policy'.length),
+        );
+        store.updateEnvironmentPolicy(
+          principal,
+          environmentId,
+          asRecord(await guardedBody()) as GuardPolicy,
+        );
+        json(response, 200, { updated: true, applies_on_next_request: true });
         return;
       }
       if (request.method === 'DELETE' && url.pathname.startsWith('/v1/admin/api-keys/')) {

@@ -6,7 +6,9 @@ import {
   detectSchemaDrift,
   policyValidationError,
   sha256,
+  type AdapterName,
   type AuditEnvelope,
+  type DriftReport,
   type GuardDecision,
   type GuardPolicy,
 } from '@schema-guard/core';
@@ -20,6 +22,14 @@ import {
   verifyRulesetSignature,
 } from './crypto.js';
 import { migrations } from './migrations.js';
+import {
+  aggregateCompatibilityMatrix,
+  extractFailureSignature,
+  recommendFixes,
+  scoreSchemaQuality,
+  type ConformanceRun,
+  type FailureCluster,
+} from './intelligence.js';
 import {
   ALL_SCOPES,
   type ManagedConfig,
@@ -35,6 +45,14 @@ const month = (): string => new Date().toISOString().slice(0, 7);
 const parse = (value: unknown): unknown => JSON.parse(typeof value === 'string' ? value : 'null');
 const text = (value: unknown, fallback = ''): string =>
   typeof value === 'string' ? value : fallback;
+
+export interface ObservationContext {
+  adapter?: AdapterName;
+  provider?: string;
+  provider_version?: string;
+  framework?: string;
+  framework_version?: string;
+}
 
 export class ManagedStore {
   readonly db: Database.Database;
@@ -197,6 +215,20 @@ export class ManagedStore {
           input.retentionDays ?? 30,
           now(),
         );
+      const insertEnvironment = this.db.prepare(
+        'INSERT OR IGNORE INTO environments(id,tenant_id,name,policy_json,created_at,updated_at) VALUES(?,?,?,?,?,?)',
+      );
+      for (const name of ['development', 'staging', 'production']) {
+        const timestamp = now();
+        insertEnvironment.run(
+          `env_${sha256({ tenant: input.id, name }).slice(-16)}`,
+          input.id,
+          name,
+          '{}',
+          timestamp,
+          timestamp,
+        );
+      }
       if (input.policy)
         this.db
           .prepare('UPDATE tenants SET policy_json=? WHERE id=?')
@@ -288,6 +320,68 @@ export class ManagedStore {
     this.db
       .prepare('UPDATE tenants SET plan=?,monthly_limit=? WHERE id=?')
       .run(plan, limits[plan], principal.tenantId);
+  }
+
+  listEnvironments(principal: Principal): Row[] {
+    const rows = this.db
+      .prepare(
+        'SELECT id,name,policy_json,created_at,updated_at FROM environments WHERE tenant_id=? ORDER BY name ASC',
+      )
+      .all(principal.tenantId) as Row[];
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      policy: parse(row.policy_json),
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    }));
+  }
+
+  createEnvironment(principal: Principal, name: string, policy: GuardPolicy = {}): Row {
+    this.requireScope(principal, 'admin');
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/u.test(name))
+      throw new ManagedError(
+        400,
+        'invalid_environment',
+        'environment name must be 1-64 letters, digits, underscores, or hyphens',
+      );
+    const policyError = policyValidationError(policy);
+    if (policyError) throw new ManagedError(400, 'invalid_policy', policyError);
+    const id = `env_${sha256({ tenant: principal.tenantId, name }).slice(-16)}`;
+    const timestamp = now();
+    try {
+      this.db
+        .prepare(
+          'INSERT INTO environments(id,tenant_id,name,policy_json,created_at,updated_at) VALUES(?,?,?,?,?,?)',
+        )
+        .run(id, principal.tenantId, name, JSON.stringify(policy), timestamp, timestamp);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('UNIQUE constraint failed'))
+        throw new ManagedError(409, 'environment_exists', 'environment name already exists');
+      throw error;
+    }
+    return { id, name, policy, created_at: timestamp, updated_at: timestamp };
+  }
+
+  updateEnvironmentPolicy(principal: Principal, environmentId: string, policy: GuardPolicy): void {
+    this.requireScope(principal, 'admin');
+    const policyError = policyValidationError(policy);
+    if (policyError) throw new ManagedError(400, 'invalid_policy', policyError);
+    const result = this.db
+      .prepare('UPDATE environments SET policy_json=?,updated_at=? WHERE tenant_id=? AND id=?')
+      .run(JSON.stringify(policy), now(), principal.tenantId, environmentId);
+    if (result.changes !== 1)
+      throw new ManagedError(404, 'environment_not_found', 'environment does not exist');
+  }
+
+  environmentPolicy(principal: Principal, idOrName: string): GuardPolicy {
+    const row = this.db
+      .prepare(
+        'SELECT policy_json FROM environments WHERE tenant_id=? AND (id=? OR name=?) LIMIT 1',
+      )
+      .get(principal.tenantId, idOrName, idOrName) as Row | undefined;
+    if (!row) throw new ManagedError(404, 'environment_not_found', 'environment does not exist');
+    return parse(row.policy_json) as GuardPolicy;
   }
 
   requireScope(principal: Principal, scope: Scope): void {
@@ -383,11 +477,75 @@ export class ManagedStore {
         });
     })();
   }
-  recordValidation(principal: Principal, decision: GuardDecision): void {
+  recordValidation(
+    principal: Principal,
+    decision: GuardDecision,
+    context: ObservationContext = {},
+  ): void {
     this.db.transaction(() => {
       this.consumeValidation(principal);
       this.recordDecision(principal, decision);
+      this.recordFailureCluster(principal, decision, context);
     })();
+  }
+
+  private recordFailureCluster(
+    principal: Principal,
+    decision: GuardDecision,
+    context: ObservationContext,
+  ): void {
+    const adapter = context.adapter ?? 'json_schema';
+    const provider = context.provider ?? 'unspecified';
+    const framework = context.framework ?? adapter;
+    const signature = extractFailureSignature({
+      adapter,
+      provider,
+      framework,
+      decision: decision.decision,
+      ...(decision.decision === 'rejected'
+        ? {
+            reason_code: decision.reason_code,
+            validation_issues: decision.validation_errors,
+          }
+        : {}),
+      repair_rule_ids: decision.repaired_fields.map((repair) => repair.rule_id),
+    });
+    if (!signature) return;
+    const existing = this.db
+      .prepare(
+        'SELECT affected_versions_json FROM failure_clusters WHERE tenant_id=? AND signature=?',
+      )
+      .get(principal.tenantId, signature.id) as Row | undefined;
+    const versions = new Set<string>(
+      Array.isArray(parse(existing?.affected_versions_json))
+        ? (parse(existing?.affected_versions_json) as string[])
+        : [],
+    );
+    if (context.provider_version) versions.add(context.provider_version);
+    const observedAt = now();
+    this.db
+      .prepare(
+        `INSERT INTO failure_clusters(tenant_id,signature,category,adapter,provider,framework,reason_code,repair_rules_json,issue_shapes_json,event_count,first_seen_at,last_seen_at,affected_versions_json)
+         VALUES(?,?,?,?,?,?,?,?,?,1,?,?,?)
+         ON CONFLICT(tenant_id,signature) DO UPDATE SET
+           event_count=event_count+1,
+           last_seen_at=excluded.last_seen_at,
+           affected_versions_json=excluded.affected_versions_json`,
+      )
+      .run(
+        principal.tenantId,
+        signature.id,
+        signature.category,
+        signature.adapter,
+        signature.provider,
+        signature.framework,
+        signature.reason_code ?? null,
+        JSON.stringify(signature.repair_rule_ids),
+        JSON.stringify(signature.issue_shapes),
+        observedAt,
+        observedAt,
+        JSON.stringify([...versions].sort()),
+      );
   }
 
   listAudits(principal: Principal, limit = 100): Row[] {
@@ -538,6 +696,244 @@ export class ManagedStore {
         `SELECT signature,category,SUM(count) event_count,COUNT(DISTINCT tenant_id) tenant_count,MAX(last_seen_at) last_seen_at FROM compatibility_signatures GROUP BY signature,category HAVING COUNT(DISTINCT tenant_id)>=? ORDER BY event_count DESC`,
       )
       .all(threshold) as Row[];
+  }
+
+  aggregateFailureIntelligence(): Row[] {
+    const threshold = this.config.aggregateTenantThreshold ?? 3;
+    const rows = this.db
+      .prepare(
+        `SELECT signature,category,adapter,provider,framework,reason_code,repair_rules_json,issue_shapes_json,event_count,first_seen_at,last_seen_at,affected_versions_json
+         FROM failure_clusters
+         WHERE signature IN (
+           SELECT signature FROM failure_clusters
+           GROUP BY signature HAVING COUNT(DISTINCT tenant_id)>=?
+         )
+         ORDER BY signature ASC`,
+      )
+      .all(threshold) as Row[];
+    const aggregate = new Map<string, Row>();
+    for (const row of rows) {
+      const signature = text(row.signature);
+      const current = aggregate.get(signature);
+      const versions = new Set<string>([
+        ...((current?.affected_versions as string[] | undefined) ?? []),
+        ...(parse(row.affected_versions_json) as string[]),
+      ]);
+      aggregate.set(signature, {
+        id: signature,
+        category: row.category,
+        adapter: row.adapter,
+        provider: row.provider,
+        framework: row.framework,
+        reason_code: row.reason_code,
+        repair_rule_ids: parse(row.repair_rules_json),
+        issue_shapes: parse(row.issue_shapes_json),
+        event_count: Number(current?.event_count ?? 0) + Number(row.event_count),
+        tenant_count: Number(current?.tenant_count ?? 0) + 1,
+        first_seen_at:
+          current && text(current.first_seen_at) < text(row.first_seen_at)
+            ? current.first_seen_at
+            : row.first_seen_at,
+        last_seen_at:
+          current && text(current.last_seen_at) > text(row.last_seen_at)
+            ? current.last_seen_at
+            : row.last_seen_at,
+        affected_versions: [...versions].sort(),
+      });
+    }
+    return [...aggregate.values()].sort(
+      (left, right) =>
+        Number(right.event_count) - Number(left.event_count) ||
+        text(left.id).localeCompare(text(right.id)),
+    );
+  }
+
+  recordConformanceRun(
+    principal: Principal,
+    run: ConformanceRun,
+  ): {
+    recorded: boolean;
+    report_hash: string;
+  } {
+    this.requireScope(principal, 'admin');
+    // The aggregator performs the shared count and timestamp validation.
+    try {
+      aggregateCompatibilityMatrix([run]);
+    } catch (error) {
+      throw new ManagedError(
+        400,
+        'invalid_conformance_run',
+        error instanceof Error ? error.message : 'conformance run is invalid',
+      );
+    }
+    const fields = [
+      run.provider,
+      run.provider_version,
+      run.framework,
+      run.framework_version,
+      run.suite_version,
+    ];
+    if (
+      fields.some(
+        (value) => typeof value !== 'string' || value.length === 0 || value.length > 128,
+      ) ||
+      !['json_schema', 'mcp', 'openai_agents', 'pydantic_ai', 'google_adk'].includes(run.adapter) ||
+      (run.failure_signature_ids !== undefined && !Array.isArray(run.failure_signature_ids)) ||
+      (run.failure_signature_ids ?? []).some(
+        (signature) => typeof signature !== 'string' || !/^sha256:[a-f0-9]{64}$/u.test(signature),
+      )
+    )
+      throw new ManagedError(
+        400,
+        'invalid_conformance_run',
+        'conformance metadata or failure signatures are invalid',
+      );
+    const normalized: ConformanceRun = {
+      ...run,
+      executed_at: new Date(run.executed_at).toISOString(),
+      failure_signature_ids: [...new Set(run.failure_signature_ids ?? [])].sort(),
+    };
+    const reportHash = sha256(normalized);
+    const result = this.db
+      .prepare(
+        `INSERT OR IGNORE INTO conformance_runs(tenant_id,provider,provider_version,framework,framework_version,adapter,suite_version,executed_at,passed,failed,repaired,rejected,failure_signature_ids_json,report_hash,created_at)
+         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      )
+      .run(
+        principal.tenantId,
+        normalized.provider,
+        normalized.provider_version,
+        normalized.framework,
+        normalized.framework_version,
+        normalized.adapter,
+        normalized.suite_version,
+        normalized.executed_at,
+        normalized.passed,
+        normalized.failed,
+        normalized.repaired,
+        normalized.rejected,
+        JSON.stringify(normalized.failure_signature_ids),
+        reportHash,
+        now(),
+      );
+    return { recorded: result.changes === 1, report_hash: reportHash };
+  }
+
+  tenantIntelligence(principal: Principal): Row {
+    this.requireScope(principal, 'read:intelligence');
+    const clusters = (
+      this.db
+        .prepare(
+          `SELECT signature,category,adapter,provider,framework,reason_code,repair_rules_json,issue_shapes_json,event_count,first_seen_at,last_seen_at,affected_versions_json
+           FROM failure_clusters WHERE tenant_id=? ORDER BY event_count DESC,last_seen_at DESC,signature ASC`,
+        )
+        .all(principal.tenantId) as Row[]
+    ).map((row): FailureCluster => ({
+      id: text(row.signature),
+      category: text(row.category) as FailureCluster['category'],
+      adapter: text(row.adapter) as AdapterName,
+      provider: text(row.provider),
+      framework: text(row.framework),
+      ...(row.reason_code === null
+        ? {}
+        : {
+            reason_code: text(row.reason_code) as NonNullable<FailureCluster['reason_code']>,
+          }),
+      repair_rule_ids: parse(row.repair_rules_json) as FailureCluster['repair_rule_ids'],
+      issue_shapes: parse(row.issue_shapes_json) as string[],
+      event_count: Number(row.event_count),
+      first_seen_at: text(row.first_seen_at),
+      last_seen_at: text(row.last_seen_at),
+      affected_versions: parse(row.affected_versions_json) as string[],
+    }));
+    const schemas = (
+      this.db
+        .prepare(
+          `SELECT s.tool_name_hash,s.adapter,s.version,s.schema_hash,s.schema_json,s.drift_json,s.created_at
+           FROM tool_schemas s
+           WHERE s.tenant_id=? AND NOT EXISTS (
+             SELECT 1 FROM tool_schemas newer
+             WHERE newer.tenant_id=s.tenant_id AND newer.tool_name_hash=s.tool_name_hash AND newer.id>s.id
+           )
+           ORDER BY s.created_at DESC,s.id DESC`,
+        )
+        .all(principal.tenantId) as Row[]
+    ).map((row) => {
+      const quality = scoreSchemaQuality(parse(row.schema_json) as object | boolean);
+      const drift = row.drift_json === null ? null : (parse(row.drift_json) as DriftReport);
+      return {
+        tool_name_hash: row.tool_name_hash,
+        adapter: row.adapter,
+        version: row.version,
+        schema_hash: row.schema_hash,
+        created_at: row.created_at,
+        quality,
+        drift,
+      };
+    });
+    const runs = (
+      this.db
+        .prepare(
+          `SELECT provider,provider_version,framework,framework_version,adapter,suite_version,executed_at,passed,failed,repaired,rejected,failure_signature_ids_json
+           FROM conformance_runs WHERE tenant_id=? ORDER BY executed_at DESC,id DESC`,
+        )
+        .all(principal.tenantId) as Row[]
+    ).map((row): ConformanceRun => ({
+      provider: text(row.provider),
+      provider_version: text(row.provider_version),
+      framework: text(row.framework),
+      framework_version: text(row.framework_version),
+      adapter: text(row.adapter) as AdapterName,
+      suite_version: text(row.suite_version),
+      executed_at: text(row.executed_at),
+      passed: Number(row.passed),
+      failed: Number(row.failed),
+      repaired: Number(row.repaired),
+      rejected: Number(row.rejected),
+      failure_signature_ids: parse(row.failure_signature_ids_json) as string[],
+    }));
+    const severityRank = { critical: 0, warning: 1, info: 2 } as const;
+    const recommendations = [
+      ...recommendFixes({ clusters }).map((recommendation) => ({
+        ...recommendation,
+        source: 'failure_clusters' as const,
+      })),
+      ...schemas.flatMap((schema) =>
+        recommendFixes({
+          quality: schema.quality,
+          ...(schema.drift === null ? {} : { drift: schema.drift }),
+        }).map((recommendation) => ({
+          ...recommendation,
+          source: 'schema_registry' as const,
+          tool_name_hash: schema.tool_name_hash,
+          schema_hash: schema.schema_hash,
+        })),
+      ),
+    ]
+      .filter(
+        (recommendation, index, all) =>
+          all.findIndex(
+            (candidate) =>
+              candidate.code === recommendation.code &&
+              candidate.path === recommendation.path &&
+              candidate.message === recommendation.message &&
+              candidate.source === recommendation.source &&
+              ('tool_name_hash' in candidate ? candidate.tool_name_hash : undefined) ===
+                ('tool_name_hash' in recommendation ? recommendation.tool_name_hash : undefined),
+          ) === index,
+      )
+      .sort(
+        (left, right) =>
+          severityRank[left.severity] - severityRank[right.severity] ||
+          left.code.localeCompare(right.code) ||
+          left.path.localeCompare(right.path),
+      );
+    return {
+      failure_clusters: clusters,
+      schema_quality: schemas,
+      compatibility_matrix: aggregateCompatibilityMatrix(runs),
+      recommendations,
+    };
   }
   usage(principal: Principal): Row {
     return (

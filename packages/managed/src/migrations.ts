@@ -126,4 +126,63 @@ export const migrations = [
       ALTER TABLE audit_chain_anchors ADD COLUMN signature TEXT;
     `,
   },
+  {
+    version: 6,
+    sql: `
+      CREATE TABLE failure_clusters (
+        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        signature TEXT NOT NULL,
+        category TEXT NOT NULL CHECK(category IN ('repair','rejection')),
+        adapter TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        framework TEXT NOT NULL,
+        reason_code TEXT,
+        repair_rules_json TEXT NOT NULL,
+        issue_shapes_json TEXT NOT NULL,
+        event_count INTEGER NOT NULL DEFAULT 1,
+        first_seen_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        affected_versions_json TEXT NOT NULL DEFAULT '[]',
+        PRIMARY KEY(tenant_id, signature)
+      );
+      CREATE INDEX failure_clusters_tenant_count
+        ON failure_clusters(tenant_id, event_count DESC, last_seen_at DESC);
+      CREATE TABLE conformance_runs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        provider TEXT NOT NULL,
+        provider_version TEXT NOT NULL,
+        framework TEXT NOT NULL,
+        framework_version TEXT NOT NULL,
+        adapter TEXT NOT NULL,
+        suite_version TEXT NOT NULL,
+        executed_at TEXT NOT NULL,
+        passed INTEGER NOT NULL,
+        failed INTEGER NOT NULL,
+        repaired INTEGER NOT NULL,
+        rejected INTEGER NOT NULL,
+        failure_signature_ids_json TEXT NOT NULL DEFAULT '[]',
+        report_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(tenant_id, report_hash)
+      );
+      CREATE INDEX conformance_runs_tenant_time
+        ON conformance_runs(tenant_id, executed_at DESC);
+    `,
+  },
+  {
+    version: 7,
+    sql: `
+      CREATE TABLE environments (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        policy_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(tenant_id, name)
+      );
+      CREATE INDEX environments_tenant_name ON environments(tenant_id, name);
+    `,
+  },
 ] as const;

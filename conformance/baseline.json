@@ -1,0 +1,181 @@
+{
+  "report_version": "1",
+  "protocol_version": "2026-07-18",
+  "engine_version": "0.1.0",
+  "ruleset_version": "oss-2026-07-18.1",
+  "corpus_hash": "sha256:03b05c3c3a9ce986deffbe2b6c3bc195956b8c9d8d7e0a43df8523b877737fe1",
+  "passed": true,
+  "summary": {
+    "corpus_cases": 8,
+    "corpus_passed": 8,
+    "adapters": 4,
+    "adapters_normalized": 4,
+    "adapter_probes": 8,
+    "adapter_probes_passed": 8
+  },
+  "corpus": [
+    {
+      "id": "valid",
+      "expected_decision": "valid",
+      "actual_decision": "valid",
+      "repair_rule_ids": [],
+      "passed": true
+    },
+    {
+      "id": "numeric_repair",
+      "expected_decision": "valid_with_repair",
+      "actual_decision": "valid_with_repair",
+      "repair_rule_ids": ["coerce.string_to_integer"],
+      "passed": true
+    },
+    {
+      "id": "nested_repair",
+      "expected_decision": "valid_with_repair",
+      "actual_decision": "valid_with_repair",
+      "repair_rule_ids": ["coerce.string_to_integer"],
+      "passed": true
+    },
+    {
+      "id": "missing_required",
+      "expected_decision": "rejected",
+      "actual_decision": "rejected",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "repair_rule_ids": [],
+      "passed": true
+    },
+    {
+      "id": "wrong_type",
+      "expected_decision": "rejected",
+      "actual_decision": "rejected",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "repair_rule_ids": [],
+      "passed": true
+    },
+    {
+      "id": "leading_zero_ambiguous",
+      "expected_decision": "rejected",
+      "actual_decision": "rejected",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "repair_rule_ids": [],
+      "passed": true
+    },
+    {
+      "id": "uppercase_boolean_rejected",
+      "expected_decision": "rejected",
+      "actual_decision": "rejected",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "repair_rule_ids": [],
+      "passed": true
+    },
+    {
+      "id": "singleton_array_disabled",
+      "expected_decision": "rejected",
+      "actual_decision": "rejected",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "repair_rule_ids": [],
+      "passed": true
+    }
+  ],
+  "compatibility": [
+    {
+      "adapter": "mcp",
+      "normalized": true,
+      "tool_name": "get_weather",
+      "source_fingerprint": "sha256:35b2ddb91fb46bc8d7df7b4f943265eb4c2c9851049463ba42c1309112f562a6",
+      "schema_hash": "sha256:be45ab5b6d9f7d0b36dea2e7e355170888fb49d00124420f9e6f76c5d5620fc4",
+      "warnings": [],
+      "probes": [
+        {
+          "name": "valid_arguments",
+          "expected_decision": "valid",
+          "actual_decision": "valid",
+          "repair_rule_ids": [],
+          "passed": true
+        },
+        {
+          "name": "missing_required_argument",
+          "expected_decision": "rejected",
+          "actual_decision": "rejected",
+          "reason_code": "SCHEMA_VALIDATION_FAILED",
+          "repair_rule_ids": [],
+          "passed": true
+        }
+      ]
+    },
+    {
+      "adapter": "openai_agents",
+      "normalized": true,
+      "tool_name": "get_weather",
+      "source_fingerprint": "sha256:5d13fc64457fa4d57eafe295cd7bb75d17b131d95ce0ee6cab1039239c03a332",
+      "schema_hash": "sha256:5f118feb63f080e5bd34bc71f32b2e9efba28cc852774cb88f549245301bb7b7",
+      "warnings": [],
+      "probes": [
+        {
+          "name": "valid_arguments",
+          "expected_decision": "valid",
+          "actual_decision": "valid",
+          "repair_rule_ids": [],
+          "passed": true
+        },
+        {
+          "name": "missing_required_argument",
+          "expected_decision": "rejected",
+          "actual_decision": "rejected",
+          "reason_code": "SCHEMA_VALIDATION_FAILED",
+          "repair_rule_ids": [],
+          "passed": true
+        }
+      ]
+    },
+    {
+      "adapter": "pydantic_ai",
+      "normalized": true,
+      "tool_name": "get_weather",
+      "source_fingerprint": "sha256:015707197e884d994aa18fc4fb982ca2b01d9697020656fcd5ff16dc23c2144d",
+      "schema_hash": "sha256:be45ab5b6d9f7d0b36dea2e7e355170888fb49d00124420f9e6f76c5d5620fc4",
+      "warnings": [],
+      "probes": [
+        {
+          "name": "valid_arguments",
+          "expected_decision": "valid",
+          "actual_decision": "valid",
+          "repair_rule_ids": [],
+          "passed": true
+        },
+        {
+          "name": "missing_required_argument",
+          "expected_decision": "rejected",
+          "actual_decision": "rejected",
+          "reason_code": "SCHEMA_VALIDATION_FAILED",
+          "repair_rule_ids": [],
+          "passed": true
+        }
+      ]
+    },
+    {
+      "adapter": "google_adk",
+      "normalized": true,
+      "tool_name": "get_weather",
+      "source_fingerprint": "sha256:8a72936ce5261a733a9e16639518dc864a4536364b8e94e98e5f6e16081abbb0",
+      "schema_hash": "sha256:be45ab5b6d9f7d0b36dea2e7e355170888fb49d00124420f9e6f76c5d5620fc4",
+      "warnings": ["Google ADK uppercase primitive type labels were normalized when present"],
+      "probes": [
+        {
+          "name": "valid_arguments",
+          "expected_decision": "valid",
+          "actual_decision": "valid",
+          "repair_rule_ids": [],
+          "passed": true
+        },
+        {
+          "name": "missing_required_argument",
+          "expected_decision": "rejected",
+          "actual_decision": "rejected",
+          "reason_code": "SCHEMA_VALIDATION_FAILED",
+          "repair_rule_ids": [],
+          "passed": true
+        }
+      ]
+    }
+  ]
+}

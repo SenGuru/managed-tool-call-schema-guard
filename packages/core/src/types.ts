@@ -43,7 +43,16 @@ export interface ValidateRequest {
   tool_schema: AnySchema;
   raw_arguments: JsonObject | string;
   policy?: GuardPolicy;
-  context?: { adapter?: AdapterName; tool_version?: string; schema_revision?: string };
+  context?: {
+    adapter?: AdapterName;
+    tool_version?: string;
+    schema_revision?: string;
+    provider?: string;
+    provider_version?: string;
+    framework?: string;
+    framework_version?: string;
+    environment?: string;
+  };
 }
 export interface PolicyResult {
   outcome: 'allowed' | 'denied';
