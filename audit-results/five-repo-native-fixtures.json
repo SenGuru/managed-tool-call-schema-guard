@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "generated_at": "2026-07-19T14:21:28.295Z",
+  "policy": "shallow clone and static source reading only; repository code and dependencies were not executed",
+  "repositories": [
+    {
+      "id": "mcp-python-sdk",
+      "url": "https://github.com/modelcontextprotocol/python-sdk.git",
+      "commit": "3a6f2996cdd8358957479791e8b26198c07d6a75",
+      "evidence": [
+        {
+          "file": "tests/interaction/lowlevel/test_tools.py",
+          "source_sha256": "e83d9e98fed4bd8c792d0e7ed26346afcf3fdec02a21e88111baa6976c1b8b7e",
+          "anchors_verified": 2
+        }
+      ],
+      "fixtures": 1,
+      "source_calls": 3,
+      "derived_calls": 4,
+      "passed": 7,
+      "failed": 0
+    },
+    {
+      "id": "openai-agents-python",
+      "url": "https://github.com/openai/openai-agents-python.git",
+      "commit": "173eca4991091a1996cb1c8a0f86ef938a39eb68",
+      "evidence": [
+        {
+          "file": "tests/test_function_schema.py",
+          "source_sha256": "d624e5f49a90db06ab55cb4863f566917592e8028b623edc69a6fb3e1e857f55",
+          "anchors_verified": 4
+        }
+      ],
+      "fixtures": 2,
+      "source_calls": 6,
+      "derived_calls": 8,
+      "passed": 14,
+      "failed": 0
+    },
+    {
+      "id": "pydantic-ai",
+      "url": "https://github.com/pydantic/pydantic-ai.git",
+      "commit": "9688a9cca2fcf81451cdac35e701250dbdfec75e",
+      "evidence": [
+        {
+          "file": "tests/test_tools.py",
+          "source_sha256": "9f4ecb8f693d368bdfe8e01072f50532ca2bda7f7743b7367b66a9d824c6c8f0",
+          "anchors_verified": 4
+        }
+      ],
+      "fixtures": 2,
+      "source_calls": 5,
+      "derived_calls": 8,
+      "passed": 13,
+      "failed": 0
+    },
+    {
+      "id": "google-adk-python",
+      "url": "https://github.com/google/adk-python.git",
+      "commit": "be5828f317c7430411df29974cd9ccfa875e90de",
+      "evidence": [
+        {
+          "file": "tests/integration/fixture/home_automation_agent/test_files/dependent_tool_calls.test.json",
+          "source_sha256": "6980879863f33599deae4f781658fcedb313738a46440b47a70cd986ab6db254",
+          "anchors_verified": 3
+        },
+        {
+          "file": "tests/integration/fixture/home_automation_agent/agent.py",
+          "source_sha256": "a103b4fc225e468b06b308cc5ef310da1ebb43eb3a495adc19c820bf5cf5fae4",
+          "anchors_verified": 3
+        }
+      ],
+      "fixtures": 2,
+      "source_calls": 3,
+      "derived_calls": 8,
+      "passed": 11,
+      "failed": 0
+    },
+    {
+      "id": "openai-agents-js",
+      "url": "https://github.com/openai/openai-agents-js.git",
+      "commit": "710cccfd8fd26b395f8e3470419852d76de80967",
+      "evidence": [
+        {
+          "file": "packages/agents-core/test/toolCustomData.test.ts",
+          "source_sha256": "2bc780c06199f1ca9cceab128fc4c04e1bf2f317858dde6209d4a342d432dde1",
+          "anchors_verified": 5
+        }
+      ],
+      "fixtures": 2,
+      "source_calls": 3,
+      "derived_calls": 7,
+      "passed": 10,
+      "failed": 0
+    }
+  ],
+  "totals": {
+    "repositories": 5,
+    "fixtures": 9,
+    "source_calls": 20,
+    "derived_calls": 35,
+    "passed": 55,
+    "failed": 0
+  },
+  "failures": [],
+  "passed": true
+}

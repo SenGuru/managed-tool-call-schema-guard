@@ -1,0 +1,625 @@
+{
+  "version": 1,
+  "created_at": "2026-07-19T14:14:56.641Z",
+  "source": {
+    "name": "Berkeley Function Calling Leaderboard V4",
+    "repository": "https://github.com/ShishirPatil/gorilla.git",
+    "commit": "6ea57973c7a6097fd7c5915698c54c17c5b1b6c8",
+    "license": "Apache-2.0",
+    "categories": [
+      "BFCL_v4_live_simple",
+      "BFCL_v4_live_multiple",
+      "BFCL_v4_live_parallel",
+      "BFCL_v4_live_parallel_multiple",
+      "BFCL_v4_simple_python",
+      "BFCL_v4_multiple",
+      "BFCL_v4_parallel",
+      "BFCL_v4_parallel_multiple",
+      "BFCL_v4_simple_java",
+      "BFCL_v4_simple_javascript"
+    ],
+    "execution_policy": "data files parsed only; downloaded code and dependencies were not executed"
+  },
+  "privacy": {
+    "raw_questions_persisted": false,
+    "raw_arguments_persisted": false,
+    "tool_names_persisted": false,
+    "secret_sentinel_persisted": false
+  },
+  "normalization": {
+    "normalized_types": {
+      "dict->object": 3378,
+      "float->number": 620,
+      "tuple->array": 11,
+      "HashMap->object": 7,
+      "String->string": 115,
+      "ArrayList->array": 6,
+      "long->integer": 7,
+      "Array->array": 13,
+      "double->number": 1,
+      "char->string": 1,
+      "Boolean->boolean": 4
+    },
+    "unconstrained_types": { "any": 176, "<empty>": 1 },
+    "omitted_keywords": { "format": 31, "optional": 40 }
+  },
+  "totals": {
+    "dataset_rows": 2501,
+    "expected_calls": 3302,
+    "baseline_passed": 3266,
+    "baseline_schema_conflicts": 36,
+    "missing_tool_declarations": 0,
+    "mutations_run": 15702,
+    "mutations_matched": 15702,
+    "mutations_mismatched": 0
+  },
+  "suites": {
+    "authentic_contract_replay": {
+      "run": 3302,
+      "matched": 3302,
+      "mismatched": 0
+    },
+    "adversarial_repair_and_rejection": {
+      "run": 15702,
+      "matched": 15702,
+      "mismatched": 0
+    },
+    "schema_dialect_differential": {
+      "run": 9798,
+      "matched": 9798,
+      "mismatched": 0
+    },
+    "metamorphic_encoding_and_order": {
+      "run": 6532,
+      "matched": 6532,
+      "mismatched": 0
+    },
+    "real_schema_drift_classification": {
+      "run": 9449,
+      "matched": 9449,
+      "mismatched": 0
+    },
+    "deterministic_privacy_envelope": {
+      "run": 3266,
+      "matched": 3266,
+      "mismatched": 0
+    }
+  },
+  "by_category": {
+    "BFCL_v4_live_simple": {
+      "dataset_rows": 258,
+      "expected_calls": 258,
+      "baseline_passed": 257,
+      "baseline_schema_conflicts": 1,
+      "missing_tool_declarations": 0,
+      "mutations_run": 1127,
+      "mutations_matched": 1127
+    },
+    "BFCL_v4_live_multiple": {
+      "dataset_rows": 1053,
+      "expected_calls": 1053,
+      "baseline_passed": 1039,
+      "baseline_schema_conflicts": 14,
+      "missing_tool_declarations": 0,
+      "mutations_run": 4450,
+      "mutations_matched": 4450
+    },
+    "BFCL_v4_live_parallel": {
+      "dataset_rows": 16,
+      "expected_calls": 39,
+      "baseline_passed": 39,
+      "baseline_schema_conflicts": 0,
+      "missing_tool_declarations": 0,
+      "mutations_run": 174,
+      "mutations_matched": 174
+    },
+    "BFCL_v4_live_parallel_multiple": {
+      "dataset_rows": 24,
+      "expected_calls": 55,
+      "baseline_passed": 54,
+      "baseline_schema_conflicts": 1,
+      "missing_tool_declarations": 0,
+      "mutations_run": 235,
+      "mutations_matched": 235
+    },
+    "BFCL_v4_simple_python": {
+      "dataset_rows": 400,
+      "expected_calls": 400,
+      "baseline_passed": 400,
+      "baseline_schema_conflicts": 0,
+      "missing_tool_declarations": 0,
+      "mutations_run": 2080,
+      "mutations_matched": 2080
+    },
+    "BFCL_v4_multiple": {
+      "dataset_rows": 200,
+      "expected_calls": 200,
+      "baseline_passed": 200,
+      "baseline_schema_conflicts": 0,
+      "missing_tool_declarations": 0,
+      "mutations_run": 1044,
+      "mutations_matched": 1044
+    },
+    "BFCL_v4_parallel": {
+      "dataset_rows": 200,
+      "expected_calls": 540,
+      "baseline_passed": 540,
+      "baseline_schema_conflicts": 0,
+      "missing_tool_declarations": 0,
+      "mutations_run": 2900,
+      "mutations_matched": 2900
+    },
+    "BFCL_v4_parallel_multiple": {
+      "dataset_rows": 200,
+      "expected_calls": 607,
+      "baseline_passed": 605,
+      "baseline_schema_conflicts": 2,
+      "missing_tool_declarations": 0,
+      "mutations_run": 3094,
+      "mutations_matched": 3094
+    },
+    "BFCL_v4_simple_java": {
+      "dataset_rows": 100,
+      "expected_calls": 100,
+      "baseline_passed": 90,
+      "baseline_schema_conflicts": 10,
+      "missing_tool_declarations": 0,
+      "mutations_run": 408,
+      "mutations_matched": 408
+    },
+    "BFCL_v4_simple_javascript": {
+      "dataset_rows": 50,
+      "expected_calls": 50,
+      "baseline_passed": 42,
+      "baseline_schema_conflicts": 8,
+      "missing_tool_declarations": 0,
+      "mutations_run": 190,
+      "mutations_matched": 190
+    }
+  },
+  "schema_conflicts": [
+    {
+      "case_hash": "80d3460c8b4bd309743255e3dbded4d6b44e56fc80cd61fb69bc8959aaafd8fe",
+      "category": "BFCL_v4_live_simple",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["enum"]
+    },
+    {
+      "case_hash": "b54ff7143c8d64c397c2a57bf0380fcc778cd0b80257edfa56b4980aa63c3d23",
+      "category": "BFCL_v4_live_multiple",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["enum"]
+    },
+    {
+      "case_hash": "c2d821ab71b12d48508fef0cf81ed550f498aacaea19c99b37b63aeb5af13c45",
+      "category": "BFCL_v4_live_multiple",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["enum"]
+    },
+    {
+      "case_hash": "ae7a758e5f53df3eede1a1edffefa59161c4ba4fe09a41b2cef84dbdf05bd527",
+      "category": "BFCL_v4_live_multiple",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["type", "enum"]
+    },
+    {
+      "case_hash": "1ad935132f2dfa7952eccb66302151450b1f163fd0efe2a938ddc7896cea4199",
+      "category": "BFCL_v4_live_multiple",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["type", "enum"]
+    },
+    {
+      "case_hash": "cf4fd761c5b8a2e8efa32a5234bca3970b6fb93dc3c221fef0493268c94be5fd",
+      "category": "BFCL_v4_live_multiple",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["type", "enum"]
+    },
+    {
+      "case_hash": "2dcaf122972dbbb656b1452888cfdde0de4dc53345b2d94ec93ca0d9724cbc4f",
+      "category": "BFCL_v4_live_multiple",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["type", "enum"]
+    },
+    {
+      "case_hash": "0fea934873018cf6e18259baf00f556c11cc26ae228597fed09fd65e2f2bd7ec",
+      "category": "BFCL_v4_live_multiple",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["type", "enum"]
+    },
+    {
+      "case_hash": "5c9887bb50e1c6cc6e2c90f334080d2399bf6891811fde9eedf8790a14b80a92",
+      "category": "BFCL_v4_live_multiple",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["type", "enum"]
+    },
+    {
+      "case_hash": "c6a4b8c606386815ba1109934804bd4de9666d978c7653219d53a8ebca467b1a",
+      "category": "BFCL_v4_live_multiple",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["enum"]
+    },
+    {
+      "case_hash": "d803eafb8e3c56734105b6a0de7383e3c120d90fc684fa46deb2d67d97a3647e",
+      "category": "BFCL_v4_live_multiple",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["enum"]
+    },
+    {
+      "case_hash": "83e85638f2fa4456fb577805af43bb535384247ce7655462de5d299ac82c8b23",
+      "category": "BFCL_v4_live_multiple",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["enum"]
+    },
+    {
+      "case_hash": "154bc85dfd526fde941cd5cbe764bb5acaf83f0f0935aea228bff556320d0952",
+      "category": "BFCL_v4_live_multiple",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["enum"]
+    },
+    {
+      "case_hash": "4f3d7b14a0b80c5ce17e8e88f83d10d88b47725f3bb2d5cacf001d61103dc3aa",
+      "category": "BFCL_v4_live_multiple",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["enum"]
+    },
+    {
+      "case_hash": "b642e971a5e640091c86800bb15e9c00c587d4f04aab3e7c3d364733f94add78",
+      "category": "BFCL_v4_live_multiple",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["required"]
+    },
+    {
+      "case_hash": "fc72275c430dd426c98fa25e22067ff24ce89aae3435e09effd98dcbed38ce98",
+      "category": "BFCL_v4_live_parallel_multiple",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["enum"]
+    },
+    {
+      "case_hash": "006b8e1dd580543384ebabbb53f30be494a37ac02cc4df43ce2e1e6e4baf7a31",
+      "category": "BFCL_v4_parallel_multiple",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["required", "required"]
+    },
+    {
+      "case_hash": "f9151a3e7de6dce57340931fe6a9d816cc2bae37762e0b54509ead286a82448f",
+      "category": "BFCL_v4_parallel_multiple",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["type", "type", "type", "type", "type"]
+    },
+    {
+      "case_hash": "31bc29621ed19e8acf9e9719e1747576cd50b2625e289f544a21499419342b3d",
+      "category": "BFCL_v4_simple_java",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["type", "type", "type"]
+    },
+    {
+      "case_hash": "a690f869e8c111e24fccc64008a254ffc17743d8ba74b7b87ac3e9ca069e5715",
+      "category": "BFCL_v4_simple_java",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["required", "required", "required"]
+    },
+    {
+      "case_hash": "0b60c0b70d6902c72331843ffa8ad77ced5e0ab12f2904712dade680b60a50e8",
+      "category": "BFCL_v4_simple_java",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["required"]
+    },
+    {
+      "case_hash": "7e9bdc1ccc85d07907a2f553b1890f6a4918be23801da6c2287591e72223e6ea",
+      "category": "BFCL_v4_simple_java",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["required", "required"]
+    },
+    {
+      "case_hash": "77a3433762bce8c6ac77be3cf515d0466002a16604b2745c4b4729f9dea1f42e",
+      "category": "BFCL_v4_simple_java",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["required", "required", "required"]
+    },
+    {
+      "case_hash": "cd8abd9156efe36f9115ece11b51290c3f4bae98509e2e11607a265f8da48a02",
+      "category": "BFCL_v4_simple_java",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["required", "required", "required"]
+    },
+    {
+      "case_hash": "6933df766b5e7369c7ef46578e8c02d5a9af88f9be67ed838f7b00cbbce8cf6d",
+      "category": "BFCL_v4_simple_java",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["required", "required", "required"]
+    },
+    {
+      "case_hash": "03d36d5a073d10b1a64666fe212de5204201c0f06e5d3b5d9f882c151f3f46ed",
+      "category": "BFCL_v4_simple_java",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["required", "required"]
+    },
+    {
+      "case_hash": "32027d3fbc97fd32ccfe6e83822eb4d6892e5d2649311c73c6016a7d95d04e27",
+      "category": "BFCL_v4_simple_java",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["type"]
+    },
+    {
+      "case_hash": "0c4b41c5d18f1e62adadf6754de0ba95ac44237f3945951066826cec1cdd8a54",
+      "category": "BFCL_v4_simple_java",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["type"]
+    },
+    {
+      "case_hash": "ac233ff805683527e86a92c92b0172a854a23de936ab0774795273a37e7013be",
+      "category": "BFCL_v4_simple_javascript",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["required", "required", "required"]
+    },
+    {
+      "case_hash": "41f53ec73f7cb4d4f2f557bbbdd4bacb737341c868d4898a04d14d0cea9e4b32",
+      "category": "BFCL_v4_simple_javascript",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["required", "required", "required"]
+    },
+    {
+      "case_hash": "56cc5ea5042344f8c55f117cf505feadeff94a4f36727c63575c464d73d87701",
+      "category": "BFCL_v4_simple_javascript",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["required", "required", "required"]
+    },
+    {
+      "case_hash": "572392d1916766e635a11972fd4c4b584cb16157748ec047c56b103f29c289dc",
+      "category": "BFCL_v4_simple_javascript",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["required", "required", "required"]
+    },
+    {
+      "case_hash": "7abf48a776d92fe6a236cf4c1adb9d13610d65663d234dec0fa47bdb7a8a953d",
+      "category": "BFCL_v4_simple_javascript",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["required", "required", "required"]
+    },
+    {
+      "case_hash": "634f00b6beae90ee857f7ed6b7f137d10119d9fb15d6c1d59b9ef86b4b94f4d3",
+      "category": "BFCL_v4_simple_javascript",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["required", "required", "required", "required"]
+    },
+    {
+      "case_hash": "208b8a40268fa84f040aba0b80c163e6da61db1687a1dc218c91b0460189af56",
+      "category": "BFCL_v4_simple_javascript",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["required", "required", "required"]
+    },
+    {
+      "case_hash": "02790fa39a080410eebace79597737ef21520719b2010a5fee72b31aea656bb4",
+      "category": "BFCL_v4_simple_javascript",
+      "classification": "ground_truth_not_conformant_to_declared_schema",
+      "reason_code": "SCHEMA_VALIDATION_FAILED",
+      "validation_keywords": ["required", "required"]
+    }
+  ],
+  "mutation_failures": [],
+  "sampled_evidence": [
+    {
+      "case_hash": "8601c66ac0a129669e669b73fb81ad04f7d3d660fd15f55e3ea9b8282746bf44",
+      "category": "BFCL_v4_live_simple",
+      "schema_hash": "sha256:24cd7fd5e7e564c119ac479c24f76185973f7ec1afbc91899e20c8e662721dd0",
+      "arguments_hash": "sha256:f13d997226c4322b50fb1ac04efe9c46252f15c33644dd50aa47b2ecb0e22c76",
+      "baseline_decision": "valid"
+    },
+    {
+      "case_hash": "65ca32160a7a610181e0aa3cd6418d452275d3c3cb4f78c844d65a3f07234d7b",
+      "category": "BFCL_v4_live_simple",
+      "schema_hash": "sha256:6e6e5caf7fe5e4e9b0bd294ab07f4783279886ef047c0db84eab1203b0909810",
+      "arguments_hash": "sha256:3ef6d996ef6fc21b7dc12540f1f973cb4db640a305b65c6550d2d24ff773b5f5",
+      "baseline_decision": "valid"
+    },
+    {
+      "case_hash": "f02de0ff92767619005e50df834966f12e7a9e0c283595386e065e94cea5d5ca",
+      "category": "BFCL_v4_live_simple",
+      "schema_hash": "sha256:75c8eb7938d08c6689227e6ecb9db7bac5d0d8335eba5c2c4b40212b07b4f1a7",
+      "arguments_hash": "sha256:6a0b62e7740cbce54e8fd717b41af55f0bb7919d92e7997db67a13e13149c261",
+      "baseline_decision": "valid"
+    },
+    {
+      "case_hash": "8a664e3ef2afa4b213892a99a88447b493c60ae038821230d4d8785d556717d6",
+      "category": "BFCL_v4_live_simple",
+      "schema_hash": "sha256:75c8eb7938d08c6689227e6ecb9db7bac5d0d8335eba5c2c4b40212b07b4f1a7",
+      "arguments_hash": "sha256:f5def3cdc9063232bf08925182c9c21811e23dc4cb8ff8cf4d298c7424c62546",
+      "baseline_decision": "valid"
+    },
+    {
+      "case_hash": "0d4e947ec50d1231e7dbaaa5dbaf540166268aebc89a7fe886bcb8d6beb7e31a",
+      "category": "BFCL_v4_live_simple",
+      "schema_hash": "sha256:d6dcb1f5f9cf199ce0a2d5023e818e697daf2a48673a464e2d49d1b0eb8992d2",
+      "arguments_hash": "sha256:8f80e95b36e4a8d0a83c9127b9acd5654a4127d942313456b9b689e6ba9e4260",
+      "baseline_decision": "valid"
+    },
+    {
+      "case_hash": "3cde78a685df6cbccb40c9f65f489747049e998d9be7220bc0801ac6ff218d0e",
+      "category": "BFCL_v4_live_simple",
+      "schema_hash": "sha256:d6dcb1f5f9cf199ce0a2d5023e818e697daf2a48673a464e2d49d1b0eb8992d2",
+      "arguments_hash": "sha256:5297219e2ad91c8650afe541c530ea118d523de96a7d4d86a4ffd7d5eef4ad5d",
+      "baseline_decision": "valid"
+    },
+    {
+      "case_hash": "9931490c2fab64bea75f3699e5a809df6e7f9c826a672435e0b193ec41ec5dba",
+      "category": "BFCL_v4_live_simple",
+      "schema_hash": "sha256:d6dcb1f5f9cf199ce0a2d5023e818e697daf2a48673a464e2d49d1b0eb8992d2",
+      "arguments_hash": "sha256:ea61d7e068d8606c1c4f6cd0c9f8a3f6f4e830052a9e866cea8988ba78b321eb",
+      "baseline_decision": "valid"
+    },
+    {
+      "case_hash": "6833e8629b2f333182c59a4118a0daadb0130e05d7231e7669480bb36d99911f",
+      "category": "BFCL_v4_live_simple",
+      "schema_hash": "sha256:d6dcb1f5f9cf199ce0a2d5023e818e697daf2a48673a464e2d49d1b0eb8992d2",
+      "arguments_hash": "sha256:a2fd60556c6efd3f36c226e5a8f137b5af07494d084ef38e298c994cab901e67",
+      "baseline_decision": "valid"
+    },
+    {
+      "case_hash": "c0ba88451c2d32b4f61c691051e95ed29420b9b3a219d5143cd13a8da067e588",
+      "category": "BFCL_v4_live_simple",
+      "schema_hash": "sha256:d6dcb1f5f9cf199ce0a2d5023e818e697daf2a48673a464e2d49d1b0eb8992d2",
+      "arguments_hash": "sha256:3a1ddcd4f56c10a7959a3ca0e4fa54dadfd6266894e866933eb4c526fff5d4f4",
+      "baseline_decision": "valid"
+    },
+    {
+      "case_hash": "571a0fe42cc454a433d528c8d1168e054a461a7aecceafffd1ecef8bff77e7f1",
+      "category": "BFCL_v4_live_simple",
+      "schema_hash": "sha256:d6dcb1f5f9cf199ce0a2d5023e818e697daf2a48673a464e2d49d1b0eb8992d2",
+      "arguments_hash": "sha256:652d668931461ccd10a06845ca5bdff576e9b931967ac6e040572c3cea494973",
+      "baseline_decision": "valid"
+    },
+    {
+      "case_hash": "5d20219befb32f9e28b4d740712fa798ba07cda2ea6ac9dd74e0f6b1d3c4d46d",
+      "category": "BFCL_v4_live_simple",
+      "schema_hash": "sha256:58c6ee0bbf453a0fc95f8a847e5cab55684f87e075bfaf651fbc35e7f187f651",
+      "arguments_hash": "sha256:7784beede4c0ea6ee5f839f5802766521cb601a0b127cc27a54862b4a57f5714",
+      "baseline_decision": "valid"
+    },
+    {
+      "case_hash": "c79caafca0d271fa53b56087021111933fdc139bf630fe9b0bcfa2a3e177f368",
+      "category": "BFCL_v4_live_simple",
+      "schema_hash": "sha256:c09820fd6a98b78e4806dba089fe96f5bfb1004c04c8f5369c32cd23bed36696",
+      "arguments_hash": "sha256:d0e160b5c35af82ee0f11b48c4f8e5f1932dfd517b9872479ba117d2cc71cc8b",
+      "baseline_decision": "valid"
+    },
+    {
+      "case_hash": "34c042d3c9b767d28916f45474a0a7459ce8bc5b8c531a451540040415901eb9",
+      "category": "BFCL_v4_live_simple",
+      "schema_hash": "sha256:c09820fd6a98b78e4806dba089fe96f5bfb1004c04c8f5369c32cd23bed36696",
+      "arguments_hash": "sha256:b19b2e6b554f7ce8aba3e321217e8bdbde395abc7f994fafa135b02323ab6c4a",
+      "baseline_decision": "valid"
+    },
+    {
+      "case_hash": "d1e641a662bcff1cd5bd705cbc46c926639c110c34091d99f29a7c6e24e1730a",
+      "category": "BFCL_v4_live_simple",
+      "schema_hash": "sha256:d6dcb1f5f9cf199ce0a2d5023e818e697daf2a48673a464e2d49d1b0eb8992d2",
+      "arguments_hash": "sha256:05fcf110c84df35afb4288c077d410a6e81b840773b7c57a835a75c78b923400",
+      "baseline_decision": "valid"
+    },
+    {
+      "case_hash": "b99db0c41451df80788be4075931dbf40b35b0c71b841a16adb9f2eb2fa09691",
+      "category": "BFCL_v4_live_simple",
+      "schema_hash": "sha256:d6dcb1f5f9cf199ce0a2d5023e818e697daf2a48673a464e2d49d1b0eb8992d2",
+      "arguments_hash": "sha256:1a4898474fdbe166e8129e88a95a61b859c2f9300d5727c3a855641276a200ec",
+      "baseline_decision": "valid"
+    },
+    {
+      "case_hash": "b6ef7186d2820740dce2cffdd435910a20fc3a98cca07a38c28614ee1c07299c",
+      "category": "BFCL_v4_live_simple",
+      "schema_hash": "sha256:d98c2cac82022a18f05ca7b64523775696689b0b328091fee45253d5aadea508",
+      "arguments_hash": "sha256:7cc6ac6f7e9ebcf1187944990a2f3e2834f6ea8ed0f81865d32a0dff16eb0f11",
+      "baseline_decision": "valid"
+    },
+    {
+      "case_hash": "7bbaa3cd210633993c9f81ce321bd0ec254a70a672b4f928b66658887db82f8c",
+      "category": "BFCL_v4_live_simple",
+      "schema_hash": "sha256:d98c2cac82022a18f05ca7b64523775696689b0b328091fee45253d5aadea508",
+      "arguments_hash": "sha256:2b4a13f2ef68b31cec2b3c5f7ea94c30bd915a2b38f6ae03f3f9e6b9349d35f4",
+      "baseline_decision": "valid"
+    },
+    {
+      "case_hash": "300d63f03ece0275aa52f6413a9350c8ad4e0bb1df11e4eabab75ae517e92217",
+      "category": "BFCL_v4_live_simple",
+      "schema_hash": "sha256:d6dcb1f5f9cf199ce0a2d5023e818e697daf2a48673a464e2d49d1b0eb8992d2",
+      "arguments_hash": "sha256:74093f969862bd4fcd2a10621bc80830eef2213f1211c616cd42b73ad66eedb0",
+      "baseline_decision": "valid"
+    },
+    {
+      "case_hash": "1c878229a29bdb768d310afc06609662264c99cc5ee6da760f0b15b96c0cb761",
+      "category": "BFCL_v4_live_simple",
+      "schema_hash": "sha256:d6dcb1f5f9cf199ce0a2d5023e818e697daf2a48673a464e2d49d1b0eb8992d2",
+      "arguments_hash": "sha256:b11659dadce0073609875272aca20b76b8d10950bcc525d1e1a0d37efa93d896",
+      "baseline_decision": "valid"
+    },
+    {
+      "case_hash": "7dd950916046e2cceeda7da5cfd2ba4df5fece76695d46f44d8bc5861db50ec8",
+      "category": "BFCL_v4_live_simple",
+      "schema_hash": "sha256:007d411d6d6835a8106c7743e155b0061cb504931bccbb0016ce0abf453aa1f4",
+      "arguments_hash": "sha256:08c322b75f5e6d3f0afc88d25ac97eddca4d8026adf92535b9c9b28669c587c6",
+      "baseline_decision": "valid"
+    },
+    {
+      "case_hash": "9f405eac836c214bbeb4b69ae4e9cd720e282214d191b448c1b2d86ef31affc7",
+      "category": "BFCL_v4_live_simple",
+      "schema_hash": "sha256:049805afd1c20ffd316c21b274b6079a715352bd7c9d535aa0a02bff272ee794",
+      "arguments_hash": "sha256:e54ae32a6e1d98c7713fc66345a0dbde68ec26397c3dd2f73606c46bd7884b88",
+      "baseline_decision": "valid"
+    },
+    {
+      "case_hash": "81dac573b8a5828953366a6dd59e97a6f6a50523ccd1f6cdaf054bc476fef8e5",
+      "category": "BFCL_v4_live_simple",
+      "schema_hash": "sha256:049805afd1c20ffd316c21b274b6079a715352bd7c9d535aa0a02bff272ee794",
+      "arguments_hash": "sha256:ec4dd4562d40c04febaea8b9795106da78cd77067acf03c2cb721c7a35f499fd",
+      "baseline_decision": "valid"
+    },
+    {
+      "case_hash": "1d60195ff6d6d297ba25edf64e3c4844ac3d53d0841a29571ff81a79d6ca0d8c",
+      "category": "BFCL_v4_live_simple",
+      "schema_hash": "sha256:0cb65a82d4e7e0015007bcbdaf36363775af2249fcd176463d1238f4b424ed81",
+      "arguments_hash": "sha256:bda7d6e4f78b52ad94f61f256aedec8c3fbc352d89c04e54e17b807d7f5d9f66",
+      "baseline_decision": "valid"
+    },
+    {
+      "case_hash": "71a23263ae51fdf8835da8bbfe850b1443be75af640f0819a5662c65bce4c108",
+      "category": "BFCL_v4_live_simple",
+      "schema_hash": "sha256:0cb65a82d4e7e0015007bcbdaf36363775af2249fcd176463d1238f4b424ed81",
+      "arguments_hash": "sha256:5ed4d636ee87dba1eab4ab740eceb9386742bd66eabe133c0d6b48f9a333c5ad",
+      "baseline_decision": "valid"
+    },
+    {
+      "case_hash": "8e3e8802ebe72b1c2890c3c6cc4c26730eb8d77b385cf47269deeefa549904f3",
+      "category": "BFCL_v4_live_simple",
+      "schema_hash": "sha256:0cb65a82d4e7e0015007bcbdaf36363775af2249fcd176463d1238f4b424ed81",
+      "arguments_hash": "sha256:bda7d6e4f78b52ad94f61f256aedec8c3fbc352d89c04e54e17b807d7f5d9f66",
+      "baseline_decision": "valid"
+    }
+  ],
+  "baseline_acceptance_rate": 0.9890975166565718,
+  "quality_gates": {
+    "minimum_independent_test_families": 5,
+    "minimum_expected_calls": 3000,
+    "minimum_baseline_acceptance_rate": 0.95,
+    "minimum_mutations": 15000,
+    "require_all_mutations_to_match": true,
+    "require_all_ground_truth_tools_to_be_declared": true,
+    "require_every_test_family_to_run": true,
+    "require_zero_test_family_mismatches": true
+  },
+  "test_family_count": 6,
+  "passed": true
+}

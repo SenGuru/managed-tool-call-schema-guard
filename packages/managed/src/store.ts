@@ -1,16 +1,28 @@
 import Database from 'better-sqlite3';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { chmodSync, existsSync } from 'node:fs';
 import { appendFile, chmod, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import {
+  approveChallenge,
+  canonicalJson,
   detectSchemaDrift,
+  evaluateActionGate,
   policyValidationError,
+  repairReceiptHash,
   sha256,
+  verifyRepairReceipt,
+  type ActionDescriptor,
+  type ActionGateContext,
+  type ActionGateDecision,
+  type ApprovalChallenge,
+  type ApprovalEvidence,
   type AdapterName,
   type AuditEnvelope,
   type DriftReport,
   type GuardDecision,
   type GuardPolicy,
+  type IdempotencyLedger,
 } from '@schema-guard/core';
 import {
   constantTimeEqual,
@@ -18,6 +30,8 @@ import {
   generateApiKey,
   hashApiKey,
   hmac,
+  openSealedValue,
+  sealValue,
   signRuleset,
   verifyRulesetSignature,
 } from './crypto.js';
@@ -33,8 +47,18 @@ import {
 import {
   ALL_SCOPES,
   type ManagedConfig,
+  type ActionCheckpointAnchorDelivery,
+  type ActionIdempotencyCheckpoint,
+  type ActionIdempotencyCheckpointComparison,
+  type ActionReconciliationRecord,
+  type AlertWebhookDelivery,
+  type AlertWebhookEndpoint,
+  type ManagedSchemaRelease,
+  type PendingActionReservation,
   type PlanId,
   type Principal,
+  type SchemaAdmissionResult,
+  type SchemaEnforcementMode,
   type Scope,
   type SignedRuleSet,
 } from './types.js';
@@ -45,6 +69,91 @@ const month = (): string => new Date().toISOString().slice(0, 7);
 const parse = (value: unknown): unknown => JSON.parse(typeof value === 'string' ? value : 'null');
 const text = (value: unknown, fallback = ''): string =>
   typeof value === 'string' ? value : fallback;
+const EMPTY_IDEMPOTENCY_ACCUMULATOR = `xor256:${'0'.repeat(64)}`;
+
+function xorIdempotencyAccumulators(left: string, right: string): string {
+  if (!/^xor256:[0-9a-f]{64}$/u.test(left) || !/^xor256:[0-9a-f]{64}$/u.test(right))
+    throw new TypeError('action idempotency accumulator is malformed');
+  const leftBytes = Buffer.from(left.slice(7), 'hex');
+  const rightBytes = Buffer.from(right.slice(7), 'hex');
+  const output = Buffer.alloc(32);
+  for (let index = 0; index < output.length; index += 1)
+    output[index] = leftBytes[index]! ^ rightBytes[index]!;
+  return `xor256:${output.toString('hex')}`;
+}
+
+function actionIdempotencyAccumulatorMember(row: Row): string {
+  const digest = sha256({ key_hash: row.key_hash, control_hmac: row.control_hmac });
+  return `xor256:${digest.slice('sha256:'.length)}`;
+}
+
+export function normalizedPublicWebhookEndpoint(value: string): string {
+  let endpoint: URL;
+  try {
+    endpoint = new URL(value);
+  } catch {
+    throw new ManagedError(400, 'invalid_webhook_endpoint', 'webhook endpoint must be an URL');
+  }
+  const hostname = endpoint.hostname.toLowerCase();
+  if (
+    endpoint.protocol !== 'https:' ||
+    endpoint.username !== '' ||
+    endpoint.password !== '' ||
+    endpoint.hash !== '' ||
+    (endpoint.port !== '' && endpoint.port !== '443') ||
+    hostname === 'localhost' ||
+    hostname.endsWith('.localhost') ||
+    hostname.endsWith('.local') ||
+    hostname.endsWith('.internal') ||
+    !hostname.includes('.') ||
+    /^\[.*\]$/u.test(hostname) ||
+    /^\d{1,3}(?:\.\d{1,3}){3}$/u.test(hostname)
+  )
+    throw new ManagedError(
+      400,
+      'invalid_webhook_endpoint',
+      'webhook endpoint must use public HTTPS on port 443 without credentials or fragments',
+    );
+  return endpoint.toString();
+}
+
+function privacySafeAlertDetail(kind: string, detail: unknown): Record<string, unknown> {
+  const source =
+    detail !== null && typeof detail === 'object' && !Array.isArray(detail)
+      ? (detail as Record<string, unknown>)
+      : {};
+  const allowedByKind: Record<string, string[]> = {
+    action_reconciled: [
+      'reservation_id',
+      'reconciliation_id',
+      'audit_id',
+      'outcome',
+      'evidence_hash',
+    ],
+    breaking_schema_drift: ['tool_name_hash', 'changes'],
+    schema_promoted: [
+      'release_id',
+      'tool_name_hash',
+      'environment',
+      'schema_hash',
+      'compatibility',
+    ],
+    schema_enforcement_changed: ['environment', 'mode'],
+    validation_rejected: ['audit_id', 'reason_code'],
+  };
+  const safe: Record<string, unknown> = {};
+  for (const key of allowedByKind[kind] ?? []) {
+    const value = source[key];
+    if (typeof value === 'string' && value.length <= 512) safe[key] = value;
+    else if (
+      Array.isArray(value) &&
+      value.length <= 100 &&
+      value.every((item) => typeof item === 'string' && item.length <= 128)
+    )
+      safe[key] = value;
+  }
+  return safe;
+}
 
 export interface ObservationContext {
   adapter?: AdapterName;
@@ -54,8 +163,20 @@ export interface ObservationContext {
   framework_version?: string;
 }
 
+export interface ClaimedAlertDelivery {
+  deliveryId: string;
+  leaseId: string;
+  endpoint: string;
+  signingSecret: string;
+  payload: string;
+  attemptCount: number;
+}
+
+export type ClaimedCheckpointAnchorDelivery = ClaimedAlertDelivery;
+
 export class ManagedStore {
   readonly db: Database.Database;
+  private observedDataVersion = 0;
   constructor(private readonly config: ManagedConfig) {
     if (!config.databasePath || config.masterSecret.length < 32)
       throw new TypeError('databasePath and a 32+ character masterSecret are required');
@@ -64,6 +185,43 @@ export class ManagedStore {
       (!Number.isInteger(config.aggregateTenantThreshold) || config.aggregateTenantThreshold < 2)
     )
       throw new TypeError('aggregateTenantThreshold must be an integer of at least 2');
+    if (
+      config.actionReconciliationMinAgeSeconds !== undefined &&
+      (!Number.isInteger(config.actionReconciliationMinAgeSeconds) ||
+        config.actionReconciliationMinAgeSeconds < 60 ||
+        config.actionReconciliationMinAgeSeconds > 86_400)
+    )
+      throw new TypeError(
+        'actionReconciliationMinAgeSeconds must be an integer from 60 through 86400',
+      );
+    if (
+      config.alertWebhookMaxAttempts !== undefined &&
+      (!Number.isInteger(config.alertWebhookMaxAttempts) ||
+        config.alertWebhookMaxAttempts < 1 ||
+        config.alertWebhookMaxAttempts > 20)
+    )
+      throw new TypeError('alertWebhookMaxAttempts must be an integer from 1 through 20');
+    if (
+      (config.actionCheckpointAnchorUrl === undefined) !==
+      (config.actionCheckpointAnchorSigningSecret === undefined)
+    )
+      throw new TypeError(
+        'action checkpoint anchor URL and signing secret must be configured together',
+      );
+    if (config.actionCheckpointAnchorUrl !== undefined)
+      normalizedPublicWebhookEndpoint(config.actionCheckpointAnchorUrl);
+    if (
+      config.actionCheckpointAnchorSigningSecret !== undefined &&
+      config.actionCheckpointAnchorSigningSecret.length < 32
+    )
+      throw new TypeError('action checkpoint anchor signing secret must be at least 32 characters');
+    if (
+      config.actionCheckpointAnchorMaxAttempts !== undefined &&
+      (!Number.isInteger(config.actionCheckpointAnchorMaxAttempts) ||
+        config.actionCheckpointAnchorMaxAttempts < 1 ||
+        config.actionCheckpointAnchorMaxAttempts > 20)
+    )
+      throw new TypeError('actionCheckpointAnchorMaxAttempts must be an integer from 1 through 20');
     this.db = new Database(config.databasePath);
     this.secureDatabaseFiles();
     this.db.pragma('journal_mode = WAL');
@@ -71,8 +229,22 @@ export class ManagedStore {
     this.db.pragma('foreign_keys = ON');
     this.db.pragma('busy_timeout = 5000');
     this.migrate();
+    const controlIntegrity = this.inspectControlPlaneIntegrity();
+    if (!controlIntegrity.valid) {
+      this.db.close();
+      throw new TypeError(
+        `managed control-plane integrity failed for ${controlIntegrity.first_invalid_table ?? 'unknown'} record`,
+      );
+    }
+    const actionManifestIntegrity = this.inspectActionIdempotencyManifests();
+    if (!actionManifestIntegrity.valid) {
+      this.db.close();
+      throw new TypeError('managed action idempotency manifest failed integrity verification');
+    }
+    this.ensureConfiguredCheckpointAnchorDeliveries();
     this.ensureSigningKey();
     this.ensureAuditAnchorsTrusted();
+    this.observedDataVersion = this.dataVersion();
   }
 
   close(): void {
@@ -81,6 +253,24 @@ export class ManagedStore {
   integrityCheck(): boolean {
     const rows = this.db.pragma('integrity_check') as { integrity_check: string }[];
     return rows.length === 1 && rows[0]?.integrity_check === 'ok';
+  }
+  readinessCheck(): boolean {
+    try {
+      const expectedVersion = migrations.at(-1)?.version ?? 0;
+      const actualVersion = Number(this.db.pragma('user_version', { simple: true }));
+      const foreignKeys = Number(this.db.pragma('foreign_keys', { simple: true }));
+      const query = this.db.prepare('SELECT 1 ready').get() as Row | undefined;
+      return (
+        actualVersion === expectedVersion &&
+        foreignKeys === 1 &&
+        query?.ready === 1 &&
+        this.inspectControlPlaneIntegrity(undefined, false).valid &&
+        this.inspectCheckpointAnchorCoverage().valid &&
+        this.checkpointAnchorOperational()
+      );
+    } catch {
+      return false;
+    }
   }
   async backup(destination: string): Promise<void> {
     await this.db.backup(destination);
@@ -101,24 +291,693 @@ export class ManagedStore {
       if (migration.version > current) {
         this.db.transaction(() => {
           this.db.exec(migration.sql);
+          if (migration.version === 4) this.backfillSigningKeyTrust();
+          if (migration.version === 5) this.backfillAuditAnchorTrust();
+          if (migration.version === 12) this.backfillControlPlaneIntegrity();
+          if (migration.version === 13) this.backfillActionIdempotencyManifests();
           this.db.pragma(`user_version = ${migration.version}`);
         })();
         current = migration.version;
       }
+  }
+  private backfillSigningKeyTrust(): void {
+    const rows = this.db
+      .prepare('SELECT id,public_key_pem FROM signing_keys WHERE trust_hmac IS NULL')
+      .all() as Row[];
+    const update = this.db.prepare('UPDATE signing_keys SET trust_hmac=? WHERE id=?');
+    for (const row of rows)
+      update.run(
+        hmac(this.config.masterSecret, 'signing-key-trust-v1', {
+          id: row.id,
+          public_key: row.public_key_pem,
+        }),
+        row.id,
+      );
+  }
+  private backfillAuditAnchorTrust(): void {
+    const rows = this.db
+      .prepare(
+        'SELECT tenant_id,last_deleted_hash,deleted_through_sequence FROM audit_chain_anchors WHERE signature IS NULL',
+      )
+      .all() as Row[];
+    const update = this.db.prepare(
+      'UPDATE audit_chain_anchors SET signature=? WHERE tenant_id=? AND signature IS NULL',
+    );
+    for (const row of rows)
+      update.run(
+        this.auditAnchorSignature(
+          text(row.tenant_id),
+          text(row.last_deleted_hash),
+          Number(row.deleted_through_sequence),
+        ),
+        row.tenant_id,
+      );
+  }
+  private tenantControlHmac(row: Row): string {
+    return hmac(this.config.masterSecret, 'managed-tenant-control-v1', {
+      id: row.id,
+      name: row.name,
+      plan: row.plan,
+      monthly_limit: Number(row.monthly_limit),
+      retention_days: Number(row.retention_days),
+      policy_json: row.policy_json,
+      created_at: row.created_at,
+    });
+  }
+  private apiKeyControlHmac(row: Row): string {
+    return hmac(this.config.masterSecret, 'managed-api-key-control-v1', {
+      id: row.id,
+      tenant_id: row.tenant_id,
+      key_hash: row.key_hash,
+      prefix: row.prefix,
+      scopes_json: row.scopes_json,
+      created_at: row.created_at,
+      revoked_at: row.revoked_at ?? null,
+    });
+  }
+  private environmentControlHmac(row: Row): string {
+    return hmac(this.config.masterSecret, 'managed-environment-control-v1', {
+      id: row.id,
+      tenant_id: row.tenant_id,
+      name: row.name,
+      policy_json: row.policy_json,
+      schema_enforcement: row.schema_enforcement,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    });
+  }
+  private actionDescriptorControlHmac(row: Row): string {
+    return hmac(this.config.masterSecret, 'managed-action-descriptor-control-v1', {
+      tenant_id: row.tenant_id,
+      tool_name_hash: row.tool_name_hash,
+      environment: row.environment,
+      risk_level: row.risk_level,
+      side_effect: row.side_effect,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    });
+  }
+  private actionApprovalControlHmac(row: Row): string {
+    return hmac(this.config.masterSecret, 'managed-action-approval-control-v1', {
+      challenge_id: row.challenge_id,
+      tenant_id: row.tenant_id,
+      binding_hash: row.binding_hash,
+      challenge_json: row.challenge_json,
+      status: row.status,
+      evidence_json: row.evidence_json ?? null,
+      created_at: row.created_at,
+      expires_at: row.expires_at,
+      approved_at: row.approved_at ?? null,
+    });
+  }
+  private actionIdempotencyControlHmac(row: Row): string {
+    return hmac(this.config.masterSecret, 'managed-action-idempotency-control-v1', {
+      tenant_id: row.tenant_id,
+      key_hash: row.key_hash,
+      execution_fingerprint: row.execution_fingerprint,
+      state: row.state,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      reservation_id: row.reservation_id ?? null,
+      audit_id: row.audit_id ?? null,
+      tool_name_hash: row.tool_name_hash ?? null,
+      environment: row.environment ?? null,
+    });
+  }
+  private actionIdempotencyManifestHmac(row: Row): string {
+    return hmac(this.config.masterSecret, 'managed-action-idempotency-manifest-v1', {
+      tenant_id: row.tenant_id,
+      revision: Number(row.revision),
+      row_count: Number(row.row_count),
+      accumulator: row.accumulator,
+      updated_at: row.updated_at,
+    });
+  }
+  private dataVersion(): number {
+    return Number(this.db.pragma('data_version', { simple: true }));
+  }
+  private actionIdempotencyAccumulator(rows: Row[]): string {
+    let accumulator = EMPTY_IDEMPOTENCY_ACCUMULATOR;
+    for (const row of rows)
+      accumulator = xorIdempotencyAccumulators(
+        accumulator,
+        actionIdempotencyAccumulatorMember(row),
+      );
+    return accumulator;
+  }
+  private backfillActionIdempotencyManifests(): void {
+    const tenants = this.db.prepare('SELECT id FROM tenants ORDER BY id').all() as Row[];
+    const insert = this.db.prepare(
+      `INSERT INTO action_idempotency_manifests(tenant_id,revision,row_count,accumulator,updated_at,control_hmac) VALUES(?,?,?,?,?,?)`,
+    );
+    for (const tenant of tenants) {
+      const tenantId = text(tenant.id);
+      const rows = this.db
+        .prepare('SELECT key_hash,control_hmac FROM action_idempotency WHERE tenant_id=?')
+        .all(tenantId) as Row[];
+      const manifest: Row = {
+        tenant_id: tenantId,
+        revision: 0,
+        row_count: rows.length,
+        accumulator: this.actionIdempotencyAccumulator(rows),
+        updated_at: now(),
+      };
+      insert.run(
+        manifest.tenant_id,
+        manifest.revision,
+        manifest.row_count,
+        manifest.accumulator,
+        manifest.updated_at,
+        this.actionIdempotencyManifestHmac(manifest),
+      );
+    }
+  }
+  private inspectActionIdempotencyManifests(tenantId?: string): {
+    valid: boolean;
+    checked: number;
+    first_invalid_table?: string;
+    first_invalid_id?: string;
+  } {
+    const tenants = this.db
+      .prepare(`SELECT id FROM tenants${tenantId === undefined ? '' : ' WHERE id=?'} ORDER BY id`)
+      .all(...(tenantId === undefined ? [] : [tenantId])) as Row[];
+    let checked = 0;
+    for (const tenant of tenants) {
+      const id = text(tenant.id);
+      const manifest = this.db
+        .prepare('SELECT * FROM action_idempotency_manifests WHERE tenant_id=?')
+        .get(id) as Row | undefined;
+      if (
+        !manifest ||
+        !constantTimeEqual(
+          text(manifest.control_hmac),
+          this.actionIdempotencyManifestHmac(manifest),
+        )
+      )
+        return {
+          valid: false,
+          checked,
+          first_invalid_table: 'action_idempotency_manifests',
+          first_invalid_id: id,
+        };
+      const rows = this.db
+        .prepare('SELECT * FROM action_idempotency WHERE tenant_id=? ORDER BY key_hash')
+        .all(id) as Row[];
+      for (const row of rows)
+        if (!constantTimeEqual(text(row.control_hmac), this.actionIdempotencyControlHmac(row)))
+          return {
+            valid: false,
+            checked,
+            first_invalid_table: 'action_idempotency',
+            first_invalid_id: text(row.reservation_id, text(row.key_hash)),
+          };
+      if (
+        Number(manifest.row_count) !== rows.length ||
+        !constantTimeEqual(text(manifest.accumulator), this.actionIdempotencyAccumulator(rows))
+      )
+        return {
+          valid: false,
+          checked,
+          first_invalid_table: 'action_idempotency_manifests',
+          first_invalid_id: id,
+        };
+      checked += 1;
+    }
+    return { valid: true, checked };
+  }
+  private assertActionIdempotencyManifestFresh(): void {
+    const currentDataVersion = this.dataVersion();
+    if (currentDataVersion === this.observedDataVersion) return;
+    const integrity = this.inspectActionIdempotencyManifests();
+    if (!integrity.valid)
+      throw new ManagedError(
+        503,
+        'action_idempotency_manifest_invalid',
+        'action idempotency deletion or substitution was detected; execution is unavailable',
+      );
+    const anchorCoverage = this.inspectCheckpointAnchorCoverage();
+    if (!anchorCoverage.valid)
+      throw new ManagedError(
+        503,
+        'checkpoint_anchor_coverage_invalid',
+        'checkpoint anchor delivery deletion or substitution was detected; execution is unavailable',
+      );
+    this.observedDataVersion = currentDataVersion;
+  }
+  private updateActionIdempotencyManifest(tenantId: string, removed: Row[], added: Row[]): void {
+    const manifest = this.db
+      .prepare('SELECT * FROM action_idempotency_manifests WHERE tenant_id=?')
+      .get(tenantId) as Row | undefined;
+    if (!manifest)
+      throw new ManagedError(
+        503,
+        'action_idempotency_manifest_invalid',
+        'action idempotency manifest is missing; execution is unavailable',
+      );
+    this.assertControlHmac(
+      manifest,
+      this.actionIdempotencyManifestHmac(manifest),
+      'action idempotency manifest',
+    );
+    let accumulator = text(manifest.accumulator);
+    for (const row of [...removed, ...added])
+      accumulator = xorIdempotencyAccumulators(
+        accumulator,
+        actionIdempotencyAccumulatorMember(row),
+      );
+    const rowCount = Number(manifest.row_count) - removed.length + added.length;
+    if (rowCount < 0)
+      throw new ManagedError(
+        503,
+        'action_idempotency_manifest_invalid',
+        'action idempotency manifest count is invalid; execution is unavailable',
+      );
+    const updated: Row = {
+      ...manifest,
+      revision: Number(manifest.revision) + 1,
+      row_count: rowCount,
+      accumulator,
+      updated_at: now(),
+    };
+    updated.control_hmac = this.actionIdempotencyManifestHmac(updated);
+    const result = this.db
+      .prepare(
+        'UPDATE action_idempotency_manifests SET revision=?,row_count=?,accumulator=?,updated_at=?,control_hmac=? WHERE tenant_id=?',
+      )
+      .run(
+        updated.revision,
+        updated.row_count,
+        updated.accumulator,
+        updated.updated_at,
+        updated.control_hmac,
+        tenantId,
+      );
+    if (result.changes !== 1)
+      throw new ManagedError(
+        503,
+        'action_idempotency_manifest_invalid',
+        'action idempotency manifest update failed; execution is unavailable',
+      );
+    this.enqueueCheckpointAnchorDelivery(tenantId, updated);
+  }
+  private actionIdempotencyCheckpointFromManifest(
+    tenantId: string,
+    manifest: Row,
+  ): ActionIdempotencyCheckpoint {
+    const body = {
+      checkpoint_version: '1' as const,
+      tenant_ref: hmac(this.config.masterSecret, 'action-idempotency-checkpoint-tenant-v1', {
+        tenant_id: tenantId,
+      }),
+      revision: Number(manifest.revision),
+      row_count: Number(manifest.row_count),
+      accumulator: text(manifest.accumulator),
+      updated_at: text(manifest.updated_at),
+    };
+    return {
+      ...body,
+      checkpoint_hash: hmac(this.config.masterSecret, 'action-idempotency-checkpoint-v1', body),
+    };
+  }
+  private enqueueCheckpointAnchorDelivery(tenantId: string, manifest: Row): void {
+    if (!this.config.actionCheckpointAnchorUrl) return;
+    this.assertControlHmac(
+      manifest,
+      this.actionIdempotencyManifestHmac(manifest),
+      'action idempotency manifest',
+    );
+    const checkpoint = this.actionIdempotencyCheckpointFromManifest(tenantId, manifest);
+    const createdAt = now();
+    const payload = JSON.stringify({
+      schema_version: '2026-07-20',
+      event_type: 'schema_guard.action_idempotency_checkpoint',
+      event_id: hmac(this.config.masterSecret, 'action-idempotency-checkpoint-event-v1', {
+        tenant_id: tenantId,
+        revision: checkpoint.revision,
+        checkpoint_hash: checkpoint.checkpoint_hash,
+      }),
+      checkpoint,
+    });
+    const delivery: Row = {
+      delivery_id: `anchor_${randomUUID()}`,
+      tenant_id: tenantId,
+      revision: checkpoint.revision,
+      checkpoint_hash: checkpoint.checkpoint_hash,
+      payload_json: payload,
+      created_at: createdAt,
+    };
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO checkpoint_anchor_deliveries(delivery_id,tenant_id,revision,checkpoint_hash,payload_json,status,next_attempt_at,created_at,payload_hmac) VALUES(?,?,?,?,?,'pending',?,?,?)`,
+      )
+      .run(
+        delivery.delivery_id,
+        delivery.tenant_id,
+        delivery.revision,
+        delivery.checkpoint_hash,
+        delivery.payload_json,
+        createdAt,
+        createdAt,
+        this.checkpointAnchorDeliveryPayloadHmac(delivery),
+      );
+  }
+  private ensureConfiguredCheckpointAnchorDeliveries(): void {
+    if (!this.config.actionCheckpointAnchorUrl) return;
+    this.db.transaction(() => {
+      const manifests = this.db
+        .prepare('SELECT * FROM action_idempotency_manifests ORDER BY tenant_id')
+        .all() as Row[];
+      for (const manifest of manifests)
+        this.enqueueCheckpointAnchorDelivery(text(manifest.tenant_id), manifest);
+    })();
+  }
+  private inspectCheckpointAnchorCoverage(tenantId?: string): {
+    valid: boolean;
+    checked: number;
+    first_invalid_id?: string;
+  } {
+    if (!this.config.actionCheckpointAnchorUrl) return { valid: true, checked: 0 };
+    const manifests = this.db
+      .prepare(
+        `SELECT * FROM action_idempotency_manifests${tenantId === undefined ? '' : ' WHERE tenant_id=?'} ORDER BY tenant_id`,
+      )
+      .all(...(tenantId === undefined ? [] : [tenantId])) as Row[];
+    let checked = 0;
+    for (const manifest of manifests) {
+      const delivery = this.db
+        .prepare('SELECT * FROM checkpoint_anchor_deliveries WHERE tenant_id=? AND revision=?')
+        .get(manifest.tenant_id, manifest.revision) as Row | undefined;
+      if (!delivery) return { valid: false, checked, first_invalid_id: text(manifest.tenant_id) };
+      this.assertCheckpointAnchorDeliveryPayloadHmac(delivery);
+      const checkpoint = this.actionIdempotencyCheckpointFromManifest(
+        text(manifest.tenant_id),
+        manifest,
+      );
+      if (!constantTimeEqual(text(delivery.checkpoint_hash), checkpoint.checkpoint_hash))
+        return { valid: false, checked, first_invalid_id: text(manifest.tenant_id) };
+      checked += 1;
+    }
+    return { valid: true, checked };
+  }
+  private alertWebhookControlHmac(row: Row): string {
+    return hmac(this.config.masterSecret, 'managed-alert-webhook-control-v1', {
+      webhook_id: row.webhook_id,
+      tenant_id: row.tenant_id,
+      label: row.label,
+      endpoint_hash: row.endpoint_hash,
+      encrypted_endpoint: row.encrypted_endpoint,
+      encrypted_signing_secret: row.encrypted_signing_secret,
+      created_at: row.created_at,
+      disabled_at: row.disabled_at ?? null,
+    });
+  }
+  private alertDeliveryPayloadHmac(row: Row): string {
+    return hmac(this.config.masterSecret, 'managed-alert-delivery-payload-v1', {
+      delivery_id: row.delivery_id,
+      tenant_id: row.tenant_id,
+      webhook_id: row.webhook_id,
+      alert_id: Number(row.alert_id),
+      payload_json: row.payload_json,
+      created_at: row.created_at,
+    });
+  }
+  private checkpointAnchorDeliveryPayloadHmac(row: Row): string {
+    return hmac(this.config.masterSecret, 'managed-checkpoint-anchor-delivery-payload-v1', {
+      delivery_id: row.delivery_id,
+      tenant_id: row.tenant_id,
+      revision: Number(row.revision),
+      checkpoint_hash: row.checkpoint_hash,
+      payload_json: row.payload_json,
+      created_at: row.created_at,
+    });
+  }
+  private checkpointAnchorAcknowledgementHmac(row: Row): string {
+    return hmac(this.config.masterSecret, 'managed-checkpoint-anchor-acknowledgement-v1', {
+      delivery_id: row.delivery_id,
+      tenant_id: row.tenant_id,
+      revision: Number(row.revision),
+      checkpoint_hash: row.checkpoint_hash,
+      delivered_at: row.delivered_at,
+      response_status: Number(row.response_status),
+    });
+  }
+  private backfillControlPlaneIntegrity(): void {
+    const definitions = [
+      {
+        table: 'tenants',
+        id: (row: Row) => [row.id],
+        where: 'id=?',
+        digest: (row: Row) => this.tenantControlHmac(row),
+      },
+      {
+        table: 'api_keys',
+        id: (row: Row) => [row.id],
+        where: 'id=?',
+        digest: (row: Row) => this.apiKeyControlHmac(row),
+      },
+      {
+        table: 'environments',
+        id: (row: Row) => [row.id],
+        where: 'id=?',
+        digest: (row: Row) => this.environmentControlHmac(row),
+      },
+      {
+        table: 'action_descriptors',
+        id: (row: Row) => [row.tenant_id, row.tool_name_hash, row.environment],
+        where: 'tenant_id=? AND tool_name_hash=? AND environment=?',
+        digest: (row: Row) => this.actionDescriptorControlHmac(row),
+      },
+      {
+        table: 'action_approvals',
+        id: (row: Row) => [row.tenant_id, row.challenge_id],
+        where: 'tenant_id=? AND challenge_id=?',
+        digest: (row: Row) => this.actionApprovalControlHmac(row),
+      },
+      {
+        table: 'action_idempotency',
+        id: (row: Row) => [row.tenant_id, row.key_hash],
+        where: 'tenant_id=? AND key_hash=?',
+        digest: (row: Row) => this.actionIdempotencyControlHmac(row),
+      },
+      {
+        table: 'alert_webhooks',
+        id: (row: Row) => [row.tenant_id, row.webhook_id],
+        where: 'tenant_id=? AND webhook_id=?',
+        digest: (row: Row) => this.alertWebhookControlHmac(row),
+      },
+    ] as const;
+    for (const definition of definitions) {
+      const rows = this.db.prepare(`SELECT * FROM ${definition.table}`).all() as Row[];
+      const update = this.db.prepare(
+        `UPDATE ${definition.table} SET control_hmac=? WHERE ${definition.where}`,
+      );
+      for (const row of rows) update.run(definition.digest(row), ...definition.id(row));
+    }
+    const deliveries = this.db.prepare('SELECT * FROM alert_deliveries').all() as Row[];
+    const updateDelivery = this.db.prepare(
+      'UPDATE alert_deliveries SET payload_hmac=? WHERE delivery_id=?',
+    );
+    for (const row of deliveries)
+      updateDelivery.run(this.alertDeliveryPayloadHmac(row), row.delivery_id);
+  }
+  private inspectControlPlaneIntegrity(
+    tenantId?: string,
+    includeOperational = true,
+  ): {
+    valid: boolean;
+    checked: number;
+    first_invalid_table?: string;
+    first_invalid_id?: string;
+  } {
+    const definitions = [
+      {
+        table: 'tenants',
+        tenantColumn: 'id',
+        digest: (row: Row) => this.tenantControlHmac(row),
+        id: 'id',
+        signature: 'control_hmac',
+      },
+      {
+        table: 'action_idempotency_manifests',
+        tenantColumn: 'tenant_id',
+        digest: (row: Row) => this.actionIdempotencyManifestHmac(row),
+        id: 'tenant_id',
+        signature: 'control_hmac',
+      },
+      {
+        table: 'api_keys',
+        tenantColumn: 'tenant_id',
+        digest: (row: Row) => this.apiKeyControlHmac(row),
+        id: 'id',
+        signature: 'control_hmac',
+      },
+      {
+        table: 'environments',
+        tenantColumn: 'tenant_id',
+        digest: (row: Row) => this.environmentControlHmac(row),
+        id: 'id',
+        signature: 'control_hmac',
+      },
+      {
+        table: 'action_descriptors',
+        tenantColumn: 'tenant_id',
+        digest: (row: Row) => this.actionDescriptorControlHmac(row),
+        id: 'tool_name_hash',
+        signature: 'control_hmac',
+      },
+      {
+        table: 'alert_webhooks',
+        tenantColumn: 'tenant_id',
+        digest: (row: Row) => this.alertWebhookControlHmac(row),
+        id: 'webhook_id',
+        signature: 'control_hmac',
+      },
+    ] as const;
+    const operationalDefinitions = [
+      {
+        table: 'action_approvals',
+        tenantColumn: 'tenant_id',
+        digest: (row: Row) => this.actionApprovalControlHmac(row),
+        id: 'challenge_id',
+        signature: 'control_hmac',
+      },
+      {
+        table: 'action_idempotency',
+        tenantColumn: 'tenant_id',
+        digest: (row: Row) => this.actionIdempotencyControlHmac(row),
+        id: 'reservation_id',
+        signature: 'control_hmac',
+      },
+      {
+        table: 'alert_deliveries',
+        tenantColumn: 'tenant_id',
+        digest: (row: Row) => this.alertDeliveryPayloadHmac(row),
+        id: 'delivery_id',
+        signature: 'payload_hmac',
+      },
+      {
+        table: 'checkpoint_anchor_deliveries',
+        tenantColumn: 'tenant_id',
+        digest: (row: Row) => this.checkpointAnchorDeliveryPayloadHmac(row),
+        id: 'delivery_id',
+        signature: 'payload_hmac',
+      },
+    ] as const;
+    let checked = 0;
+    for (const definition of includeOperational
+      ? [...definitions, ...operationalDefinitions]
+      : definitions)
+      for (const row of this.db
+        .prepare(
+          `SELECT * FROM ${definition.table}${tenantId === undefined ? '' : ` WHERE ${definition.tenantColumn}=?`}`,
+        )
+        .iterate(...(tenantId === undefined ? [] : [tenantId])) as Iterable<Row>) {
+        const expected = definition.digest(row);
+        if (!constantTimeEqual(text(row[definition.signature]), expected))
+          return {
+            valid: false,
+            checked,
+            first_invalid_table: definition.table,
+            first_invalid_id: text(row[definition.id]),
+          };
+        checked += 1;
+      }
+    if (includeOperational)
+      for (const row of this.db
+        .prepare("SELECT * FROM checkpoint_anchor_deliveries WHERE status='delivered'")
+        .iterate() as Iterable<Row>) {
+        if (
+          typeof row.delivered_at !== 'string' ||
+          !Number.isInteger(row.response_status) ||
+          !constantTimeEqual(
+            text(row.acknowledgement_hmac),
+            this.checkpointAnchorAcknowledgementHmac(row),
+          )
+        )
+          return {
+            valid: false,
+            checked,
+            first_invalid_table: 'checkpoint_anchor_deliveries',
+            first_invalid_id: text(row.delivery_id),
+          };
+        checked += 1;
+      }
+    return { valid: true, checked };
+  }
+  verifyControlPlaneIntegrity(principal: Principal): {
+    valid: boolean;
+    checked: number;
+    first_invalid_table?: string;
+    first_invalid_id?: string;
+  } {
+    this.requireScope(principal, 'admin');
+    const control = this.inspectControlPlaneIntegrity(principal.tenantId);
+    if (!control.valid) return control;
+    const manifest = this.inspectActionIdempotencyManifests(principal.tenantId);
+    if (!manifest.valid) return { ...manifest, checked: control.checked + manifest.checked };
+    const anchor = this.inspectCheckpointAnchorCoverage(principal.tenantId);
+    return anchor.valid
+      ? { valid: true, checked: control.checked + manifest.checked + anchor.checked }
+      : {
+          valid: false,
+          checked: control.checked + manifest.checked + anchor.checked,
+          first_invalid_table: 'checkpoint_anchor_deliveries',
+          ...(anchor.first_invalid_id ? { first_invalid_id: anchor.first_invalid_id } : {}),
+        };
+  }
+  private assertControlHmac(row: Row, expected: string, kind: string): void {
+    if (!constantTimeEqual(text(row.control_hmac), expected))
+      throw new ManagedError(
+        503,
+        'control_plane_integrity_invalid',
+        `${kind} integrity verification failed; managed enforcement is unavailable`,
+      );
+  }
+  private assertDeliveryPayloadHmac(row: Row): void {
+    if (!constantTimeEqual(text(row.payload_hmac), this.alertDeliveryPayloadHmac(row)))
+      throw new ManagedError(
+        503,
+        'alert_delivery_integrity_invalid',
+        'alert delivery payload integrity verification failed; delivery is unavailable',
+      );
+  }
+  private assertCheckpointAnchorDeliveryPayloadHmac(row: Row): void {
+    if (!constantTimeEqual(text(row.payload_hmac), this.checkpointAnchorDeliveryPayloadHmac(row)))
+      throw new ManagedError(
+        503,
+        'checkpoint_anchor_delivery_integrity_invalid',
+        'checkpoint anchor payload integrity verification failed; anchoring is unavailable',
+      );
+    if (row.status === 'delivered') this.assertCheckpointAnchorAcknowledgementHmac(row);
+  }
+  private assertCheckpointAnchorAcknowledgementHmac(row: Row): void {
+    if (
+      typeof row.delivered_at !== 'string' ||
+      !Number.isInteger(row.response_status) ||
+      !constantTimeEqual(
+        text(row.acknowledgement_hmac),
+        this.checkpointAnchorAcknowledgementHmac(row),
+      )
+    )
+      throw new ManagedError(
+        503,
+        'checkpoint_anchor_acknowledgement_integrity_invalid',
+        'checkpoint anchor acknowledgement integrity verification failed; execution is unavailable',
+      );
   }
   private ensureSigningKey(): void {
     const existing = this.db
       .prepare('SELECT id,public_key_pem,trust_hmac FROM signing_keys LIMIT 1')
       .get() as Row | undefined;
     if (existing) {
-      if (!existing.trust_hmac)
-        this.db.prepare('UPDATE signing_keys SET trust_hmac=? WHERE id=?').run(
-          hmac(this.config.masterSecret, 'signing-key-trust-v1', {
-            id: existing.id,
-            public_key: existing.public_key_pem,
-          }),
-          existing.id,
-        );
+      const expected = hmac(this.config.masterSecret, 'signing-key-trust-v1', {
+        id: existing.id,
+        public_key: existing.public_key_pem,
+      });
+      if (!constantTimeEqual(text(existing.trust_hmac), expected)) {
+        this.db.close();
+        throw new TypeError('managed signing-key trust record failed integrity verification');
+      }
       return;
     }
     const key = createEncryptedSigningKey(this.config.masterSecret);
@@ -151,23 +1010,20 @@ export class ManagedStore {
   private ensureAuditAnchorsTrusted(): void {
     const rows = this.db
       .prepare(
-        'SELECT tenant_id,last_deleted_hash,deleted_through_sequence FROM audit_chain_anchors WHERE signature IS NULL',
+        'SELECT tenant_id,last_deleted_hash,deleted_through_sequence,signature FROM audit_chain_anchors',
       )
       .all() as Row[];
-    const update = this.db.prepare(
-      'UPDATE audit_chain_anchors SET signature=? WHERE tenant_id=? AND signature IS NULL',
-    );
-    this.db.transaction(() => {
-      for (const row of rows)
-        update.run(
-          this.auditAnchorSignature(
-            text(row.tenant_id),
-            text(row.last_deleted_hash),
-            Number(row.deleted_through_sequence),
-          ),
-          row.tenant_id,
-        );
-    })();
+    for (const row of rows) {
+      const expected = this.auditAnchorSignature(
+        text(row.tenant_id),
+        text(row.last_deleted_hash),
+        Number(row.deleted_through_sequence),
+      );
+      if (!constantTimeEqual(text(row.signature), expected)) {
+        this.db.close();
+        throw new TypeError('managed audit anchor failed integrity verification');
+      }
+    }
   }
 
   bootstrapTenant(input: {
@@ -192,59 +1048,111 @@ export class ManagedStore {
           input.retentionDays > 3650))
     )
       throw new ManagedError(400, 'invalid_tenant', 'tenant bootstrap fields are invalid');
-    const scopes = input.scopes ?? [
-      'validate',
-      'read:audit',
-      'write:schema',
-      'read:intelligence',
-      'admin',
-    ];
+    const scopes = input.scopes ?? [...ALL_SCOPES];
     this.assertScopes(scopes);
     const policyError = policyValidationError(input.policy);
     if (policyError) throw new ManagedError(400, 'invalid_policy', policyError);
     this.db.transaction(() => {
+      const tenantCreatedAt = now();
+      const tenantRow: Row = {
+        id: input.id,
+        name: input.name,
+        plan: input.plan,
+        monthly_limit: limits[input.plan],
+        retention_days: input.retentionDays ?? 30,
+        policy_json: JSON.stringify(input.policy ?? {}),
+        created_at: tenantCreatedAt,
+      };
       this.db
         .prepare(
-          'INSERT OR IGNORE INTO tenants(id,name,plan,monthly_limit,retention_days,created_at) VALUES(?,?,?,?,?,?)',
+          'INSERT OR IGNORE INTO tenants(id,name,plan,monthly_limit,retention_days,created_at,policy_json,control_hmac) VALUES(?,?,?,?,?,?,?,?)',
         )
         .run(
-          input.id,
-          input.name,
-          input.plan,
-          limits[input.plan],
-          input.retentionDays ?? 30,
-          now(),
+          tenantRow.id,
+          tenantRow.name,
+          tenantRow.plan,
+          tenantRow.monthly_limit,
+          tenantRow.retention_days,
+          tenantRow.created_at,
+          tenantRow.policy_json,
+          this.tenantControlHmac(tenantRow),
         );
+      const manifest: Row = {
+        tenant_id: input.id,
+        revision: 0,
+        row_count: 0,
+        accumulator: EMPTY_IDEMPOTENCY_ACCUMULATOR,
+        updated_at: tenantCreatedAt,
+      };
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO action_idempotency_manifests(tenant_id,revision,row_count,accumulator,updated_at,control_hmac) VALUES(?,?,?,?,?,?)`,
+        )
+        .run(
+          manifest.tenant_id,
+          manifest.revision,
+          manifest.row_count,
+          manifest.accumulator,
+          manifest.updated_at,
+          this.actionIdempotencyManifestHmac(manifest),
+        );
+      const storedManifest = this.db
+        .prepare('SELECT * FROM action_idempotency_manifests WHERE tenant_id=?')
+        .get(input.id) as Row | undefined;
+      if (storedManifest) this.enqueueCheckpointAnchorDelivery(input.id, storedManifest);
       const insertEnvironment = this.db.prepare(
-        'INSERT OR IGNORE INTO environments(id,tenant_id,name,policy_json,created_at,updated_at) VALUES(?,?,?,?,?,?)',
+        'INSERT OR IGNORE INTO environments(id,tenant_id,name,policy_json,schema_enforcement,created_at,updated_at,control_hmac) VALUES(?,?,?,?,?,?,?,?)',
       );
       for (const name of ['development', 'staging', 'production']) {
         const timestamp = now();
-        insertEnvironment.run(
-          `env_${sha256({ tenant: input.id, name }).slice(-16)}`,
-          input.id,
+        const environmentRow: Row = {
+          id: `env_${sha256({ tenant: input.id, name }).slice(-16)}`,
+          tenant_id: input.id,
           name,
-          '{}',
-          timestamp,
-          timestamp,
+          policy_json: '{}',
+          schema_enforcement: 'observe',
+          created_at: timestamp,
+          updated_at: timestamp,
+        };
+        insertEnvironment.run(
+          environmentRow.id,
+          environmentRow.tenant_id,
+          environmentRow.name,
+          environmentRow.policy_json,
+          environmentRow.schema_enforcement,
+          environmentRow.created_at,
+          environmentRow.updated_at,
+          this.environmentControlHmac(environmentRow),
         );
       }
-      if (input.policy)
-        this.db
-          .prepare('UPDATE tenants SET policy_json=? WHERE id=?')
-          .run(JSON.stringify(input.policy), input.id);
+      const keyCreatedAt = now();
+      const keyRow: Row = {
+        id: `key_${sha256(input.id + input.apiKey).slice(-16)}`,
+        tenant_id: input.id,
+        key_hash: hashApiKey(this.config.masterSecret, input.apiKey),
+        prefix: input.apiKey.slice(0, 12),
+        scopes_json: JSON.stringify(scopes),
+        created_at: keyCreatedAt,
+        revoked_at: null,
+      };
       this.db
         .prepare(
-          'INSERT OR IGNORE INTO api_keys(id,tenant_id,key_hash,prefix,scopes_json,created_at) VALUES(?,?,?,?,?,?)',
+          'INSERT OR IGNORE INTO api_keys(id,tenant_id,key_hash,prefix,scopes_json,created_at,revoked_at,control_hmac) VALUES(?,?,?,?,?,?,?,?)',
         )
         .run(
-          `key_${sha256(input.id + input.apiKey).slice(-16)}`,
-          input.id,
-          hashApiKey(this.config.masterSecret, input.apiKey),
-          input.apiKey.slice(0, 12),
-          JSON.stringify(scopes),
-          now(),
+          keyRow.id,
+          keyRow.tenant_id,
+          keyRow.key_hash,
+          keyRow.prefix,
+          keyRow.scopes_json,
+          keyRow.created_at,
+          keyRow.revoked_at,
+          this.apiKeyControlHmac(keyRow),
         );
+      const persistedTenant = this.db.prepare('SELECT * FROM tenants WHERE id=?').get(input.id) as
+        Row | undefined;
+      if (!persistedTenant) throw new Error('tenant bootstrap insert failed');
+      this.assertControlHmac(persistedTenant, this.tenantControlHmac(persistedTenant), 'tenant');
     })();
   }
 
@@ -252,20 +1160,53 @@ export class ManagedStore {
     const keyHash = hashApiKey(this.config.masterSecret, apiKey);
     const row = this.db
       .prepare(
-        `SELECT k.id key_id,k.scopes_json,t.id tenant_id,t.name tenant_name,t.plan,t.monthly_limit,t.retention_days,t.policy_json FROM api_keys k JOIN tenants t ON t.id=k.tenant_id WHERE k.key_hash=? AND k.revoked_at IS NULL`,
+        `SELECT k.id key_id,k.tenant_id key_tenant_id,k.key_hash,k.prefix,k.scopes_json,k.created_at key_created_at,k.revoked_at,k.control_hmac key_control_hmac,t.id tenant_id,t.name tenant_name,t.plan,t.monthly_limit,t.retention_days,t.policy_json,t.created_at tenant_created_at,t.control_hmac tenant_control_hmac FROM api_keys k JOIN tenants t ON t.id=k.tenant_id WHERE k.key_hash=? AND k.revoked_at IS NULL`,
       )
       .get(keyHash) as Row | undefined;
     if (!row) return undefined;
-    return {
-      tenantId: String(row.tenant_id),
-      tenantName: String(row.tenant_name),
-      keyId: String(row.key_id),
-      scopes: parse(row.scopes_json) as Scope[],
-      plan: String(row.plan) as PlanId,
-      monthlyLimit: Number(row.monthly_limit),
-      retentionDays: Number(row.retention_days),
-      policy: parse(row.policy_json) as GuardPolicy,
+    const keyRow: Row = {
+      id: row.key_id,
+      tenant_id: row.key_tenant_id,
+      key_hash: row.key_hash,
+      prefix: row.prefix,
+      scopes_json: row.scopes_json,
+      created_at: row.key_created_at,
+      revoked_at: row.revoked_at,
+      control_hmac: row.key_control_hmac,
     };
+    const tenantRow: Row = {
+      id: row.tenant_id,
+      name: row.tenant_name,
+      plan: row.plan,
+      monthly_limit: row.monthly_limit,
+      retention_days: row.retention_days,
+      policy_json: row.policy_json,
+      created_at: row.tenant_created_at,
+      control_hmac: row.tenant_control_hmac,
+    };
+    if (
+      !constantTimeEqual(text(keyRow.control_hmac), this.apiKeyControlHmac(keyRow)) ||
+      !constantTimeEqual(text(tenantRow.control_hmac), this.tenantControlHmac(tenantRow))
+    )
+      return undefined;
+    try {
+      const scopes = parse(row.scopes_json) as Scope[];
+      this.assertScopes(scopes);
+      const policy = parse(row.policy_json) as GuardPolicy;
+      if (policyValidationError(policy)) return undefined;
+      return {
+        tenantId: String(row.tenant_id),
+        tenantName: String(row.tenant_name),
+        keyId: String(row.key_id),
+        scopes,
+        plan: String(row.plan) as PlanId,
+        monthlyLimit: Number(row.monthly_limit),
+        retentionDays: Number(row.retention_days),
+        policy,
+      };
+    } catch {
+      return undefined;
+    }
   }
 
   issueApiKey(
@@ -276,17 +1217,28 @@ export class ManagedStore {
     this.assertScopes(scopes);
     const apiKey = generateApiKey();
     const keyId = `key_${sha256(principal.tenantId + apiKey).slice(-16)}`;
+    const keyRow: Row = {
+      id: keyId,
+      tenant_id: principal.tenantId,
+      key_hash: hashApiKey(this.config.masterSecret, apiKey),
+      prefix: apiKey.slice(0, 12),
+      scopes_json: JSON.stringify(scopes),
+      created_at: now(),
+      revoked_at: null,
+    };
     this.db
       .prepare(
-        'INSERT INTO api_keys(id,tenant_id,key_hash,prefix,scopes_json,created_at) VALUES(?,?,?,?,?,?)',
+        'INSERT INTO api_keys(id,tenant_id,key_hash,prefix,scopes_json,created_at,revoked_at,control_hmac) VALUES(?,?,?,?,?,?,?,?)',
       )
       .run(
-        keyId,
-        principal.tenantId,
-        hashApiKey(this.config.masterSecret, apiKey),
-        apiKey.slice(0, 12),
-        JSON.stringify(scopes),
-        now(),
+        keyRow.id,
+        keyRow.tenant_id,
+        keyRow.key_hash,
+        keyRow.prefix,
+        keyRow.scopes_json,
+        keyRow.created_at,
+        keyRow.revoked_at,
+        this.apiKeyControlHmac(keyRow),
       );
     return { key_id: keyId, api_key: apiKey, scopes };
   }
@@ -298,43 +1250,68 @@ export class ManagedStore {
         'cannot_revoke_current_key',
         'use another admin key to revoke the current key',
       );
-    return (
-      this.db
-        .prepare(
-          'UPDATE api_keys SET revoked_at=? WHERE tenant_id=? AND id=? AND revoked_at IS NULL',
-        )
-        .run(now(), principal.tenantId, keyId).changes === 1
-    );
+    return this.db.transaction(() => {
+      const row = this.db
+        .prepare('SELECT * FROM api_keys WHERE tenant_id=? AND id=? AND revoked_at IS NULL')
+        .get(principal.tenantId, keyId) as Row | undefined;
+      if (!row) return false;
+      this.assertControlHmac(row, this.apiKeyControlHmac(row), 'API key');
+      const revokedAt = now();
+      const updated = { ...row, revoked_at: revokedAt };
+      return (
+        this.db
+          .prepare(
+            'UPDATE api_keys SET revoked_at=?,control_hmac=? WHERE tenant_id=? AND id=? AND revoked_at IS NULL',
+          )
+          .run(revokedAt, this.apiKeyControlHmac(updated), principal.tenantId, keyId).changes === 1
+      );
+    })();
   }
   updateTenantPolicy(principal: Principal, policy: GuardPolicy): void {
     this.requireScope(principal, 'admin');
     const error = policyValidationError(policy);
     if (error) throw new ManagedError(400, 'invalid_policy', error);
+    const row = this.db.prepare('SELECT * FROM tenants WHERE id=?').get(principal.tenantId) as
+      Row | undefined;
+    if (!row) throw new ManagedError(404, 'tenant_not_found', 'tenant does not exist');
+    this.assertControlHmac(row, this.tenantControlHmac(row), 'tenant');
+    const policyJson = JSON.stringify(policy);
     this.db
-      .prepare('UPDATE tenants SET policy_json=? WHERE id=?')
-      .run(JSON.stringify(policy), principal.tenantId);
+      .prepare('UPDATE tenants SET policy_json=?,control_hmac=? WHERE id=?')
+      .run(
+        policyJson,
+        this.tenantControlHmac({ ...row, policy_json: policyJson }),
+        principal.tenantId,
+      );
   }
   updatePlan(principal: Principal, plan: PlanId): void {
     this.requireScope(principal, 'admin');
     const limits: Record<PlanId, number> = { trial: 1_000, team: 100_000 };
+    const row = this.db.prepare('SELECT * FROM tenants WHERE id=?').get(principal.tenantId) as
+      Row | undefined;
+    if (!row) throw new ManagedError(404, 'tenant_not_found', 'tenant does not exist');
+    this.assertControlHmac(row, this.tenantControlHmac(row), 'tenant');
+    const updated = { ...row, plan, monthly_limit: limits[plan] };
     this.db
-      .prepare('UPDATE tenants SET plan=?,monthly_limit=? WHERE id=?')
-      .run(plan, limits[plan], principal.tenantId);
+      .prepare('UPDATE tenants SET plan=?,monthly_limit=?,control_hmac=? WHERE id=?')
+      .run(plan, limits[plan], this.tenantControlHmac(updated), principal.tenantId);
   }
 
   listEnvironments(principal: Principal): Row[] {
     const rows = this.db
-      .prepare(
-        'SELECT id,name,policy_json,created_at,updated_at FROM environments WHERE tenant_id=? ORDER BY name ASC',
-      )
+      .prepare('SELECT * FROM environments WHERE tenant_id=? ORDER BY name ASC')
       .all(principal.tenantId) as Row[];
-    return rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      policy: parse(row.policy_json),
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-    }));
+    return rows.map((row) => {
+      this.assertControlHmac(row, this.environmentControlHmac(row), 'environment');
+      return {
+        id: row.id,
+        name: row.name,
+        policy: parse(row.policy_json),
+        schema_enforcement: row.schema_enforcement,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      };
+    });
   }
 
   createEnvironment(principal: Principal, name: string, policy: GuardPolicy = {}): Row {
@@ -349,39 +1326,1020 @@ export class ManagedStore {
     if (policyError) throw new ManagedError(400, 'invalid_policy', policyError);
     const id = `env_${sha256({ tenant: principal.tenantId, name }).slice(-16)}`;
     const timestamp = now();
+    const row: Row = {
+      id,
+      tenant_id: principal.tenantId,
+      name,
+      policy_json: JSON.stringify(policy),
+      schema_enforcement: 'observe',
+      created_at: timestamp,
+      updated_at: timestamp,
+    };
     try {
       this.db
         .prepare(
-          'INSERT INTO environments(id,tenant_id,name,policy_json,created_at,updated_at) VALUES(?,?,?,?,?,?)',
+          'INSERT INTO environments(id,tenant_id,name,policy_json,schema_enforcement,created_at,updated_at,control_hmac) VALUES(?,?,?,?,?,?,?,?)',
         )
-        .run(id, principal.tenantId, name, JSON.stringify(policy), timestamp, timestamp);
+        .run(
+          row.id,
+          row.tenant_id,
+          row.name,
+          row.policy_json,
+          row.schema_enforcement,
+          row.created_at,
+          row.updated_at,
+          this.environmentControlHmac(row),
+        );
     } catch (error) {
       if (error instanceof Error && error.message.includes('UNIQUE constraint failed'))
         throw new ManagedError(409, 'environment_exists', 'environment name already exists');
       throw error;
     }
-    return { id, name, policy, created_at: timestamp, updated_at: timestamp };
+    return {
+      id,
+      name,
+      policy,
+      schema_enforcement: 'observe',
+      created_at: timestamp,
+      updated_at: timestamp,
+    };
   }
 
   updateEnvironmentPolicy(principal: Principal, environmentId: string, policy: GuardPolicy): void {
     this.requireScope(principal, 'admin');
     const policyError = policyValidationError(policy);
     if (policyError) throw new ManagedError(400, 'invalid_policy', policyError);
-    const result = this.db
-      .prepare('UPDATE environments SET policy_json=?,updated_at=? WHERE tenant_id=? AND id=?')
-      .run(JSON.stringify(policy), now(), principal.tenantId, environmentId);
-    if (result.changes !== 1)
-      throw new ManagedError(404, 'environment_not_found', 'environment does not exist');
+    const row = this.environmentRecord(principal, environmentId);
+    const policyJson = JSON.stringify(policy);
+    const updatedAt = now();
+    this.db
+      .prepare(
+        'UPDATE environments SET policy_json=?,updated_at=?,control_hmac=? WHERE tenant_id=? AND id=?',
+      )
+      .run(
+        policyJson,
+        updatedAt,
+        this.environmentControlHmac({ ...row, policy_json: policyJson, updated_at: updatedAt }),
+        principal.tenantId,
+        environmentId,
+      );
+  }
+
+  updateEnvironmentSchemaEnforcement(
+    principal: Principal,
+    environmentId: string,
+    mode: SchemaEnforcementMode,
+  ): void {
+    this.requireScope(principal, 'promote:schema');
+    if (mode !== 'observe' && mode !== 'enforce')
+      throw new ManagedError(
+        400,
+        'invalid_schema_enforcement',
+        'schema enforcement must be observe or enforce',
+      );
+    this.db.transaction(() => {
+      const row = this.environmentRecord(principal, environmentId);
+      const updatedAt = now();
+      const result = this.db
+        .prepare(
+          'UPDATE environments SET schema_enforcement=?,updated_at=?,control_hmac=? WHERE tenant_id=? AND id=?',
+        )
+        .run(
+          mode,
+          updatedAt,
+          this.environmentControlHmac({
+            ...row,
+            schema_enforcement: mode,
+            updated_at: updatedAt,
+          }),
+          principal.tenantId,
+          environmentId,
+        );
+      if (result.changes !== 1)
+        throw new ManagedError(404, 'environment_not_found', 'environment does not exist');
+      const environment = this.environmentRecord(principal, environmentId);
+      this.insertAlert(principal.tenantId, 'schema_enforcement_changed', 'critical', {
+        environment: environment.name,
+        mode,
+      });
+    })();
   }
 
   environmentPolicy(principal: Principal, idOrName: string): GuardPolicy {
+    const row = this.environmentRecord(principal, idOrName);
+    return parse(row.policy_json) as GuardPolicy;
+  }
+
+  private environmentName(principal: Principal, idOrName: string): string {
+    return String(this.environmentRecord(principal, idOrName).name);
+  }
+
+  private environmentRecord(principal: Principal, idOrName: string): Row {
     const row = this.db
-      .prepare(
-        'SELECT policy_json FROM environments WHERE tenant_id=? AND (id=? OR name=?) LIMIT 1',
-      )
+      .prepare('SELECT * FROM environments WHERE tenant_id=? AND (id=? OR name=?) LIMIT 1')
       .get(principal.tenantId, idOrName, idOrName) as Row | undefined;
     if (!row) throw new ManagedError(404, 'environment_not_found', 'environment does not exist');
-    return parse(row.policy_json) as GuardPolicy;
+    this.assertControlHmac(row, this.environmentControlHmac(row), 'environment');
+    return row;
+  }
+
+  registerActionDescriptor(
+    principal: Principal,
+    toolName: string,
+    environment: string,
+    riskLevel: ActionDescriptor['risk_level'],
+    sideEffect: ActionDescriptor['side_effect'],
+  ): ActionDescriptor & { environment: string } {
+    this.requireScope(principal, 'admin');
+    if (!toolName || toolName.length > 256)
+      throw new ManagedError(400, 'invalid_tool_name', 'tool_name must contain 1-256 characters');
+    if (!['read', 'low', 'medium', 'high', 'critical'].includes(riskLevel))
+      throw new ManagedError(400, 'invalid_risk_level', 'risk_level is invalid');
+    if (!['none', 'reversible', 'irreversible'].includes(sideEffect))
+      throw new ManagedError(400, 'invalid_side_effect', 'side_effect is invalid');
+    const trustedEnvironment = this.environmentName(principal, environment);
+    const toolNameHash = this.tenantAuditHash(principal, 'tool_name', sha256(toolName));
+    const timestamp = now();
+    const existing = this.db
+      .prepare(
+        'SELECT * FROM action_descriptors WHERE tenant_id=? AND tool_name_hash=? AND environment=?',
+      )
+      .get(principal.tenantId, toolNameHash, trustedEnvironment) as Row | undefined;
+    if (existing)
+      this.assertControlHmac(
+        existing,
+        this.actionDescriptorControlHmac(existing),
+        'action descriptor',
+      );
+    const row: Row = {
+      tenant_id: principal.tenantId,
+      tool_name_hash: toolNameHash,
+      environment: trustedEnvironment,
+      risk_level: riskLevel,
+      side_effect: sideEffect,
+      created_at: existing?.created_at ?? timestamp,
+      updated_at: timestamp,
+    };
+    this.db
+      .prepare(
+        `INSERT INTO action_descriptors(tenant_id,tool_name_hash,environment,risk_level,side_effect,created_at,updated_at,control_hmac) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(tenant_id,tool_name_hash,environment) DO UPDATE SET risk_level=excluded.risk_level,side_effect=excluded.side_effect,updated_at=excluded.updated_at,control_hmac=excluded.control_hmac`,
+      )
+      .run(
+        row.tenant_id,
+        row.tool_name_hash,
+        row.environment,
+        row.risk_level,
+        row.side_effect,
+        row.created_at,
+        row.updated_at,
+        this.actionDescriptorControlHmac(row),
+      );
+    return {
+      tool_name: toolName,
+      risk_level: riskLevel,
+      side_effect: sideEffect,
+      environment: trustedEnvironment,
+    };
+  }
+
+  actionDescriptor(
+    principal: Principal,
+    toolName: string,
+    environment: string,
+  ): ActionDescriptor & { environment: string } {
+    const trustedEnvironment = this.environmentName(principal, environment);
+    const toolNameHash = this.tenantAuditHash(principal, 'tool_name', sha256(toolName));
+    const row = this.db
+      .prepare(
+        'SELECT * FROM action_descriptors WHERE tenant_id=? AND tool_name_hash=? AND environment=?',
+      )
+      .get(principal.tenantId, toolNameHash, trustedEnvironment) as Row | undefined;
+    if (!row)
+      throw new ManagedError(
+        403,
+        'action_descriptor_required',
+        'tool action risk must be registered by an administrator before evaluation',
+      );
+    this.assertControlHmac(row, this.actionDescriptorControlHmac(row), 'action descriptor');
+    return {
+      tool_name: toolName,
+      risk_level: String(row.risk_level) as ActionDescriptor['risk_level'],
+      side_effect: String(row.side_effect) as ActionDescriptor['side_effect'],
+      environment: trustedEnvironment,
+    };
+  }
+
+  verifyActionDecision(principal: Principal, decision: GuardDecision, toolName: string): boolean {
+    if (decision.decision === 'rejected' || !decision.audit.validated_arguments_hash) return false;
+    const row = this.db
+      .prepare('SELECT envelope_json FROM audit_events WHERE tenant_id=? AND audit_id=?')
+      .get(principal.tenantId, decision.audit_id) as Row | undefined;
+    if (!row || canonicalJson(parse(row.envelope_json)) !== canonicalJson(decision.audit))
+      return false;
+    const expectedToolHash = this.tenantAuditHash(principal, 'tool_name', sha256(toolName));
+    const expectedArgumentsHash = this.tenantAuditHash(
+      principal,
+      'validated_arguments',
+      sha256(decision.valid_arguments),
+    );
+    return (
+      decision.audit_id === decision.audit.audit_id &&
+      decision.audit.decision === decision.decision &&
+      decision.audit.tool_name_hash === expectedToolHash &&
+      decision.audit.validated_arguments_hash === expectedArgumentsHash &&
+      decision.policy_result.outcome === 'allowed' &&
+      decision.policy_result.applied_policy_hash === decision.audit.policy_hash &&
+      sameStringArray(
+        decision.repaired_fields.map((repair) => repair.rule_id),
+        decision.audit.repair_rule_ids,
+      ) &&
+      sameStringArray(
+        decision.repaired_fields.map((repair) => repair.receipt_hash),
+        decision.audit.repair_receipt_hashes,
+      ) &&
+      (decision.decision === 'valid'
+        ? decision.repaired_fields.length === 0
+        : decision.repaired_fields.length > 0 &&
+          decision.repaired_fields.every(
+            (repair) =>
+              verifyRepairReceipt(repair) &&
+              repair.post_validation.schema === 'passed' &&
+              repair.post_validation.policy === 'allowed',
+          ))
+    );
+  }
+
+  private actionApprovalSecret(principal: Principal): string {
+    return hmac(this.config.masterSecret, 'tenant-action-approval-secret-v1', {
+      tenant_id: principal.tenantId,
+    });
+  }
+
+  recordActionChallenge(principal: Principal, challenge: ApprovalChallenge): void {
+    const challengeRow: Row = {
+      challenge_id: challenge.challenge_id,
+      tenant_id: principal.tenantId,
+      binding_hash: challenge.binding_hash,
+      challenge_json: JSON.stringify(challenge),
+      status: 'pending',
+      evidence_json: null,
+      created_at: challenge.created_at,
+      expires_at: challenge.expires_at,
+      approved_at: null,
+    };
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO action_approvals(challenge_id,tenant_id,binding_hash,challenge_json,status,created_at,expires_at,control_hmac) VALUES(?,?,?,?,?,?,?,?)`,
+        )
+        .run(
+          challengeRow.challenge_id,
+          challengeRow.tenant_id,
+          challengeRow.binding_hash,
+          challengeRow.challenge_json,
+          challengeRow.status,
+          challengeRow.created_at,
+          challengeRow.expires_at,
+          this.actionApprovalControlHmac(challengeRow),
+        );
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('UNIQUE constraint failed'))
+        throw new ManagedError(
+          409,
+          'approval_challenge_exists',
+          'approval challenge already exists',
+        );
+      throw error;
+    }
+  }
+
+  approveActionChallenge(principal: Principal, challengeId: string): ApprovalEvidence {
+    this.requireScope(principal, 'approve:action');
+    return this.db.transaction(() => {
+      const row = this.db
+        .prepare('SELECT * FROM action_approvals WHERE tenant_id=? AND challenge_id=?')
+        .get(principal.tenantId, challengeId) as Row | undefined;
+      if (!row)
+        throw new ManagedError(404, 'approval_challenge_not_found', 'approval challenge not found');
+      this.assertControlHmac(row, this.actionApprovalControlHmac(row), 'action approval');
+      if (row.status === 'revoked')
+        throw new ManagedError(409, 'approval_challenge_revoked', 'approval challenge was revoked');
+      if (row.status === 'approved' && row.evidence_json)
+        return parse(row.evidence_json) as ApprovalEvidence;
+      const approvedAt = now();
+      if (Date.parse(String(row.expires_at)) < Date.parse(approvedAt))
+        throw new ManagedError(409, 'approval_challenge_expired', 'approval challenge has expired');
+      const evidence = approveChallenge({
+        challenge: parse(row.challenge_json) as ApprovalChallenge,
+        approver_id: principal.keyId,
+        approved_at: approvedAt,
+        secret: this.actionApprovalSecret(principal),
+      });
+      const evidenceJson = JSON.stringify(evidence);
+      const updated = {
+        ...row,
+        status: 'approved',
+        evidence_json: evidenceJson,
+        approved_at: approvedAt,
+      };
+      const result = this.db
+        .prepare(
+          `UPDATE action_approvals SET status='approved',evidence_json=?,approved_at=?,control_hmac=? WHERE tenant_id=? AND challenge_id=? AND status='pending'`,
+        )
+        .run(
+          evidenceJson,
+          approvedAt,
+          this.actionApprovalControlHmac(updated),
+          principal.tenantId,
+          challengeId,
+        );
+      if (result.changes !== 1)
+        throw new ManagedError(
+          409,
+          'approval_challenge_state_changed',
+          'approval challenge state changed before approval completed',
+        );
+      return evidence;
+    })();
+  }
+
+  revokeActionChallenge(principal: Principal, challengeId: string): void {
+    this.requireScope(principal, 'approve:action');
+    this.db.transaction(() => {
+      const row = this.db
+        .prepare('SELECT * FROM action_approvals WHERE tenant_id=? AND challenge_id=?')
+        .get(principal.tenantId, challengeId) as Row | undefined;
+      if (!row)
+        throw new ManagedError(404, 'approval_challenge_not_found', 'approval challenge not found');
+      this.assertControlHmac(row, this.actionApprovalControlHmac(row), 'action approval');
+      const updated = { ...row, status: 'revoked', evidence_json: null };
+      this.db
+        .prepare(
+          `UPDATE action_approvals SET status='revoked',evidence_json=NULL,control_hmac=? WHERE tenant_id=? AND challenge_id=?`,
+        )
+        .run(this.actionApprovalControlHmac(updated), principal.tenantId, challengeId);
+    })();
+  }
+
+  private idempotencyKeyHash(principal: Principal, key: string): string {
+    return hmac(this.config.masterSecret, 'tenant-action-idempotency-key-v1', {
+      tenant_id: principal.tenantId,
+      key,
+    });
+  }
+
+  actionIdempotencyCheckpoint(principal: Principal): ActionIdempotencyCheckpoint {
+    this.requireScope(principal, 'reconcile:action');
+    const integrity = this.inspectActionIdempotencyManifests(principal.tenantId);
+    if (!integrity.valid)
+      throw new ManagedError(
+        503,
+        'action_idempotency_manifest_invalid',
+        'action idempotency checkpoint cannot be issued from an invalid manifest',
+      );
+    const manifest = this.db
+      .prepare('SELECT * FROM action_idempotency_manifests WHERE tenant_id=?')
+      .get(principal.tenantId) as Row | undefined;
+    if (!manifest)
+      throw new ManagedError(
+        503,
+        'action_idempotency_manifest_invalid',
+        'action idempotency manifest is missing',
+      );
+    return this.actionIdempotencyCheckpointFromManifest(principal.tenantId, manifest);
+  }
+
+  compareActionIdempotencyCheckpoint(
+    principal: Principal,
+    anchored: ActionIdempotencyCheckpoint,
+  ): ActionIdempotencyCheckpointComparison {
+    this.requireScope(principal, 'reconcile:action');
+    const expectedTenantRef = hmac(
+      this.config.masterSecret,
+      'action-idempotency-checkpoint-tenant-v1',
+      { tenant_id: principal.tenantId },
+    );
+    const body = {
+      checkpoint_version: anchored.checkpoint_version,
+      tenant_ref: anchored.tenant_ref,
+      revision: anchored.revision,
+      row_count: anchored.row_count,
+      accumulator: anchored.accumulator,
+      updated_at: anchored.updated_at,
+    };
+    const expectedHash = hmac(this.config.masterSecret, 'action-idempotency-checkpoint-v1', body);
+    if (
+      anchored.checkpoint_version !== '1' ||
+      typeof anchored.tenant_ref !== 'string' ||
+      !constantTimeEqual(anchored.tenant_ref, expectedTenantRef) ||
+      !Number.isInteger(anchored.revision) ||
+      anchored.revision < 0 ||
+      !Number.isInteger(anchored.row_count) ||
+      anchored.row_count < 0 ||
+      typeof anchored.accumulator !== 'string' ||
+      !/^xor256:[0-9a-f]{64}$/u.test(anchored.accumulator) ||
+      typeof anchored.updated_at !== 'string' ||
+      !Number.isFinite(Date.parse(anchored.updated_at)) ||
+      typeof anchored.checkpoint_hash !== 'string' ||
+      !constantTimeEqual(anchored.checkpoint_hash, expectedHash)
+    )
+      throw new ManagedError(
+        409,
+        'anchored_checkpoint_invalid',
+        'the externally retained idempotency checkpoint is invalid for this tenant',
+      );
+    const current = this.actionIdempotencyCheckpoint(principal);
+    const status =
+      current.revision < anchored.revision
+        ? 'rollback_detected'
+        : current.revision > anchored.revision
+          ? 'advanced'
+          : constantTimeEqual(current.checkpoint_hash, anchored.checkpoint_hash)
+            ? 'same'
+            : 'integrity_conflict';
+    return {
+      status,
+      anchored_revision: anchored.revision,
+      current_revision: current.revision,
+      current_checkpoint: current,
+    };
+  }
+
+  actionIdempotencyLedger(
+    principal: Principal,
+    metadata?: {
+      auditId: string;
+      toolNameHash: string;
+      environment: string;
+    },
+  ): IdempotencyLedger {
+    return {
+      reserve: (key, executionFingerprint) =>
+        this.db
+          .transaction(() => {
+            this.assertActionIdempotencyManifestFresh();
+            const keyHash = this.idempotencyKeyHash(principal, key);
+            const existing = this.db
+              .prepare('SELECT * FROM action_idempotency WHERE tenant_id=? AND key_hash=?')
+              .get(principal.tenantId, keyHash) as Row | undefined;
+            if (existing) {
+              this.assertControlHmac(
+                existing,
+                this.actionIdempotencyControlHmac(existing),
+                'action idempotency reservation',
+              );
+              return existing.execution_fingerprint === executionFingerprint
+                ? ('duplicate' as const)
+                : ('conflict' as const);
+            }
+            const timestamp = now();
+            const reservationId = `res_${randomUUID()}`;
+            const reservation: Row = {
+              tenant_id: principal.tenantId,
+              key_hash: keyHash,
+              execution_fingerprint: executionFingerprint,
+              state: 'pending',
+              created_at: timestamp,
+              updated_at: timestamp,
+              reservation_id: reservationId,
+              audit_id: metadata?.auditId ?? null,
+              tool_name_hash: metadata?.toolNameHash ?? null,
+              environment: metadata?.environment ?? null,
+            };
+            const controlHmac = this.actionIdempotencyControlHmac(reservation);
+            const signedReservation = { ...reservation, control_hmac: controlHmac };
+            this.db
+              .prepare(
+                `INSERT INTO action_idempotency(tenant_id,key_hash,execution_fingerprint,state,created_at,updated_at,reservation_id,audit_id,tool_name_hash,environment,control_hmac) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+              )
+              .run(
+                reservation.tenant_id,
+                reservation.key_hash,
+                reservation.execution_fingerprint,
+                reservation.state,
+                reservation.created_at,
+                reservation.updated_at,
+                reservation.reservation_id,
+                reservation.audit_id,
+                reservation.tool_name_hash,
+                reservation.environment,
+                controlHmac,
+              );
+            this.updateActionIdempotencyManifest(principal.tenantId, [], [signedReservation]);
+            return 'new' as const;
+          })
+          .immediate(),
+      complete: (key, executionFingerprint) =>
+        this.db
+          .transaction(() => {
+            this.assertActionIdempotencyManifestFresh();
+            const keyHash = this.idempotencyKeyHash(principal, key);
+            const row = this.db
+              .prepare(
+                `SELECT * FROM action_idempotency WHERE tenant_id=? AND key_hash=? AND execution_fingerprint=? AND state='pending'`,
+              )
+              .get(principal.tenantId, keyHash, executionFingerprint) as Row | undefined;
+            if (!row)
+              throw new ManagedError(
+                409,
+                'idempotency_completion_invalid',
+                'idempotency completion did not match a pending reservation',
+              );
+            this.assertControlHmac(
+              row,
+              this.actionIdempotencyControlHmac(row),
+              'action idempotency reservation',
+            );
+            const updatedAt = now();
+            const updated = { ...row, state: 'completed', updated_at: updatedAt };
+            const updatedControlHmac = this.actionIdempotencyControlHmac(updated);
+            const signedUpdated = { ...updated, control_hmac: updatedControlHmac };
+            const result = this.db
+              .prepare(
+                `UPDATE action_idempotency SET state='completed',updated_at=?,control_hmac=? WHERE tenant_id=? AND key_hash=? AND execution_fingerprint=? AND state='pending'`,
+              )
+              .run(
+                updatedAt,
+                updatedControlHmac,
+                principal.tenantId,
+                keyHash,
+                executionFingerprint,
+              );
+            if (result.changes !== 1)
+              throw new ManagedError(
+                409,
+                'idempotency_completion_invalid',
+                'idempotency completion did not match a pending reservation',
+              );
+            this.updateActionIdempotencyManifest(principal.tenantId, [row], [signedUpdated]);
+          })
+          .immediate(),
+      release: (key, executionFingerprint) =>
+        this.db
+          .transaction(() => {
+            this.assertActionIdempotencyManifestFresh();
+            const keyHash = this.idempotencyKeyHash(principal, key);
+            const row = this.db
+              .prepare(
+                `SELECT * FROM action_idempotency WHERE tenant_id=? AND key_hash=? AND execution_fingerprint=? AND state='pending'`,
+              )
+              .get(principal.tenantId, keyHash, executionFingerprint) as Row | undefined;
+            if (!row)
+              throw new ManagedError(
+                409,
+                'idempotency_release_invalid',
+                'idempotency release did not match a pending reservation',
+              );
+            this.assertControlHmac(
+              row,
+              this.actionIdempotencyControlHmac(row),
+              'action idempotency reservation',
+            );
+            const result = this.db
+              .prepare(
+                `DELETE FROM action_idempotency WHERE tenant_id=? AND key_hash=? AND execution_fingerprint=? AND state='pending'`,
+              )
+              .run(principal.tenantId, keyHash, executionFingerprint);
+            if (result.changes !== 1)
+              throw new ManagedError(
+                409,
+                'idempotency_release_invalid',
+                'idempotency release did not match a pending reservation',
+              );
+            this.updateActionIdempotencyManifest(principal.tenantId, [row], []);
+          })
+          .immediate(),
+    };
+  }
+
+  evaluateManagedAction(input: {
+    principal: Principal;
+    decision: GuardDecision;
+    toolName: string;
+    environment: string;
+    context: Omit<ActionGateContext, 'environment'>;
+  }): ActionGateDecision {
+    return this.evaluateManagedActionInternal(input, false);
+  }
+
+  evaluateManagedActionForServer(input: {
+    principal: Principal;
+    decision: GuardDecision;
+    toolName: string;
+    environment: string;
+    context: Omit<ActionGateContext, 'environment'>;
+  }): ActionGateDecision {
+    return this.evaluateManagedActionInternal(input, true);
+  }
+
+  evaluateManagedActionPreflightForSharedState(input: {
+    principal: Principal;
+    decision: GuardDecision;
+    toolName: string;
+    environment: string;
+    context: Omit<ActionGateContext, 'environment'>;
+    trustedAction: ActionDescriptor & { environment: string };
+    approvalAlreadyVerified?: boolean;
+  }): ActionGateDecision {
+    return this.evaluateManagedActionInternal(
+      input,
+      true,
+      true,
+      input.trustedAction,
+      true,
+      input.approvalAlreadyVerified ?? false,
+    );
+  }
+
+  private evaluateManagedActionInternal(
+    input: {
+      principal: Principal;
+      decision: GuardDecision;
+      toolName: string;
+      environment: string;
+      context: Omit<ActionGateContext, 'environment'>;
+    },
+    serverWillConfirmAnchor: boolean,
+    sharedStatePreflight = false,
+    trustedAction?: ActionDescriptor & { environment: string },
+    decisionAlreadyVerified = false,
+    approvalAlreadyVerified = false,
+  ): ActionGateDecision {
+    this.requireScope(input.principal, 'evaluate:action');
+    if (
+      !decisionAlreadyVerified &&
+      !this.verifyActionDecision(input.principal, input.decision, input.toolName)
+    )
+      throw new ManagedError(
+        409,
+        'action_decision_invalid',
+        'action decision does not match a stored accepted audit',
+      );
+    const action =
+      trustedAction ?? this.actionDescriptor(input.principal, input.toolName, input.environment);
+    const approval = input.context.approval;
+    if (approval && !approvalAlreadyVerified) {
+      const row = this.db
+        .prepare(
+          `SELECT * FROM action_approvals WHERE tenant_id=? AND challenge_id=? AND status='approved'`,
+        )
+        .get(input.principal.tenantId, approval.challenge.challenge_id) as Row | undefined;
+      if (row) this.assertControlHmac(row, this.actionApprovalControlHmac(row), 'action approval');
+      if (!row || canonicalJson(parse(row.evidence_json)) !== canonicalJson(approval))
+        throw new ManagedError(
+          409,
+          'approval_evidence_unrecognized',
+          'approval evidence is not an approved tenant challenge',
+        );
+    }
+    const gate = evaluateActionGate({
+      decision: input.decision,
+      action,
+      context: { ...input.context, environment: action.environment },
+      approval_secret: this.actionApprovalSecret(input.principal),
+      idempotency_ledger: sharedStatePreflight
+        ? {
+            reserve: () => 'new' as const,
+            complete: () => {
+              throw new TypeError('shared-state preflight cannot complete a reservation');
+            },
+            release: () => {
+              throw new TypeError('shared-state preflight cannot release a reservation');
+            },
+          }
+        : this.actionIdempotencyLedger(input.principal, {
+            auditId: input.decision.audit_id,
+            toolNameHash: input.decision.audit.tool_name_hash,
+            environment: action.environment,
+          }),
+    });
+    if (sharedStatePreflight) return gate;
+    if (
+      gate.status === 'allowed' &&
+      gate.reservation &&
+      typeof input.context.idempotency_key === 'string'
+    ) {
+      const row = this.db
+        .prepare('SELECT * FROM action_idempotency WHERE tenant_id=? AND key_hash=?')
+        .get(
+          input.principal.tenantId,
+          this.idempotencyKeyHash(input.principal, input.context.idempotency_key),
+        ) as Row | undefined;
+      if (row)
+        this.assertControlHmac(
+          row,
+          this.actionIdempotencyControlHmac(row),
+          'action idempotency reservation',
+        );
+      if (!row?.reservation_id)
+        throw new ManagedError(
+          500,
+          'reservation_identity_missing',
+          'managed reservation was created without an operator-safe identifier',
+        );
+      const managedGate: ActionGateDecision = {
+        ...gate,
+        reservation: { ...gate.reservation, reservation_id: text(row.reservation_id) },
+      };
+      if (this.config.actionCheckpointAnchorUrl && !serverWillConfirmAnchor)
+        throw new ManagedError(
+          503,
+          'checkpoint_anchor_acknowledgement_required',
+          'anchored action evaluation must use the managed HTTP boundary; the reservation remains pending',
+        );
+      return managedGate;
+    }
+    return gate;
+  }
+
+  private reconciliationEvidenceHash(principal: Principal, evidenceReference: string): string {
+    return hmac(this.config.masterSecret, 'tenant-action-reconciliation-evidence-v1', {
+      tenant_id: principal.tenantId,
+      evidence_reference: evidenceReference,
+    });
+  }
+
+  private reconciliationOperatorHash(principal: Principal): string {
+    return hmac(this.config.masterSecret, 'tenant-action-reconciliation-operator-v1', {
+      tenant_id: principal.tenantId,
+      key_id: principal.keyId,
+    });
+  }
+
+  private reconciliationRecordHash(
+    tenantId: string,
+    record: Omit<ActionReconciliationRecord, 'record_hash'> & { key_hash: string },
+  ): string {
+    return hmac(this.config.masterSecret, 'action-reconciliation-record-v1', {
+      tenant_id: tenantId,
+      ...record,
+    });
+  }
+
+  pendingActionReservations(
+    principal: Principal,
+    olderThanSeconds = this.config.actionReconciliationMinAgeSeconds ?? 300,
+  ): PendingActionReservation[] {
+    this.requireScope(principal, 'reconcile:action');
+    this.assertActionIdempotencyManifestFresh();
+    const minimum = this.config.actionReconciliationMinAgeSeconds ?? 300;
+    if (
+      !Number.isInteger(olderThanSeconds) ||
+      olderThanSeconds < minimum ||
+      olderThanSeconds > 2_592_000
+    )
+      throw new ManagedError(
+        400,
+        'invalid_reconciliation_age',
+        `older_than_seconds must be an integer from ${minimum} through 2592000`,
+      );
+    const current = Date.now();
+    const cutoff = new Date(current - olderThanSeconds * 1_000).toISOString();
+    const rows = this.db
+      .prepare(
+        `SELECT *
+           FROM action_idempotency
+           WHERE tenant_id=? AND state='pending' AND reservation_id IS NOT NULL
+             AND audit_id IS NOT NULL AND tool_name_hash IS NOT NULL AND environment IS NOT NULL
+             AND julianday(updated_at)<=julianday(?)
+           ORDER BY julianday(updated_at) ASC,reservation_id ASC`,
+      )
+      .all(principal.tenantId, cutoff) as Row[];
+    return rows.map((row) => {
+      this.assertControlHmac(
+        row,
+        this.actionIdempotencyControlHmac(row),
+        'action idempotency reservation',
+      );
+      return {
+        reservation_id: text(row.reservation_id),
+        execution_fingerprint: text(row.execution_fingerprint),
+        audit_id: text(row.audit_id),
+        tool_name_hash: text(row.tool_name_hash),
+        environment: text(row.environment),
+        created_at: text(row.created_at),
+        updated_at: text(row.updated_at),
+        age_seconds: Math.max(0, Math.floor((current - Date.parse(text(row.updated_at))) / 1_000)),
+      };
+    });
+  }
+
+  reconcileActionReservation(
+    principal: Principal,
+    reservationId: string,
+    outcome: ActionReconciliationRecord['outcome'],
+    evidenceReference: string,
+  ): ActionReconciliationRecord {
+    this.requireScope(principal, 'reconcile:action');
+    if (!/^res_[0-9a-f-]{36}$/u.test(reservationId))
+      throw new ManagedError(400, 'invalid_reservation_id', 'reservation_id is invalid');
+    if (!['confirmed_executed', 'confirmed_not_executed'].includes(outcome))
+      throw new ManagedError(400, 'invalid_reconciliation_outcome', 'outcome is invalid');
+    if (!evidenceReference || evidenceReference.length > 512)
+      throw new ManagedError(
+        400,
+        'invalid_reconciliation_evidence',
+        'evidence_reference must contain 1-512 characters',
+      );
+    const evidenceHash = this.reconciliationEvidenceHash(principal, evidenceReference);
+    return this.db
+      .transaction(() => {
+        this.assertActionIdempotencyManifestFresh();
+        const existing = this.db
+          .prepare('SELECT * FROM action_reconciliations WHERE tenant_id=? AND reservation_id=?')
+          .get(principal.tenantId, reservationId) as Row | undefined;
+        if (existing) {
+          const record = this.actionReconciliationFromRow(existing);
+          const { record_hash: recordHash, ...recordWithoutHash } = record;
+          if (
+            record.outcome === outcome &&
+            record.evidence_hash === evidenceHash &&
+            recordHash ===
+              this.reconciliationRecordHash(principal.tenantId, {
+                ...recordWithoutHash,
+                key_hash: text(existing.key_hash),
+              })
+          )
+            return record;
+          throw new ManagedError(
+            409,
+            'reservation_already_reconciled',
+            'reservation has already been reconciled with different evidence or outcome',
+          );
+        }
+        const row = this.db
+          .prepare(
+            `SELECT * FROM action_idempotency WHERE tenant_id=? AND reservation_id=? AND state='pending'`,
+          )
+          .get(principal.tenantId, reservationId) as Row | undefined;
+        if (!row)
+          throw new ManagedError(
+            404,
+            'pending_reservation_not_found',
+            'pending reservation not found',
+          );
+        this.assertControlHmac(
+          row,
+          this.actionIdempotencyControlHmac(row),
+          'action idempotency reservation',
+        );
+        const minimumAge = this.config.actionReconciliationMinAgeSeconds ?? 300;
+        if (Date.now() - Date.parse(text(row.updated_at)) < minimumAge * 1_000)
+          throw new ManagedError(
+            409,
+            'reservation_too_recent',
+            `reservation must remain pending for at least ${minimumAge} seconds before reconciliation`,
+          );
+        const recordWithoutHash = {
+          reconciliation_id: `rec_${randomUUID()}`,
+          reservation_id: reservationId,
+          execution_fingerprint: text(row.execution_fingerprint),
+          audit_id: text(row.audit_id),
+          tool_name_hash: text(row.tool_name_hash),
+          environment: text(row.environment),
+          outcome,
+          evidence_hash: evidenceHash,
+          reconciled_by_hash: this.reconciliationOperatorHash(principal),
+          reconciled_at: now(),
+          previous_hash: text(
+            (
+              this.db
+                .prepare(
+                  'SELECT record_hash FROM action_reconciliations WHERE tenant_id=? ORDER BY sequence DESC LIMIT 1',
+                )
+                .get(principal.tenantId) as Row | undefined
+            )?.record_hash,
+            'GENESIS',
+          ),
+        } satisfies Omit<ActionReconciliationRecord, 'record_hash'>;
+        const recordHash = this.reconciliationRecordHash(principal.tenantId, {
+          ...recordWithoutHash,
+          key_hash: text(row.key_hash),
+        });
+        this.db
+          .prepare(
+            `INSERT INTO action_reconciliations(reconciliation_id,tenant_id,reservation_id,key_hash,execution_fingerprint,audit_id,tool_name_hash,environment,outcome,evidence_hash,reconciled_by_hash,reconciled_at,previous_hash,record_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          )
+          .run(
+            recordWithoutHash.reconciliation_id,
+            principal.tenantId,
+            reservationId,
+            row.key_hash,
+            recordWithoutHash.execution_fingerprint,
+            recordWithoutHash.audit_id,
+            recordWithoutHash.tool_name_hash,
+            recordWithoutHash.environment,
+            outcome,
+            evidenceHash,
+            recordWithoutHash.reconciled_by_hash,
+            recordWithoutHash.reconciled_at,
+            recordWithoutHash.previous_hash,
+            recordHash,
+          );
+        if (outcome === 'confirmed_executed') {
+          const updatedAt = now();
+          const updated = { ...row, state: 'completed', updated_at: updatedAt };
+          const updatedControlHmac = this.actionIdempotencyControlHmac(updated);
+          const signedUpdated = { ...updated, control_hmac: updatedControlHmac };
+          this.db
+            .prepare(
+              `UPDATE action_idempotency SET state='completed',updated_at=?,control_hmac=? WHERE tenant_id=? AND reservation_id=? AND state='pending'`,
+            )
+            .run(updatedAt, updatedControlHmac, principal.tenantId, reservationId);
+          this.updateActionIdempotencyManifest(principal.tenantId, [row], [signedUpdated]);
+        } else {
+          this.db
+            .prepare(
+              `DELETE FROM action_idempotency WHERE tenant_id=? AND reservation_id=? AND state='pending'`,
+            )
+            .run(principal.tenantId, reservationId);
+          this.updateActionIdempotencyManifest(principal.tenantId, [row], []);
+        }
+        this.insertAlert(principal.tenantId, 'action_reconciled', 'critical', {
+          reservation_id: reservationId,
+          reconciliation_id: recordWithoutHash.reconciliation_id,
+          audit_id: recordWithoutHash.audit_id,
+          outcome,
+          evidence_hash: evidenceHash,
+        });
+        return { ...recordWithoutHash, record_hash: recordHash };
+      })
+      .immediate();
+  }
+
+  private actionReconciliationFromRow(row: Row): ActionReconciliationRecord {
+    return {
+      reconciliation_id: text(row.reconciliation_id),
+      reservation_id: text(row.reservation_id),
+      execution_fingerprint: text(row.execution_fingerprint),
+      audit_id: text(row.audit_id),
+      tool_name_hash: text(row.tool_name_hash),
+      environment: text(row.environment),
+      outcome: text(row.outcome) as ActionReconciliationRecord['outcome'],
+      evidence_hash: text(row.evidence_hash),
+      reconciled_by_hash: text(row.reconciled_by_hash),
+      reconciled_at: text(row.reconciled_at),
+      previous_hash: text(row.previous_hash),
+      record_hash: text(row.record_hash),
+    };
+  }
+
+  actionReconciliationHistory(principal: Principal): Array<
+    ActionReconciliationRecord & {
+      integrity_valid: boolean;
+    }
+  > {
+    this.requireScope(principal, 'reconcile:action');
+    return (
+      this.db
+        .prepare(
+          'SELECT * FROM action_reconciliations WHERE tenant_id=? ORDER BY reconciled_at DESC,reconciliation_id DESC LIMIT 1000',
+        )
+        .all(principal.tenantId) as Row[]
+    ).map((row) => {
+      const record = this.actionReconciliationFromRow(row);
+      const { record_hash: recordHash, ...recordWithoutHash } = record;
+      return {
+        ...record,
+        integrity_valid:
+          recordHash ===
+          this.reconciliationRecordHash(principal.tenantId, {
+            ...recordWithoutHash,
+            key_hash: text(row.key_hash),
+          }),
+      };
+    });
+  }
+
+  verifyActionReconciliationHistory(principal: Principal): {
+    valid: boolean;
+    checked: number;
+    first_invalid_reconciliation_id?: string;
+  } {
+    this.requireScope(principal, 'reconcile:action');
+    const rows = this.db
+      .prepare('SELECT * FROM action_reconciliations WHERE tenant_id=? ORDER BY sequence ASC')
+      .all(principal.tenantId) as Row[];
+    let previousHash = 'GENESIS';
+    for (const [index, row] of rows.entries()) {
+      const record = this.actionReconciliationFromRow(row);
+      const { record_hash: recordHash, ...recordWithoutHash } = record;
+      if (
+        record.previous_hash !== previousHash ||
+        recordHash !==
+          this.reconciliationRecordHash(principal.tenantId, {
+            ...recordWithoutHash,
+            key_hash: text(row.key_hash),
+          })
+      )
+        return {
+          valid: false,
+          checked: index,
+          first_invalid_reconciliation_id: record.reconciliation_id,
+        };
+      previousHash = recordHash;
+    }
+    return { valid: true, checked: rows.length };
   }
 
   requireScope(principal: Principal, scope: Scope): void {
@@ -413,7 +2371,70 @@ export class ManagedStore {
     transaction();
   }
 
-  recordDecision(principal: Principal, decision: GuardDecision): void {
+  private tenantAuditHash(principal: Principal, field: string, digest: string): string {
+    return hmac(this.config.masterSecret, 'tenant-audit-field-v1', {
+      tenant_id: principal.tenantId,
+      field,
+      digest,
+    });
+  }
+
+  private scopeDecision(principal: Principal, decision: GuardDecision): GuardDecision {
+    const repairedFields = decision.repaired_fields.map((repair) => {
+      const scoped = {
+        ...repair,
+        original_value_hash: this.tenantAuditHash(
+          principal,
+          'repair.original_value',
+          repair.original_value_hash,
+        ),
+        output_value_hash: this.tenantAuditHash(
+          principal,
+          'repair.output_value',
+          repair.output_value_hash,
+        ),
+        schema_fragment_hash: this.tenantAuditHash(
+          principal,
+          'repair.schema_fragment',
+          repair.schema_fragment_hash,
+        ),
+      };
+      return { ...scoped, receipt_hash: repairReceiptHash(scoped) };
+    });
+    const policyHash = this.tenantAuditHash(
+      principal,
+      'policy',
+      decision.policy_result.applied_policy_hash,
+    );
+    const audit = {
+      ...decision.audit,
+      tool_name_hash: this.tenantAuditHash(principal, 'tool_name', decision.audit.tool_name_hash),
+      schema_hash: this.tenantAuditHash(principal, 'schema', decision.audit.schema_hash),
+      arguments_hash: this.tenantAuditHash(principal, 'arguments', decision.audit.arguments_hash),
+      ...(decision.audit.validated_arguments_hash
+        ? {
+            validated_arguments_hash: this.tenantAuditHash(
+              principal,
+              'validated_arguments',
+              decision.audit.validated_arguments_hash,
+            ),
+          }
+        : {}),
+      repair_receipt_hashes: repairedFields.map((repair) => repair.receipt_hash),
+      policy_hash: policyHash,
+    };
+    return {
+      ...decision,
+      repaired_fields: repairedFields,
+      policy_result: {
+        ...decision.policy_result,
+        applied_policy_hash: policyHash,
+      },
+      audit,
+    };
+  }
+
+  private recordScopedDecision(principal: Principal, decision: GuardDecision): void {
     const envelope = decision.audit;
     this.db.transaction(() => {
       const previous = this.db
@@ -477,15 +2498,48 @@ export class ManagedStore {
         });
     })();
   }
+
+  recordDecision(principal: Principal, decision: GuardDecision): GuardDecision {
+    const scoped = this.scopeDecision(principal, decision);
+    this.recordScopedDecision(principal, scoped);
+    return scoped;
+  }
   recordValidation(
     principal: Principal,
     decision: GuardDecision,
     context: ObservationContext = {},
-  ): void {
+  ): GuardDecision {
+    const scoped = this.scopeDecision(principal, decision);
     this.db.transaction(() => {
       this.consumeValidation(principal);
-      this.recordDecision(principal, decision);
-      this.recordFailureCluster(principal, decision, context);
+      this.recordScopedDecision(principal, scoped);
+      this.recordFailureCluster(principal, scoped, context);
+    })();
+    return scoped;
+  }
+
+  scopeValidationForSharedState(principal: Principal, decision: GuardDecision): GuardDecision {
+    return this.scopeDecision(principal, decision);
+  }
+
+  recordScopedValidationAfterSharedState(
+    principal: Principal,
+    scopedDecision: GuardDecision,
+    context: ObservationContext = {},
+    recordIntelligence = true,
+  ): void {
+    if (
+      scopedDecision.audit_id !== scopedDecision.audit.audit_id ||
+      scopedDecision.decision !== scopedDecision.audit.decision
+    )
+      throw new ManagedError(
+        500,
+        'scoped_audit_binding_invalid',
+        'refusing to persist a validation with an invalid scoped audit binding',
+      );
+    this.db.transaction(() => {
+      this.recordScopedDecision(principal, scopedDecision);
+      if (recordIntelligence) this.recordFailureCluster(principal, scopedDecision, context);
     })();
   }
 
@@ -640,6 +2694,28 @@ export class ManagedStore {
       `tool-name:${principal.tenantId}`,
       input.tool_name,
     );
+    const schemaHash = sha256(input.schema);
+    const existing = this.db
+      .prepare(
+        'SELECT schema_hash,schema_json,adapter,drift_json FROM tool_schemas WHERE tenant_id=? AND tool_name_hash=? AND version=?',
+      )
+      .get(principal.tenantId, toolHash, input.version) as Row | undefined;
+    if (existing) {
+      if (
+        text(existing.schema_hash) !== schemaHash ||
+        sha256(parse(existing.schema_json)) !== schemaHash ||
+        text(existing.adapter) !== input.adapter
+      )
+        throw new ManagedError(
+          409,
+          'schema_version_conflict',
+          'this schema version is already registered with different content or adapter',
+        );
+      return {
+        schema_hash: schemaHash,
+        drift: existing.drift_json === null ? null : parse(existing.drift_json),
+      };
+    }
     const prior = this.db
       .prepare(
         'SELECT schema_json FROM tool_schemas WHERE tenant_id=? AND tool_name_hash=? ORDER BY id DESC LIMIT 1',
@@ -648,7 +2724,6 @@ export class ManagedStore {
     const drift = prior
       ? detectSchemaDrift(parse(prior.schema_json) as object | boolean, input.schema)
       : null;
-    const schemaHash = sha256(input.schema);
     this.db
       .prepare(
         'INSERT INTO tool_schemas(tenant_id,tool_name_hash,adapter,version,schema_hash,schema_json,drift_json,created_at) VALUES(?,?,?,?,?,?,?,?)',
@@ -687,6 +2762,346 @@ export class ManagedStore {
         });
     }
     return { schema_hash: schemaHash, drift };
+  }
+
+  private schemaReleaseRecordHash(
+    tenantId: string,
+    record: Omit<ManagedSchemaRelease, 'record_hash'>,
+    schemaRowId: number,
+  ): string {
+    return hmac(this.config.masterSecret, 'schema-release-record-v1', {
+      tenant_id: tenantId,
+      schema_row_id: schemaRowId,
+      ...record,
+    });
+  }
+
+  private schemaReleaseSourceValid(row: Row): boolean {
+    try {
+      return (
+        text(row.source_tenant_id) === text(row.tenant_id) &&
+        text(row.source_tool_name_hash) === text(row.tool_name_hash) &&
+        text(row.source_schema_hash) === text(row.schema_hash) &&
+        text(row.source_adapter) === text(row.adapter) &&
+        text(row.source_version) === text(row.version) &&
+        sha256(parse(row.source_schema_json)) === text(row.schema_hash)
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  private schemaReleaseFromRow(row: Row): ManagedSchemaRelease {
+    return {
+      release_id: text(row.release_id),
+      tool_name_hash: text(row.tool_name_hash),
+      environment: text(row.environment),
+      schema_hash: text(row.schema_hash),
+      adapter: text(row.adapter),
+      version: text(row.version),
+      compatibility: text(row.compatibility) as ManagedSchemaRelease['compatibility'],
+      evidence_hash: text(row.evidence_hash),
+      promoted_by_hash: text(row.promoted_by_hash),
+      promoted_at: text(row.promoted_at),
+      previous_hash: text(row.previous_hash),
+      record_hash: text(row.record_hash),
+    };
+  }
+
+  promoteSchemaRelease(
+    principal: Principal,
+    input: {
+      tool_name: string;
+      version: string;
+      environment: string;
+      expected_schema_hash: string;
+      allow_breaking?: boolean;
+      evidence_reference?: string;
+    },
+  ): ManagedSchemaRelease & { drift: DriftReport | null } {
+    this.requireScope(principal, 'promote:schema');
+    if (
+      input.tool_name.length === 0 ||
+      input.tool_name.length > 256 ||
+      input.version.length === 0 ||
+      input.version.length > 128 ||
+      !/^sha256:[0-9a-f]{64}$/u.test(input.expected_schema_hash) ||
+      (input.evidence_reference !== undefined &&
+        (input.evidence_reference.length === 0 || input.evidence_reference.length > 512))
+    )
+      throw new ManagedError(
+        400,
+        'invalid_schema_promotion',
+        'tool, version, expected schema hash, and optional bounded evidence are required',
+      );
+    const environment = text(this.environmentRecord(principal, input.environment).name);
+    const toolNameHash = hmac(
+      this.config.masterSecret,
+      `tool-name:${principal.tenantId}`,
+      input.tool_name,
+    );
+    if (!this.verifySchemaReleaseHistory(principal).valid)
+      throw new ManagedError(
+        409,
+        'schema_release_history_invalid',
+        'refusing promotion because schema release history failed integrity verification',
+      );
+    const candidate = this.db
+      .prepare(
+        `SELECT id,schema_hash,schema_json,adapter,version FROM tool_schemas WHERE tenant_id=? AND tool_name_hash=? AND version=?`,
+      )
+      .get(principal.tenantId, toolNameHash, input.version) as Row | undefined;
+    if (!candidate)
+      throw new ManagedError(
+        404,
+        'registered_schema_not_found',
+        'the requested registered schema version does not exist for this tenant and tool',
+      );
+    if (sha256(parse(candidate.schema_json)) !== text(candidate.schema_hash))
+      throw new ManagedError(
+        409,
+        'registered_schema_integrity_invalid',
+        'the registered schema body does not match its stored hash',
+      );
+    if (text(candidate.schema_hash) !== input.expected_schema_hash)
+      throw new ManagedError(
+        409,
+        'schema_hash_mismatch',
+        'expected_schema_hash does not match the registered schema',
+      );
+    const current = this.db
+      .prepare(
+        `SELECT r.*,s.schema_json FROM schema_releases r JOIN tool_schemas s ON s.id=r.schema_row_id WHERE r.tenant_id=? AND r.environment=? AND r.tool_name_hash=? ORDER BY r.sequence DESC LIMIT 1`,
+      )
+      .get(principal.tenantId, environment, toolNameHash) as Row | undefined;
+    if (current && Number(current.schema_row_id) === Number(candidate.id))
+      return { ...this.schemaReleaseFromRow(current), drift: null };
+    const drift = current
+      ? detectSchemaDrift(
+          parse(current.schema_json) as object | boolean,
+          parse(candidate.schema_json) as object | boolean,
+        )
+      : null;
+    const compatibility: ManagedSchemaRelease['compatibility'] = drift
+      ? drift.compatibility
+      : 'initial';
+    if (compatibility === 'breaking' && !input.allow_breaking)
+      throw new ManagedError(
+        409,
+        'breaking_schema_promotion_blocked',
+        'breaking schema promotion requires allow_breaking and an evidence reference',
+      );
+    if (compatibility === 'breaking' && !input.evidence_reference)
+      throw new ManagedError(
+        400,
+        'promotion_evidence_required',
+        'breaking schema promotion requires an external review evidence reference',
+      );
+    return this.db.transaction(() => {
+      const promotedAt = now();
+      const previousHash = text(
+        (
+          this.db
+            .prepare(
+              'SELECT record_hash FROM schema_releases WHERE tenant_id=? ORDER BY sequence DESC LIMIT 1',
+            )
+            .get(principal.tenantId) as Row | undefined
+        )?.record_hash,
+        'GENESIS',
+      );
+      const recordWithoutHash: Omit<ManagedSchemaRelease, 'record_hash'> = {
+        release_id: `release_${randomUUID()}`,
+        tool_name_hash: toolNameHash,
+        environment,
+        schema_hash: text(candidate.schema_hash),
+        adapter: text(candidate.adapter),
+        version: text(candidate.version),
+        compatibility,
+        evidence_hash: hmac(this.config.masterSecret, 'schema-promotion-evidence-v1', {
+          tenant_id: principal.tenantId,
+          evidence_reference: input.evidence_reference ?? 'none',
+        }),
+        promoted_by_hash: hmac(this.config.masterSecret, 'schema-promoter-v1', {
+          tenant_id: principal.tenantId,
+          key_id: principal.keyId,
+        }),
+        promoted_at: promotedAt,
+        previous_hash: previousHash,
+      };
+      const recordHash = this.schemaReleaseRecordHash(
+        principal.tenantId,
+        recordWithoutHash,
+        Number(candidate.id),
+      );
+      this.db
+        .prepare(
+          `INSERT INTO schema_releases(release_id,tenant_id,tool_name_hash,environment,schema_row_id,schema_hash,adapter,version,compatibility,evidence_hash,promoted_by_hash,promoted_at,previous_hash,record_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        )
+        .run(
+          recordWithoutHash.release_id,
+          principal.tenantId,
+          toolNameHash,
+          environment,
+          candidate.id,
+          recordWithoutHash.schema_hash,
+          recordWithoutHash.adapter,
+          recordWithoutHash.version,
+          compatibility,
+          recordWithoutHash.evidence_hash,
+          recordWithoutHash.promoted_by_hash,
+          promotedAt,
+          previousHash,
+          recordHash,
+        );
+      this.insertAlert(principal.tenantId, 'schema_promoted', 'critical', {
+        release_id: recordWithoutHash.release_id,
+        tool_name_hash: toolNameHash,
+        environment,
+        schema_hash: recordWithoutHash.schema_hash,
+        compatibility,
+      });
+      return { ...recordWithoutHash, record_hash: recordHash, drift };
+    })();
+  }
+
+  listSchemaReleases(
+    principal: Principal,
+    environment?: string,
+    limit = 100,
+  ): Array<ManagedSchemaRelease & { integrity_valid: boolean }> {
+    this.requireScope(principal, 'promote:schema');
+    const bounded = Number.isInteger(limit) ? Math.min(Math.max(limit, 1), 500) : 100;
+    const rows = (
+      environment
+        ? this.db
+            .prepare(
+              `SELECT r.*,s.tenant_id source_tenant_id,s.tool_name_hash source_tool_name_hash,s.schema_hash source_schema_hash,s.adapter source_adapter,s.version source_version,s.schema_json source_schema_json FROM schema_releases r LEFT JOIN tool_schemas s ON s.id=r.schema_row_id WHERE r.tenant_id=? AND r.environment=? ORDER BY r.sequence DESC LIMIT ?`,
+            )
+            .all(principal.tenantId, this.environmentName(principal, environment), bounded)
+        : this.db
+            .prepare(
+              `SELECT r.*,s.tenant_id source_tenant_id,s.tool_name_hash source_tool_name_hash,s.schema_hash source_schema_hash,s.adapter source_adapter,s.version source_version,s.schema_json source_schema_json FROM schema_releases r LEFT JOIN tool_schemas s ON s.id=r.schema_row_id WHERE r.tenant_id=? ORDER BY r.sequence DESC LIMIT ?`,
+            )
+            .all(principal.tenantId, bounded)
+    ) as Row[];
+    return rows.map((row) => {
+      const record = this.schemaReleaseFromRow(row);
+      const { record_hash: recordHash, ...withoutHash } = record;
+      return {
+        ...record,
+        integrity_valid:
+          this.schemaReleaseSourceValid(row) &&
+          recordHash ===
+            this.schemaReleaseRecordHash(
+              principal.tenantId,
+              withoutHash,
+              Number(row.schema_row_id),
+            ),
+      };
+    });
+  }
+
+  verifySchemaReleaseHistory(principal: Principal): {
+    valid: boolean;
+    checked: number;
+    first_invalid_release_id?: string;
+  } {
+    this.requireScope(principal, 'promote:schema');
+    const rows = this.db
+      .prepare(
+        `SELECT r.*,s.tenant_id source_tenant_id,s.tool_name_hash source_tool_name_hash,s.schema_hash source_schema_hash,s.adapter source_adapter,s.version source_version,s.schema_json source_schema_json FROM schema_releases r LEFT JOIN tool_schemas s ON s.id=r.schema_row_id WHERE r.tenant_id=? ORDER BY r.sequence ASC`,
+      )
+      .all(principal.tenantId) as Row[];
+    let previousHash = 'GENESIS';
+    for (const [index, row] of rows.entries()) {
+      const record = this.schemaReleaseFromRow(row);
+      const { record_hash: recordHash, ...withoutHash } = record;
+      if (
+        record.previous_hash !== previousHash ||
+        !this.schemaReleaseSourceValid(row) ||
+        recordHash !==
+          this.schemaReleaseRecordHash(principal.tenantId, withoutHash, Number(row.schema_row_id))
+      )
+        return {
+          valid: false,
+          checked: index,
+          first_invalid_release_id: record.release_id,
+        };
+      previousHash = recordHash;
+    }
+    return { valid: true, checked: rows.length };
+  }
+
+  schemaAdmission(
+    principal: Principal,
+    environmentInput: string,
+    toolName: string,
+    schema: object | boolean,
+  ): SchemaAdmissionResult {
+    const environmentRow = this.environmentRecord(principal, environmentInput);
+    const environment = text(environmentRow.name);
+    const mode = text(environmentRow.schema_enforcement) as SchemaEnforcementMode;
+    const toolNameHash = hmac(
+      this.config.masterSecret,
+      `tool-name:${principal.tenantId}`,
+      toolName,
+    );
+    const submittedSchemaHash = sha256(schema);
+    if (mode === 'observe')
+      return {
+        mode,
+        allowed: true,
+        environment,
+        tool_name_hash: toolNameHash,
+        submitted_schema_hash: submittedSchemaHash,
+      };
+    const promoted = this.db
+      .prepare(
+        `SELECT r.*,s.tenant_id source_tenant_id,s.tool_name_hash source_tool_name_hash,s.schema_hash source_schema_hash,s.adapter source_adapter,s.version source_version,s.schema_json source_schema_json FROM schema_releases r LEFT JOIN tool_schemas s ON s.id=r.schema_row_id WHERE r.tenant_id=? AND r.environment=? AND r.tool_name_hash=? ORDER BY r.sequence DESC LIMIT 1`,
+      )
+      .get(principal.tenantId, environment, toolNameHash) as Row | undefined;
+    if (!promoted)
+      return {
+        mode,
+        allowed: false,
+        reason: 'schema_not_promoted',
+        environment,
+        tool_name_hash: toolNameHash,
+        submitted_schema_hash: submittedSchemaHash,
+      };
+    const promotedRecord = this.schemaReleaseFromRow(promoted);
+    const { record_hash: promotedRecordHash, ...promotedWithoutHash } = promotedRecord;
+    if (
+      !this.schemaReleaseSourceValid(promoted) ||
+      promotedRecordHash !==
+        this.schemaReleaseRecordHash(
+          principal.tenantId,
+          promotedWithoutHash,
+          Number(promoted.schema_row_id),
+        )
+    )
+      return {
+        mode,
+        allowed: false,
+        reason: 'schema_release_integrity_invalid',
+        environment,
+        tool_name_hash: toolNameHash,
+        submitted_schema_hash: submittedSchemaHash,
+        release_id: promotedRecord.release_id,
+      };
+    const promotedSchemaHash = text(promoted.schema_hash);
+    return {
+      mode,
+      allowed: submittedSchemaHash === promotedSchemaHash,
+      ...(submittedSchemaHash === promotedSchemaHash
+        ? {}
+        : { reason: 'schema_release_mismatch' as const }),
+      environment,
+      tool_name_hash: toolNameHash,
+      submitted_schema_hash: submittedSchemaHash,
+      promoted_schema_hash: promotedSchemaHash,
+      release_id: text(promoted.release_id),
+    };
   }
 
   aggregateIntelligence(): Row[] {
@@ -1053,13 +3468,517 @@ export class ManagedStore {
       .all(principal.tenantId) as Row[];
     return rows.map(({ detail_json, ...row }) => ({ ...row, detail: parse(detail_json) }));
   }
+  private checkpointAnchorOperational(): boolean {
+    if (!this.config.actionCheckpointAnchorUrl) return true;
+    const current = this.db
+      .prepare(
+        `SELECT d.*
+           FROM action_idempotency_manifests m
+           JOIN checkpoint_anchor_deliveries d
+             ON d.tenant_id=m.tenant_id AND d.revision=m.revision
+          ORDER BY d.tenant_id`,
+      )
+      .all() as Row[];
+    if (current.some((row) => row.status === 'dead')) return false;
+    for (const row of current) this.assertCheckpointAnchorDeliveryPayloadHmac(row);
+    return true;
+  }
+  listCheckpointAnchorDeliveries(
+    principal: Principal,
+    limit = 100,
+  ): ActionCheckpointAnchorDelivery[] {
+    this.requireScope(principal, 'reconcile:action');
+    const bounded = Number.isInteger(limit) ? Math.min(Math.max(limit, 1), 500) : 100;
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM checkpoint_anchor_deliveries WHERE tenant_id=? ORDER BY revision DESC LIMIT ?`,
+      )
+      .all(principal.tenantId, bounded) as Row[];
+    return rows.map((row) => {
+      this.assertCheckpointAnchorDeliveryPayloadHmac(row);
+      return {
+        delivery_id: text(row.delivery_id),
+        revision: Number(row.revision),
+        checkpoint_hash: text(row.checkpoint_hash),
+        status: text(row.status) as ActionCheckpointAnchorDelivery['status'],
+        attempt_count: Number(row.attempt_count),
+        next_attempt_at: text(row.next_attempt_at),
+        last_attempt_at: row.last_attempt_at === null ? null : text(row.last_attempt_at),
+        delivered_at: row.delivered_at === null ? null : text(row.delivered_at),
+        response_status: row.response_status === null ? null : Number(row.response_status),
+        error_code: row.error_code === null ? null : text(row.error_code),
+        created_at: text(row.created_at),
+      };
+    });
+  }
+  actionCheckpointAnchorAcknowledged(principal: Principal): boolean {
+    this.requireScope(principal, 'evaluate:action');
+    if (!this.config.actionCheckpointAnchorUrl) return true;
+    const manifest = this.db
+      .prepare('SELECT * FROM action_idempotency_manifests WHERE tenant_id=?')
+      .get(principal.tenantId) as Row | undefined;
+    if (!manifest) return false;
+    this.assertControlHmac(
+      manifest,
+      this.actionIdempotencyManifestHmac(manifest),
+      'action idempotency manifest',
+    );
+    const delivery = this.db
+      .prepare('SELECT * FROM checkpoint_anchor_deliveries WHERE tenant_id=? AND revision=?')
+      .get(principal.tenantId, manifest.revision) as Row | undefined;
+    if (!delivery) return false;
+    this.assertCheckpointAnchorDeliveryPayloadHmac(delivery);
+    return (
+      delivery.status === 'delivered' &&
+      constantTimeEqual(
+        text(delivery.checkpoint_hash),
+        this.actionIdempotencyCheckpointFromManifest(principal.tenantId, manifest).checkpoint_hash,
+      )
+    );
+  }
+  redriveCheckpointAnchorDelivery(principal: Principal, deliveryId: string): boolean {
+    this.requireScope(principal, 'reconcile:action');
+    if (!this.config.actionCheckpointAnchorUrl) return false;
+    return this.db.transaction(() => {
+      const row = this.db
+        .prepare('SELECT * FROM checkpoint_anchor_deliveries WHERE tenant_id=? AND delivery_id=?')
+        .get(principal.tenantId, deliveryId) as Row | undefined;
+      if (!row) return false;
+      this.assertCheckpointAnchorDeliveryPayloadHmac(row);
+      return (
+        this.db
+          .prepare(
+            `UPDATE checkpoint_anchor_deliveries SET status='pending',attempt_count=0,next_attempt_at=?,lease_id=NULL,lease_expires_at=NULL,last_attempt_at=NULL,delivered_at=NULL,response_status=NULL,error_code=NULL,acknowledgement_hmac=NULL WHERE tenant_id=? AND delivery_id=? AND status='dead'`,
+          )
+          .run(now(), principal.tenantId, deliveryId).changes === 1
+      );
+    })();
+  }
+  claimDueCheckpointAnchorDeliveries(limit = 25): ClaimedCheckpointAnchorDelivery[] {
+    const endpoint = this.config.actionCheckpointAnchorUrl;
+    const signingSecret = this.config.actionCheckpointAnchorSigningSecret;
+    if (!endpoint || !signingSecret) return [];
+    const bounded = Number.isInteger(limit) ? Math.min(Math.max(limit, 1), 100) : 25;
+    const claimedAt = now();
+    const leaseExpiresAt = new Date(Date.now() + 30_000).toISOString();
+    return this.db.transaction(() => {
+      const rows = this.db
+        .prepare(
+          `SELECT * FROM checkpoint_anchor_deliveries WHERE (status='pending' AND next_attempt_at<=?) OR (status='processing' AND lease_expires_at<=?) ORDER BY revision,created_at LIMIT ?`,
+        )
+        .all(claimedAt, claimedAt, bounded) as Row[];
+      const claims: ClaimedCheckpointAnchorDelivery[] = [];
+      for (const row of rows) {
+        this.assertCheckpointAnchorDeliveryPayloadHmac(row);
+        const leaseId = `lease_${randomUUID()}`;
+        const updated = this.db
+          .prepare(
+            `UPDATE checkpoint_anchor_deliveries SET status='processing',attempt_count=attempt_count+1,last_attempt_at=?,lease_id=?,lease_expires_at=? WHERE delivery_id=? AND ((status='pending' AND next_attempt_at<=?) OR (status='processing' AND lease_expires_at<=?))`,
+          )
+          .run(claimedAt, leaseId, leaseExpiresAt, row.delivery_id, claimedAt, claimedAt).changes;
+        if (updated !== 1) continue;
+        claims.push({
+          deliveryId: text(row.delivery_id),
+          leaseId,
+          endpoint,
+          signingSecret,
+          payload: text(row.payload_json),
+          attemptCount: Number(row.attempt_count) + 1,
+        });
+      }
+      return claims;
+    })();
+  }
+  finishCheckpointAnchorDelivery(input: {
+    deliveryId: string;
+    leaseId: string;
+    delivered: boolean;
+    retryable: boolean;
+    responseStatus?: number;
+    errorCode?: string;
+  }): 'delivered' | 'pending' | 'dead' | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM checkpoint_anchor_deliveries WHERE delivery_id=? AND status='processing' AND lease_id=?`,
+      )
+      .get(input.deliveryId, input.leaseId) as Row | undefined;
+    if (!row) return undefined;
+    const attempts = Number(row.attempt_count);
+    const maxAttempts = this.config.actionCheckpointAnchorMaxAttempts ?? 8;
+    const responseStatus = input.responseStatus ?? null;
+    const errorCode = (input.errorCode ?? (input.delivered ? null : 'delivery_failed'))?.slice(
+      0,
+      128,
+    );
+    if (input.delivered) {
+      const deliveredAt = now();
+      const acknowledgementHmac = this.checkpointAnchorAcknowledgementHmac({
+        ...row,
+        delivered_at: deliveredAt,
+        response_status: responseStatus,
+      });
+      return this.db
+        .prepare(
+          `UPDATE checkpoint_anchor_deliveries SET status='delivered',delivered_at=?,response_status=?,error_code=NULL,lease_id=NULL,lease_expires_at=NULL,acknowledgement_hmac=? WHERE delivery_id=? AND status='processing' AND lease_id=?`,
+        )
+        .run(deliveredAt, responseStatus, acknowledgementHmac, input.deliveryId, input.leaseId)
+        .changes === 1
+        ? 'delivered'
+        : undefined;
+    }
+    if (input.retryable && attempts < maxAttempts) {
+      const delaySeconds = Math.min(3600, 2 ** Math.min(attempts, 11));
+      return this.db
+        .prepare(
+          `UPDATE checkpoint_anchor_deliveries SET status='pending',next_attempt_at=?,response_status=?,error_code=?,lease_id=NULL,lease_expires_at=NULL WHERE delivery_id=? AND status='processing' AND lease_id=?`,
+        )
+        .run(
+          new Date(Date.now() + delaySeconds * 1_000).toISOString(),
+          responseStatus,
+          errorCode,
+          input.deliveryId,
+          input.leaseId,
+        ).changes === 1
+        ? 'pending'
+        : undefined;
+    }
+    return this.db
+      .prepare(
+        `UPDATE checkpoint_anchor_deliveries SET status='dead',response_status=?,error_code=?,lease_id=NULL,lease_expires_at=NULL WHERE delivery_id=? AND status='processing' AND lease_id=?`,
+      )
+      .run(responseStatus, errorCode, input.deliveryId, input.leaseId).changes === 1
+      ? 'dead'
+      : undefined;
+  }
+  createAlertWebhook(
+    principal: Principal,
+    label: string,
+    endpointInput: string,
+  ): AlertWebhookEndpoint & { signing_secret: string } {
+    this.requireScope(principal, 'manage:webhooks');
+    if (!/^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$/u.test(label))
+      throw new ManagedError(
+        400,
+        'invalid_webhook_label',
+        'webhook label must be 1-64 plain display characters',
+      );
+    if (endpointInput.length > 2048)
+      throw new ManagedError(400, 'invalid_webhook_endpoint', 'webhook endpoint is too long');
+    const endpoint = normalizedPublicWebhookEndpoint(endpointInput);
+    const webhookId = `wh_${randomUUID()}`;
+    const signingSecret = `sgwhsec_${randomBytes(32).toString('base64url')}`;
+    const endpointHash = hmac(this.config.masterSecret, 'alert-webhook-endpoint-v1', {
+      tenant_id: principal.tenantId,
+      endpoint,
+    });
+    const createdAt = now();
+    const webhookRow: Row = {
+      webhook_id: webhookId,
+      tenant_id: principal.tenantId,
+      label,
+      endpoint_hash: endpointHash,
+      encrypted_endpoint: sealValue(
+        this.config.masterSecret,
+        `alert-webhook-endpoint-v1:${principal.tenantId}:${webhookId}`,
+        endpoint,
+      ),
+      encrypted_signing_secret: sealValue(
+        this.config.masterSecret,
+        `alert-webhook-secret-v1:${principal.tenantId}:${webhookId}`,
+        signingSecret,
+      ),
+      created_at: createdAt,
+      disabled_at: null,
+    };
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO alert_webhooks(webhook_id,tenant_id,label,endpoint_hash,encrypted_endpoint,encrypted_signing_secret,created_at,control_hmac) VALUES(?,?,?,?,?,?,?,?)`,
+        )
+        .run(
+          webhookRow.webhook_id,
+          webhookRow.tenant_id,
+          webhookRow.label,
+          webhookRow.endpoint_hash,
+          webhookRow.encrypted_endpoint,
+          webhookRow.encrypted_signing_secret,
+          webhookRow.created_at,
+          this.alertWebhookControlHmac(webhookRow),
+        );
+    } catch (error) {
+      if (error instanceof Error && /UNIQUE constraint failed/u.test(error.message))
+        throw new ManagedError(
+          409,
+          'webhook_conflict',
+          'a webhook with this label or endpoint already exists',
+        );
+      throw error;
+    }
+    return {
+      webhook_id: webhookId,
+      label,
+      endpoint_hash: endpointHash,
+      created_at: createdAt,
+      disabled_at: null,
+      signing_secret: signingSecret,
+    };
+  }
+  listAlertWebhooks(principal: Principal): AlertWebhookEndpoint[] {
+    this.requireScope(principal, 'manage:webhooks');
+    const rows = this.db
+      .prepare(`SELECT * FROM alert_webhooks WHERE tenant_id=? ORDER BY created_at DESC`)
+      .all(principal.tenantId) as Row[];
+    return rows.map((row) => {
+      this.assertControlHmac(row, this.alertWebhookControlHmac(row), 'alert webhook');
+      return {
+        webhook_id: text(row.webhook_id),
+        label: text(row.label),
+        endpoint_hash: text(row.endpoint_hash),
+        created_at: text(row.created_at),
+        disabled_at: row.disabled_at === null ? null : text(row.disabled_at),
+      };
+    });
+  }
+  disableAlertWebhook(principal: Principal, webhookId: string): boolean {
+    this.requireScope(principal, 'manage:webhooks');
+    const disabledAt = now();
+    return this.db.transaction(() => {
+      const row = this.db
+        .prepare('SELECT * FROM alert_webhooks WHERE tenant_id=? AND webhook_id=?')
+        .get(principal.tenantId, webhookId) as Row | undefined;
+      if (!row) return false;
+      this.assertControlHmac(row, this.alertWebhookControlHmac(row), 'alert webhook');
+      const updated = { ...row, disabled_at: row.disabled_at ?? disabledAt };
+      const disabled = this.db
+        .prepare(
+          `UPDATE alert_webhooks SET disabled_at=COALESCE(disabled_at,?),control_hmac=? WHERE tenant_id=? AND webhook_id=?`,
+        )
+        .run(
+          disabledAt,
+          this.alertWebhookControlHmac(updated),
+          principal.tenantId,
+          webhookId,
+        ).changes;
+      if (!disabled) return false;
+      this.db
+        .prepare(
+          `UPDATE alert_deliveries SET status='dead',lease_id=NULL,lease_expires_at=NULL,error_code='webhook_disabled' WHERE tenant_id=? AND webhook_id=? AND status IN ('pending','processing')`,
+        )
+        .run(principal.tenantId, webhookId);
+      return true;
+    })();
+  }
+  listAlertWebhookDeliveries(principal: Principal, limit = 100): AlertWebhookDelivery[] {
+    this.requireScope(principal, 'manage:webhooks');
+    const bounded = Number.isInteger(limit) ? Math.min(Math.max(limit, 1), 500) : 100;
+    const rows = this.db
+      .prepare(`SELECT * FROM alert_deliveries WHERE tenant_id=? ORDER BY created_at DESC LIMIT ?`)
+      .all(principal.tenantId, bounded) as Row[];
+    return rows.map((row) => {
+      this.assertDeliveryPayloadHmac(row);
+      return {
+        delivery_id: text(row.delivery_id),
+        webhook_id: text(row.webhook_id),
+        alert_id: Number(row.alert_id),
+        status: text(row.status) as AlertWebhookDelivery['status'],
+        attempt_count: Number(row.attempt_count),
+        next_attempt_at: text(row.next_attempt_at),
+        last_attempt_at: row.last_attempt_at === null ? null : text(row.last_attempt_at),
+        delivered_at: row.delivered_at === null ? null : text(row.delivered_at),
+        response_status: row.response_status === null ? null : Number(row.response_status),
+        error_code: row.error_code === null ? null : text(row.error_code),
+        created_at: text(row.created_at),
+      };
+    });
+  }
+  redriveAlertWebhookDelivery(principal: Principal, deliveryId: string): boolean {
+    this.requireScope(principal, 'manage:webhooks');
+    return this.db.transaction(() => {
+      const delivery = this.db
+        .prepare('SELECT * FROM alert_deliveries WHERE tenant_id=? AND delivery_id=?')
+        .get(principal.tenantId, deliveryId) as Row | undefined;
+      if (!delivery) return false;
+      this.assertDeliveryPayloadHmac(delivery);
+      const webhook = this.db
+        .prepare('SELECT * FROM alert_webhooks WHERE tenant_id=? AND webhook_id=?')
+        .get(principal.tenantId, delivery.webhook_id) as Row | undefined;
+      if (!webhook) return false;
+      this.assertControlHmac(webhook, this.alertWebhookControlHmac(webhook), 'alert webhook');
+      if (webhook.disabled_at !== null) return false;
+      return (
+        this.db
+          .prepare(
+            `UPDATE alert_deliveries SET status='pending',attempt_count=0,next_attempt_at=?,lease_id=NULL,lease_expires_at=NULL,last_attempt_at=NULL,delivered_at=NULL,response_status=NULL,error_code=NULL WHERE tenant_id=? AND delivery_id=? AND status='dead'`,
+          )
+          .run(now(), principal.tenantId, deliveryId).changes === 1
+      );
+    })();
+  }
+  claimDueAlertWebhookDeliveries(limit = 25): ClaimedAlertDelivery[] {
+    const bounded = Number.isInteger(limit) ? Math.min(Math.max(limit, 1), 100) : 25;
+    const claimedAt = now();
+    const leaseExpiresAt = new Date(Date.now() + 30_000).toISOString();
+    return this.db.transaction(() => {
+      const rows = this.db
+        .prepare(
+          `SELECT d.*,w.label w_label,w.endpoint_hash w_endpoint_hash,w.encrypted_endpoint w_encrypted_endpoint,w.encrypted_signing_secret w_encrypted_signing_secret,w.created_at w_created_at,w.disabled_at w_disabled_at,w.control_hmac w_control_hmac FROM alert_deliveries d JOIN alert_webhooks w ON w.tenant_id=d.tenant_id AND w.webhook_id=d.webhook_id WHERE w.disabled_at IS NULL AND ((d.status='pending' AND d.next_attempt_at<=?) OR (d.status='processing' AND d.lease_expires_at<=?)) ORDER BY d.next_attempt_at,d.created_at LIMIT ?`,
+        )
+        .all(claimedAt, claimedAt, bounded) as Row[];
+      const claims: ClaimedAlertDelivery[] = [];
+      for (const row of rows) {
+        this.assertDeliveryPayloadHmac(row);
+        const webhookRow: Row = {
+          webhook_id: row.webhook_id,
+          tenant_id: row.tenant_id,
+          label: row.w_label,
+          endpoint_hash: row.w_endpoint_hash,
+          encrypted_endpoint: row.w_encrypted_endpoint,
+          encrypted_signing_secret: row.w_encrypted_signing_secret,
+          created_at: row.w_created_at,
+          disabled_at: row.w_disabled_at,
+          control_hmac: row.w_control_hmac,
+        };
+        this.assertControlHmac(
+          webhookRow,
+          this.alertWebhookControlHmac(webhookRow),
+          'alert webhook',
+        );
+        const leaseId = `lease_${randomUUID()}`;
+        const updated = this.db
+          .prepare(
+            `UPDATE alert_deliveries SET status='processing',attempt_count=attempt_count+1,last_attempt_at=?,lease_id=?,lease_expires_at=? WHERE delivery_id=? AND ((status='pending' AND next_attempt_at<=?) OR (status='processing' AND lease_expires_at<=?))`,
+          )
+          .run(claimedAt, leaseId, leaseExpiresAt, row.delivery_id, claimedAt, claimedAt).changes;
+        if (updated !== 1) continue;
+        try {
+          const tenantId = text(row.tenant_id);
+          const webhookId = text(row.webhook_id);
+          claims.push({
+            deliveryId: text(row.delivery_id),
+            leaseId,
+            endpoint: openSealedValue(
+              this.config.masterSecret,
+              `alert-webhook-endpoint-v1:${tenantId}:${webhookId}`,
+              text(row.w_encrypted_endpoint),
+            ),
+            signingSecret: openSealedValue(
+              this.config.masterSecret,
+              `alert-webhook-secret-v1:${tenantId}:${webhookId}`,
+              text(row.w_encrypted_signing_secret),
+            ),
+            payload: text(row.payload_json),
+            attemptCount: Number(row.attempt_count) + 1,
+          });
+        } catch {
+          this.db
+            .prepare(
+              `UPDATE alert_deliveries SET status='dead',lease_id=NULL,lease_expires_at=NULL,error_code='credential_decryption_failed' WHERE delivery_id=? AND lease_id=?`,
+            )
+            .run(row.delivery_id, leaseId);
+        }
+      }
+      return claims;
+    })();
+  }
+  finishAlertWebhookDelivery(input: {
+    deliveryId: string;
+    leaseId: string;
+    delivered: boolean;
+    retryable: boolean;
+    responseStatus?: number;
+    errorCode?: string;
+  }): 'delivered' | 'pending' | 'dead' | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT attempt_count FROM alert_deliveries WHERE delivery_id=? AND status='processing' AND lease_id=?`,
+      )
+      .get(input.deliveryId, input.leaseId) as Row | undefined;
+    if (!row) return undefined;
+    const attempts = Number(row.attempt_count);
+    const maxAttempts = this.config.alertWebhookMaxAttempts ?? 8;
+    const responseStatus = input.responseStatus ?? null;
+    const errorCode = (input.errorCode ?? (input.delivered ? null : 'delivery_failed'))?.slice(
+      0,
+      128,
+    );
+    if (input.delivered)
+      return this.db
+        .prepare(
+          `UPDATE alert_deliveries SET status='delivered',delivered_at=?,response_status=?,error_code=NULL,lease_id=NULL,lease_expires_at=NULL WHERE delivery_id=? AND status='processing' AND lease_id=?`,
+        )
+        .run(now(), responseStatus, input.deliveryId, input.leaseId).changes === 1
+        ? 'delivered'
+        : undefined;
+    if (input.retryable && attempts < maxAttempts) {
+      const delaySeconds = Math.min(3600, 2 ** Math.min(attempts, 11));
+      return this.db
+        .prepare(
+          `UPDATE alert_deliveries SET status='pending',next_attempt_at=?,response_status=?,error_code=?,lease_id=NULL,lease_expires_at=NULL WHERE delivery_id=? AND status='processing' AND lease_id=?`,
+        )
+        .run(
+          new Date(Date.now() + delaySeconds * 1_000).toISOString(),
+          responseStatus,
+          errorCode,
+          input.deliveryId,
+          input.leaseId,
+        ).changes === 1
+        ? 'pending'
+        : undefined;
+    }
+    return this.db
+      .prepare(
+        `UPDATE alert_deliveries SET status='dead',response_status=?,error_code=?,lease_id=NULL,lease_expires_at=NULL WHERE delivery_id=? AND status='processing' AND lease_id=?`,
+      )
+      .run(responseStatus, errorCode, input.deliveryId, input.leaseId).changes === 1
+      ? 'dead'
+      : undefined;
+  }
   private insertAlert(tenantId: string, kind: string, severity: string, detail: unknown): void {
     const createdAt = now();
-    this.db
+    const result = this.db
       .prepare(
         'INSERT INTO alerts(tenant_id,kind,severity,detail_json,created_at) VALUES(?,?,?,?,?)',
       )
       .run(tenantId, kind, severity, JSON.stringify(detail), createdAt);
+    const alertId = Number(result.lastInsertRowid);
+    const payload = JSON.stringify({
+      schema_version: '2026-07-20',
+      event_type: 'schema_guard.alert',
+      event_id: `alert_${randomUUID()}`,
+      tenant_ref: hmac(this.config.masterSecret, 'alert-webhook-tenant-v1', tenantId),
+      alert_id: alertId,
+      kind,
+      severity,
+      created_at: createdAt,
+      detail: privacySafeAlertDetail(kind, detail),
+    });
+    const endpoints = this.db
+      .prepare(`SELECT * FROM alert_webhooks WHERE tenant_id=? AND disabled_at IS NULL`)
+      .all(tenantId) as Row[];
+    const enqueue = this.db.prepare(
+      `INSERT INTO alert_deliveries(delivery_id,tenant_id,webhook_id,alert_id,payload_json,status,next_attempt_at,created_at,payload_hmac) VALUES(?,?,?,?,?,'pending',?,?,?)`,
+    );
+    for (const endpoint of endpoints) {
+      this.assertControlHmac(endpoint, this.alertWebhookControlHmac(endpoint), 'alert webhook');
+      const delivery: Row = {
+        delivery_id: `delivery_${randomUUID()}`,
+        tenant_id: tenantId,
+        webhook_id: endpoint.webhook_id,
+        alert_id: alertId,
+        payload_json: payload,
+        created_at: createdAt,
+      };
+      enqueue.run(
+        delivery.delivery_id,
+        delivery.tenant_id,
+        delivery.webhook_id,
+        delivery.alert_id,
+        delivery.payload_json,
+        createdAt,
+        createdAt,
+        this.alertDeliveryPayloadHmac(delivery),
+      );
+    }
     if (this.config.alertFile)
       void this.appendAlert({ tenant_id: tenantId, kind, severity, detail, created_at: createdAt });
   }

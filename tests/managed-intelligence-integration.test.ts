@@ -29,7 +29,7 @@ describe('managed intelligence workflow', () => {
     }
     legacy.close();
     const store = new ManagedStore({ databasePath: path, masterSecret: secret });
-    expect(store.db.pragma('user_version', { simple: true })).toBe(7);
+    expect(store.db.pragma('user_version', { simple: true })).toBe(14);
     store.bootstrapTenant({ id: 'upgraded', name: 'Upgraded', plan: 'team', apiKey: 'key' });
     const principal = store.authenticate('key')!;
     expect(store.listEnvironments(principal).map(({ name }) => name)).toEqual([
@@ -42,6 +42,7 @@ describe('managed intelligence workflow', () => {
         .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='failure_clusters'")
         .get(),
     ).toBeTruthy();
+    expect(store.verifyControlPlaneIntegrity(principal).valid).toBe(true);
     expect(store.integrityCheck()).toBe(true);
     store.close();
   });

@@ -26,13 +26,18 @@ None of those advantages exists merely because the code has a database table or 
 
 Core accepts a tool name, schema, raw arguments, and optional narrowing policy. It returns exactly `valid`, `valid_with_repair`, or `rejected`, with reason codes, repair provenance, policy results, and a privacy-minimized audit envelope.
 
-Core includes the versioned protocol, repair registry, schema validation, policy evaluation, adapters, local drift comparison, SDKs, CLI, local API, local audits, and public conformance corpus. It has no model call on the enforcement path and no dependency on managed infrastructure.
+Core includes the versioned protocol, repair registry and verifiable receipts,
+schema validation, canonical cross-provider contract compiler, policy evaluation,
+integrity-checked local incident replay, deterministic action controls, adapters,
+local drift comparison, SDKs, CLI, local API, local audits, and public
+conformance corpus. It has no model call on the enforcement path and no
+dependency on managed infrastructure.
 
 ### 2. Managed team workflow
 
-Managed supplies tenant identity, API-key lifecycle, organization policy, schema registry, durable audit history, signed audit-chain verification, retention, export, alerts, environments and plans. It distributes signed rulesets rather than silently changing local enforcement behavior.
+Managed supplies tenant identity, API-key lifecycle, organization policy, schema registry, reviewed environment releases with runtime admission, durable audit history, signed audit-chain verification, retention, export, alerts with a durable signed HTTPS outbox, environments and plans. It distributes signed rulesets rather than silently changing local enforcement behavior.
 
-The repository implements a useful single-machine version of this layer. Public hosting, payment settlement, external notifications, cloud key custody, distributed coordination, availability engineering, support operations, and compliance certification are future production work.
+The repository implements a useful single-machine version of this layer. Public hosting, payment settlement, configured notification receivers, cloud key custody, distributed coordination, availability engineering, support operations, and compliance certification are future production work.
 
 ### 3. Compatibility intelligence
 
@@ -62,8 +67,20 @@ A team should be able to:
 6. Investigate an audit decision without exposing the underlying secret or argument value.
 7. Compare a recurring failure against cross-provider conformance evidence and apply a reviewed recommendation.
 8. Export and independently verify the retained audit history.
+9. Capture a real incident locally, replay it in CI, and detect an exact behavior regression.
+10. Require an argument-bound approval and idempotency reservation before a high-risk mutation executes.
 
-The current local control plane demonstrates most of this spine on one machine, including persistent value-free clustering, schema scoring, recommended fixes, conformance-summary ingestion, a compatibility matrix, and a deterministic daily conformance workflow. Environment promotion, live provider fleet probes, external alert delivery, and production hosting remain direction rather than completed claims.
+The current build demonstrates most of this spine on one machine, including a
+canonical compiler, proof-carrying repairs, exact local incident replay,
+SDK-enforced action gating, persistent value-free clustering, schema scoring,
+recommended fixes, conformance-summary ingestion, a compatibility matrix, and a
+deterministic daily conformance workflow. Durable single-node managed
+approvals/idempotency, uncertain-outcome reconciliation, and a durable generic
+alert-webhook transport are implemented. Environment schema promotion now binds
+reviewed registry versions to fail-closed runtime admission; shared
+multi-instance coordination, live provider fleet probes, receiver-specific
+integrations, and production hosting remain direction rather than completed
+claims.
 
 ## Local product narrative
 

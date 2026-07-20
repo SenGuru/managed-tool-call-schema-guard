@@ -32,6 +32,7 @@ export function createAuditEnvelope(input: {
   toolName: string;
   schema: unknown;
   arguments: JsonObject;
+  validatedArguments?: JsonObject;
   decision: DecisionStatus;
   repairs: RepairRecord[];
   policyHash: string;
@@ -48,9 +49,13 @@ export function createAuditEnvelope(input: {
     tool_name_hash: sha256(input.toolName),
     schema_hash: sha256(input.schema),
     arguments_hash: sha256(input.arguments),
+    ...(input.validatedArguments
+      ? { validated_arguments_hash: sha256(input.validatedArguments) }
+      : {}),
     argument_shape: shape(input.arguments),
     decision: input.decision,
     repair_rule_ids: input.repairs.map((r) => r.rule_id),
+    repair_receipt_hashes: input.repairs.map((repair) => repair.receipt_hash),
     policy_hash: input.policyHash,
   };
   if (input.reasonCode) result.reason_code = input.reasonCode;

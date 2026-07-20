@@ -69,7 +69,7 @@ function compareTypes(before: unknown, after: unknown, path: string, changes: Dr
           ? 'breaking'
           : [...left].every((item) => right.has(item))
             ? 'non_breaking'
-            : 'review';
+            : 'breaking';
   add(
     changes,
     path,

@@ -79,3 +79,35 @@ Recommendations remain advisory. They may identify weak declarations, recurring 
 ## ADR-019: Environment policy only narrows
 
 Every tenant starts with development, staging, and production environment records and may add bounded named environments. A validation request can select one environment; its stored policy is merged between organization policy and caller policy using the same intersection/minimum/union rules. An unknown environment fails closed. Environment controls cannot widen repairs or bypass schema validation.
+
+## ADR-020: Provider compilation reports uncertainty
+
+Canonical contracts compile through versioned capability profiles. Only
+representation-preserving transforms are automatic. Semantic adaptation is
+labeled `policy_required`, unsupported constraints produce no declaration, and
+unprobed profiles remain `runtime_unverified`. Documentation compatibility is
+not promoted to runtime proof.
+
+## ADR-021: Exact replay remains local and sensitive
+
+Reliable replay needs original values. Incident fixtures therefore carry an
+explicit `local_sensitive`/not-upload-safe declaration, owner-only file mode,
+and an integrity hash over request and expectation. Managed compatibility
+signals remain value-free; they are not reconstructed from uploaded replay
+payloads.
+
+## ADR-022: Repairs carry independently checkable proof
+
+Protocol `2026-07-20` makes repair receipts required. Each receipt binds the
+ruleset/rule, schema fragment, input/output hashes, matched preconditions,
+passed ambiguity checks, and schema/policy post-validation. Managed mode keys
+value-derived hashes per tenant and recomputes the receipt hash over the scoped
+proof.
+
+## ADR-023: Action permission is separate from schema validity
+
+The action gate evaluates accepted decision integrity, risk, side effects,
+environment, argument-bound HMAC approval, and idempotency after validation. It
+cannot replace target-system authorization. The included in-memory ledger is a
+local SDK primitive; hosted mutation support must use durable transactional
+storage and a separately controlled approval authority.

@@ -1,0 +1,38 @@
+name: Live provider probes
+
+on:
+  schedule:
+    - cron: '41 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-provider-probes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      SCHEMA_GUARD_OPENAI_MODEL: ${{ vars.SCHEMA_GUARD_OPENAI_MODEL }}
+      SCHEMA_GUARD_ANTHROPIC_MODEL: ${{ vars.SCHEMA_GUARD_ANTHROPIC_MODEL }}
+      SCHEMA_GUARD_GEMINI_MODEL: ${{ vars.SCHEMA_GUARD_GEMINI_MODEL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Probe exact configured provider models
+        run: npm run probe:live -- --provider all --trials 3 --output live-provider-report.json
+      - name: Preserve privacy-safe probe report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-provider-report
+          path: live-provider-report.json
+          if-no-files-found: warn
+          retention-days: 30

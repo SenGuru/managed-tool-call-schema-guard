@@ -185,4 +185,204 @@ export const migrations = [
       CREATE INDEX environments_tenant_name ON environments(tenant_id, name);
     `,
   },
+  {
+    version: 8,
+    sql: `
+      CREATE TABLE action_approvals (
+        challenge_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        binding_hash TEXT NOT NULL,
+        challenge_json TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('pending','approved','revoked')),
+        evidence_json TEXT,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        approved_at TEXT,
+        PRIMARY KEY(tenant_id, challenge_id)
+      );
+      CREATE INDEX action_approvals_tenant_status
+        ON action_approvals(tenant_id, status, expires_at);
+      CREATE TABLE action_descriptors (
+        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        tool_name_hash TEXT NOT NULL,
+        environment TEXT NOT NULL,
+        risk_level TEXT NOT NULL CHECK(risk_level IN ('read','low','medium','high','critical')),
+        side_effect TEXT NOT NULL CHECK(side_effect IN ('none','reversible','irreversible')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(tenant_id, tool_name_hash, environment)
+      );
+      CREATE TABLE action_idempotency (
+        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        key_hash TEXT NOT NULL,
+        execution_fingerprint TEXT NOT NULL,
+        state TEXT NOT NULL CHECK(state IN ('pending','completed')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(tenant_id, key_hash)
+      );
+      CREATE INDEX action_idempotency_tenant_state
+        ON action_idempotency(tenant_id, state, updated_at);
+    `,
+  },
+  {
+    version: 9,
+    sql: `
+      ALTER TABLE action_idempotency ADD COLUMN reservation_id TEXT;
+      ALTER TABLE action_idempotency ADD COLUMN audit_id TEXT;
+      ALTER TABLE action_idempotency ADD COLUMN tool_name_hash TEXT;
+      ALTER TABLE action_idempotency ADD COLUMN environment TEXT;
+      CREATE UNIQUE INDEX action_idempotency_reservation
+        ON action_idempotency(tenant_id, reservation_id)
+        WHERE reservation_id IS NOT NULL;
+      CREATE TABLE action_reconciliations (
+        sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+        reconciliation_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        reservation_id TEXT NOT NULL,
+        key_hash TEXT NOT NULL,
+        execution_fingerprint TEXT NOT NULL,
+        audit_id TEXT NOT NULL,
+        tool_name_hash TEXT NOT NULL,
+        environment TEXT NOT NULL,
+        outcome TEXT NOT NULL CHECK(outcome IN ('confirmed_executed','confirmed_not_executed')),
+        evidence_hash TEXT NOT NULL,
+        reconciled_by_hash TEXT NOT NULL,
+        reconciled_at TEXT NOT NULL,
+        previous_hash TEXT NOT NULL,
+        record_hash TEXT NOT NULL,
+        UNIQUE(tenant_id, reconciliation_id),
+        UNIQUE(tenant_id, reservation_id)
+      );
+      CREATE INDEX action_reconciliations_tenant_time
+        ON action_reconciliations(tenant_id, reconciled_at DESC);
+    `,
+  },
+  {
+    version: 10,
+    sql: `
+      CREATE TABLE alert_webhooks (
+        webhook_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        label TEXT NOT NULL,
+        endpoint_hash TEXT NOT NULL,
+        encrypted_endpoint TEXT NOT NULL,
+        encrypted_signing_secret TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        disabled_at TEXT,
+        PRIMARY KEY(tenant_id, webhook_id),
+        UNIQUE(tenant_id, label),
+        UNIQUE(tenant_id, endpoint_hash)
+      );
+      CREATE TABLE alert_deliveries (
+        delivery_id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        webhook_id TEXT NOT NULL,
+        alert_id INTEGER NOT NULL REFERENCES alerts(id) ON DELETE CASCADE,
+        payload_json TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('pending','processing','delivered','dead')),
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TEXT NOT NULL,
+        lease_id TEXT,
+        lease_expires_at TEXT,
+        last_attempt_at TEXT,
+        delivered_at TEXT,
+        response_status INTEGER,
+        error_code TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(tenant_id, webhook_id)
+          REFERENCES alert_webhooks(tenant_id, webhook_id) ON DELETE CASCADE,
+        UNIQUE(webhook_id, alert_id)
+      );
+      CREATE INDEX alert_deliveries_due
+        ON alert_deliveries(status, next_attempt_at, lease_expires_at);
+      CREATE INDEX alert_deliveries_tenant_time
+        ON alert_deliveries(tenant_id, created_at DESC);
+    `,
+  },
+  {
+    version: 11,
+    sql: `
+      ALTER TABLE environments ADD COLUMN schema_enforcement TEXT NOT NULL DEFAULT 'observe'
+        CHECK(schema_enforcement IN ('observe','enforce'));
+      CREATE TABLE schema_releases (
+        sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+        release_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        tool_name_hash TEXT NOT NULL,
+        environment TEXT NOT NULL,
+        schema_row_id INTEGER NOT NULL REFERENCES tool_schemas(id) ON DELETE RESTRICT,
+        schema_hash TEXT NOT NULL,
+        adapter TEXT NOT NULL,
+        version TEXT NOT NULL,
+        compatibility TEXT NOT NULL
+          CHECK(compatibility IN ('initial','identical','backward_compatible','breaking','review')),
+        evidence_hash TEXT NOT NULL,
+        promoted_by_hash TEXT NOT NULL,
+        promoted_at TEXT NOT NULL,
+        previous_hash TEXT NOT NULL,
+        record_hash TEXT NOT NULL,
+        UNIQUE(tenant_id, release_id)
+      );
+      CREATE INDEX schema_releases_target
+        ON schema_releases(tenant_id, environment, tool_name_hash, sequence DESC);
+      CREATE INDEX schema_releases_tenant_time
+        ON schema_releases(tenant_id, promoted_at DESC);
+    `,
+  },
+  {
+    version: 12,
+    sql: `
+      ALTER TABLE tenants ADD COLUMN control_hmac TEXT;
+      ALTER TABLE api_keys ADD COLUMN control_hmac TEXT;
+      ALTER TABLE environments ADD COLUMN control_hmac TEXT;
+      ALTER TABLE action_descriptors ADD COLUMN control_hmac TEXT;
+      ALTER TABLE action_approvals ADD COLUMN control_hmac TEXT;
+      ALTER TABLE action_idempotency ADD COLUMN control_hmac TEXT;
+      ALTER TABLE alert_webhooks ADD COLUMN control_hmac TEXT;
+      ALTER TABLE alert_deliveries ADD COLUMN payload_hmac TEXT;
+    `,
+  },
+  {
+    version: 13,
+    sql: `
+      CREATE TABLE action_idempotency_manifests (
+        tenant_id TEXT PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+        revision INTEGER NOT NULL CHECK(revision >= 0),
+        row_count INTEGER NOT NULL CHECK(row_count >= 0),
+        accumulator TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        control_hmac TEXT NOT NULL
+      );
+    `,
+  },
+  {
+    version: 14,
+    sql: `
+      CREATE TABLE checkpoint_anchor_deliveries (
+        delivery_id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        revision INTEGER NOT NULL CHECK(revision >= 0),
+        checkpoint_hash TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('pending','processing','delivered','dead')),
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TEXT NOT NULL,
+        lease_id TEXT,
+        lease_expires_at TEXT,
+        last_attempt_at TEXT,
+        delivered_at TEXT,
+        response_status INTEGER,
+        error_code TEXT,
+        created_at TEXT NOT NULL,
+        payload_hmac TEXT NOT NULL,
+        acknowledgement_hmac TEXT,
+        UNIQUE(tenant_id, revision)
+      );
+      CREATE INDEX checkpoint_anchor_deliveries_due
+        ON checkpoint_anchor_deliveries(status, next_attempt_at, lease_expires_at);
+      CREATE INDEX checkpoint_anchor_deliveries_tenant_time
+        ON checkpoint_anchor_deliveries(tenant_id, revision DESC);
+    `,
+  },
 ] as const;

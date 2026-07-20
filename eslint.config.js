@@ -9,6 +9,7 @@ export default tseslint.config(
       'work/**',
       'eslint.config.js',
       'examples/agent-loop/*.mjs',
+      'scripts/*.mjs',
     ],
   },
   eslint.configs.recommended,

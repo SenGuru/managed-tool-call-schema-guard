@@ -12,7 +12,7 @@
     "audit"
   ],
   "properties": {
-    "protocol_version": { "const": "2026-07-18" },
+    "protocol_version": { "const": "2026-07-20" },
     "decision": { "enum": ["valid", "valid_with_repair", "rejected"] },
     "valid_arguments": { "type": "object" },
     "repaired_fields": { "type": "array", "items": { "$ref": "#/$defs/repair" } },
@@ -43,10 +43,35 @@
       "then": {
         "properties": { "reason_code": {}, "reason": {}, "repair_hint": {} },
         "required": ["reason_code", "reason", "repair_hint"],
-        "not": { "properties": { "valid_arguments": {} }, "required": ["valid_arguments"] }
+        "allOf": [
+          { "not": { "properties": { "valid_arguments": {} }, "required": ["valid_arguments"] } },
+          {
+            "not": {
+              "properties": {
+                "audit": {
+                  "type": "object",
+                  "properties": {
+                    "validated_arguments_hash": { "$ref": "#/$defs/hash" }
+                  },
+                  "required": ["validated_arguments_hash"]
+                }
+              },
+              "required": ["audit"]
+            }
+          }
+        ]
       },
       "else": {
-        "properties": { "valid_arguments": {} },
+        "properties": {
+          "valid_arguments": {},
+          "audit": {
+            "type": "object",
+            "properties": {
+              "validated_arguments_hash": { "$ref": "#/$defs/hash" }
+            },
+            "required": ["validated_arguments_hash"]
+          }
+        },
         "required": ["valid_arguments"],
         "not": {
           "anyOf": [
@@ -81,15 +106,64 @@
     "repair": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path", "rule_id", "from_type", "to_type", "original_value_hash", "explanation"],
+      "required": [
+        "path",
+        "rule_id",
+        "ruleset_version",
+        "from_type",
+        "to_type",
+        "original_value_hash",
+        "output_value_hash",
+        "schema_fragment_hash",
+        "matched_preconditions",
+        "ambiguity_checks",
+        "post_validation",
+        "receipt_hash",
+        "explanation"
+      ],
       "properties": {
         "path": { "type": "string" },
         "rule_id": { "$ref": "#/$defs/repairRule" },
+        "ruleset_version": { "const": "oss-2026-07-18.1" },
         "from_type": { "type": "string" },
         "to_type": { "type": "string" },
-        "original_value_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "original_value_hash": { "$ref": "#/$defs/hash" },
+        "output_value_hash": { "$ref": "#/$defs/hash" },
+        "schema_fragment_hash": { "$ref": "#/$defs/hash" },
+        "matched_preconditions": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "ambiguity_checks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["check", "result"],
+            "properties": {
+              "check": { "type": "string", "minLength": 1 },
+              "result": { "const": "passed" }
+            }
+          }
+        },
+        "post_validation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema", "policy"],
+          "properties": {
+            "schema": { "enum": ["passed", "failed", "not_run"] },
+            "policy": { "enum": ["allowed", "denied", "not_run"] }
+          }
+        },
+        "receipt_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
         "explanation": { "type": "string", "minLength": 1 }
       }
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^(?:sha256|hmac-sha256):[0-9a-f]{64}$"
     },
     "policyResult": {
       "type": "object",
@@ -97,7 +171,7 @@
       "required": ["outcome", "applied_policy_hash", "reasons"],
       "properties": {
         "outcome": { "enum": ["allowed", "denied"] },
-        "applied_policy_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "applied_policy_hash": { "$ref": "#/$defs/hash" },
         "reasons": { "type": "array", "items": { "type": "string" } }
       }
     },
@@ -116,22 +190,28 @@
         "argument_shape",
         "decision",
         "repair_rule_ids",
+        "repair_receipt_hashes",
         "policy_hash"
       ],
       "properties": {
         "audit_id": { "type": "string", "pattern": "^aud_[0-9a-f-]{36}$" },
         "timestamp": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T" },
-        "protocol_version": { "const": "2026-07-18" },
+        "protocol_version": { "const": "2026-07-20" },
         "engine_version": { "type": "string" },
         "ruleset_version": { "type": "string" },
-        "tool_name_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
-        "schema_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
-        "arguments_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "tool_name_hash": { "$ref": "#/$defs/hash" },
+        "schema_hash": { "$ref": "#/$defs/hash" },
+        "arguments_hash": { "$ref": "#/$defs/hash" },
+        "validated_arguments_hash": { "$ref": "#/$defs/hash" },
         "argument_shape": { "type": "array", "items": { "type": "string" } },
         "decision": { "enum": ["valid", "valid_with_repair", "rejected"] },
         "reason_code": { "$ref": "#/$defs/reasonCode" },
         "repair_rule_ids": { "type": "array", "items": { "$ref": "#/$defs/repairRule" } },
-        "policy_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+        "repair_receipt_hashes": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+        },
+        "policy_hash": { "$ref": "#/$defs/hash" }
       }
     }
   }

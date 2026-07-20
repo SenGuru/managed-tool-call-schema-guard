@@ -1,6 +1,6 @@
 import type { AnySchema } from 'ajv';
 import { sha256 } from './hash.js';
-import type { JsonValue, RepairRecord, RepairRuleId } from './types.js';
+import { RULESET_VERSION, type JsonValue, type RepairRecord, type RepairRuleId } from './types.js';
 
 export const DEFAULT_REPAIRS: RepairRuleId[] = [
   'coerce.string_to_number',
@@ -17,20 +17,30 @@ const kind = (value: JsonValue): string =>
   Array.isArray(value) ? 'array' : value === null ? 'null' : typeof value;
 function save(
   ctx: Context,
+  schema: Record<string, unknown>,
   path: string,
   rule_id: RepairRuleId,
   before: JsonValue,
   after: JsonValue,
+  matchedPreconditions: string[],
+  ambiguityChecks: string[],
   targetType?: string,
 ): JsonValue {
-  ctx.repairs.push({
+  const repair: Omit<RepairRecord, 'receipt_hash'> = {
     path,
     rule_id,
+    ruleset_version: RULESET_VERSION,
     from_type: kind(before),
     to_type: targetType ?? kind(after),
     original_value_hash: sha256(before),
+    output_value_hash: sha256(after),
+    schema_fragment_hash: sha256(schema),
+    matched_preconditions: matchedPreconditions,
+    ambiguity_checks: ambiguityChecks.map((check) => ({ check, result: 'passed' as const })),
+    post_validation: { schema: 'not_run', policy: 'not_run' },
     explanation: `${rule_id} applied because the target schema explicitly requires ${targetType ?? kind(after)}`,
-  });
+  };
+  ctx.repairs.push({ ...repair, receipt_hash: sha256(repair) });
   return after;
 }
 function scalar(
@@ -51,15 +61,51 @@ function scalar(
     )
       return value;
     const rule = expected === 'integer' ? 'coerce.string_to_integer' : 'coerce.string_to_number';
-    return ctx.allowed.has(rule) ? save(ctx, path, rule, value, converted, expected) : value;
+    return ctx.allowed.has(rule)
+      ? save(
+          ctx,
+          schema,
+          path,
+          rule,
+          value,
+          converted,
+          ['input_is_string', `schema_type_is_${expected}`, 'repair_rule_is_allowlisted'],
+          [
+            'exact_decimal_grammar',
+            'negative_zero_spelling_rejected',
+            'finite_conversion',
+            'exact_decimal_round_trip',
+            ...(expected === 'integer' ? ['javascript_safe_integer'] : []),
+          ],
+          expected,
+        )
+      : value;
   }
   if (typeof value === 'string' && expected === 'boolean' && /^(true|false)$/u.test(value))
     return ctx.allowed.has('coerce.string_to_boolean')
-      ? save(ctx, path, 'coerce.string_to_boolean', value, value === 'true')
+      ? save(
+          ctx,
+          schema,
+          path,
+          'coerce.string_to_boolean',
+          value,
+          value === 'true',
+          ['input_is_string', 'schema_type_is_boolean', 'repair_rule_is_allowlisted'],
+          ['exact_lowercase_boolean_literal'],
+        )
       : value;
   if (!Array.isArray(value) && expected === 'array')
     return ctx.allowed.has('coerce.singleton_to_array')
-      ? save(ctx, path, 'coerce.singleton_to_array', value, [value])
+      ? save(
+          ctx,
+          schema,
+          path,
+          'coerce.singleton_to_array',
+          value,
+          [value],
+          ['input_is_not_array', 'schema_type_is_array', 'repair_rule_is_allowlisted'],
+          ['single_value_has_one_unambiguous_array_wrapping'],
+        )
       : value;
   return value;
 }
@@ -140,4 +186,24 @@ export function applyRepairs(
     resolving: new Set(),
   };
   return { value: walk(schema, value, '', ctx), repairs: ctx.repairs };
+}
+
+export function repairReceiptHash(repair: RepairRecord): string {
+  const { receipt_hash: receiptHash, ...receipt } = repair;
+  void receiptHash;
+  return sha256(receipt);
+}
+
+export function verifyRepairReceipt(repair: RepairRecord): boolean {
+  return repair.receipt_hash === repairReceiptHash(repair);
+}
+
+export function finalizeRepairReceipts(
+  repairs: RepairRecord[],
+  postValidation: RepairRecord['post_validation'],
+): RepairRecord[] {
+  return repairs.map((repair) => {
+    const updated = { ...repair, post_validation: { ...postValidation } };
+    return { ...updated, receipt_hash: repairReceiptHash(updated) };
+  });
 }

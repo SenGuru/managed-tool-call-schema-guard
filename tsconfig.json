@@ -5,6 +5,8 @@
     { "path": "packages/cli" },
     { "path": "packages/api" },
     { "path": "packages/sdk-typescript" },
-    { "path": "packages/managed" }
+    { "path": "packages/managed" },
+    { "path": "packages/anchor-receiver" },
+    { "path": "packages/shared-state" }
   ]
 }

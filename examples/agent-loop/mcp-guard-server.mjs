@@ -25,7 +25,7 @@ const toolSchema = {
   },
 };
 
-const cases = {
+const baseCases = {
   valid_call: { expected: 'valid', execute: true },
   repairable_strings: { expected: 'valid_with_repair', execute: true },
   missing_required: { expected: 'rejected', execute: false },
@@ -43,6 +43,13 @@ const cases = {
     policy: { deny_argument_paths: ['/recipient'] },
   },
 };
+const generatedRounds = 13;
+const cases = {};
+for (let round = 1; round <= generatedRounds; round += 1) {
+  const suffix = String(round).padStart(3, '0');
+  for (const [name, definition] of Object.entries(baseCases))
+    cases[`${name}_${suffix}`] = definition;
+}
 const driftCases = {
   minimum_tightened: {
     previous: { type: 'integer', minimum: 0 },

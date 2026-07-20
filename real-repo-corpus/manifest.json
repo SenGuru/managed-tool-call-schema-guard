@@ -1,0 +1,107 @@
+{
+  "version": 2,
+  "purpose": "Diverse public-repository corpus for shallow, static-only tool-schema compatibility audits.",
+  "selection_note": "A convenience sample across MCP servers, provider SDKs, agent frameworks, and AI tooling. It is diverse, but not a statistically random sample of GitHub.",
+  "repos": [
+    {
+      "id": "mcp-python-sdk",
+      "url": "https://github.com/modelcontextprotocol/python-sdk.git",
+      "expected_signal": "MCP tool declarations and inputSchema fixtures"
+    },
+    {
+      "id": "openai-agents-python",
+      "url": "https://github.com/openai/openai-agents-python.git",
+      "expected_signal": "OpenAI Agents function-tool declarations"
+    },
+    {
+      "id": "pydantic-ai",
+      "url": "https://github.com/pydantic/pydantic-ai.git",
+      "expected_signal": "PydanticAI tool contracts and JSON Schema fixtures"
+    },
+    {
+      "id": "google-adk-python",
+      "url": "https://github.com/google/adk-python.git",
+      "expected_signal": "Google ADK function declarations"
+    },
+    {
+      "id": "modelcontextprotocol-servers",
+      "url": "https://github.com/modelcontextprotocol/servers.git",
+      "expected_signal": "Reference MCP servers"
+    },
+    {
+      "id": "github-mcp-server",
+      "url": "https://github.com/github/github-mcp-server.git",
+      "expected_signal": "Production MCP server tool schemas"
+    },
+    {
+      "id": "microsoft-mcp",
+      "url": "https://github.com/microsoft/mcp.git",
+      "expected_signal": "Microsoft MCP tooling and examples"
+    },
+    {
+      "id": "awslabs-mcp",
+      "url": "https://github.com/awslabs/mcp.git",
+      "expected_signal": "AWS Labs MCP servers"
+    },
+    {
+      "id": "cloudflare-mcp-server",
+      "url": "https://github.com/cloudflare/mcp-server-cloudflare.git",
+      "expected_signal": "Cloudflare MCP server declarations"
+    },
+    {
+      "id": "mongodb-mcp-server",
+      "url": "https://github.com/mongodb-js/mongodb-mcp-server.git",
+      "expected_signal": "MongoDB MCP tool declarations"
+    },
+    {
+      "id": "redis-mcp",
+      "url": "https://github.com/redis/mcp-redis.git",
+      "expected_signal": "Redis MCP tool declarations"
+    },
+    {
+      "id": "browserbase-mcp-server",
+      "url": "https://github.com/browserbase/mcp-server-browserbase.git",
+      "expected_signal": "Browser automation MCP tools"
+    },
+    {
+      "id": "mcp-playwright",
+      "url": "https://github.com/executeautomation/mcp-playwright.git",
+      "expected_signal": "Playwright MCP tool schemas"
+    },
+    {
+      "id": "mcp-go",
+      "url": "https://github.com/mark3labs/mcp-go.git",
+      "expected_signal": "Go MCP SDK and examples"
+    },
+    {
+      "id": "openai-agents-js",
+      "url": "https://github.com/openai/openai-agents-js.git",
+      "expected_signal": "OpenAI Agents JavaScript tool declarations"
+    },
+    {
+      "id": "openai-node",
+      "url": "https://github.com/openai/openai-node.git",
+      "expected_signal": "OpenAI function-tool request fixtures"
+    },
+    {
+      "id": "vercel-ai",
+      "url": "https://github.com/vercel/ai.git",
+      "expected_signal": "Vercel AI SDK tool definitions"
+    },
+    {
+      "id": "langchainjs",
+      "url": "https://github.com/langchain-ai/langchainjs.git",
+      "expected_signal": "LangChain.js tools and schemas"
+    },
+    {
+      "id": "semantic-kernel",
+      "url": "https://github.com/microsoft/semantic-kernel.git",
+      "expected_signal": "Semantic Kernel function definitions"
+    },
+    {
+      "id": "genai-toolbox",
+      "url": "https://github.com/googleapis/genai-toolbox.git",
+      "expected_signal": "Google GenAI toolbox tool declarations"
+    }
+  ]
+}

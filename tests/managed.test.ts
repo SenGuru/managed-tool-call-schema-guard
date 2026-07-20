@@ -3,8 +3,8 @@ import { request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { validateToolCall } from '../packages/core/src/index.js';
-import { createManagedServer } from '../packages/managed/src/server.js';
+import { validateToolCall, verifyRepairReceipt } from '../packages/core/src/index.js';
+import { createManagedServer, validateManagedConfig } from '../packages/managed/src/server.js';
 import { FixedWindowRateLimiter } from '../packages/managed/src/rate-limit.js';
 import { ManagedError, ManagedStore } from '../packages/managed/src/store.js';
 
@@ -18,6 +18,137 @@ async function database(): Promise<string> {
   return join(await mkdtemp(join(tmpdir(), 'schema-guard-managed-')), 'managed.db');
 }
 describe('managed local control plane', () => {
+  it('fails closed when public-mode production controls are missing', async () => {
+    const base = {
+      databasePath: await database(),
+      masterSecret: 'public-mode-secret-that-is-long-enough-public-mode-secret-that-is-long-enough',
+      publicMode: true,
+      instanceCount: 1,
+      externalUrl: 'https://app.invokeguard.example',
+      trustProxy: true,
+      actionCheckpointAnchorUrl: 'https://anchor.invokeguard.example/checkpoints',
+      actionCheckpointAnchorSigningSecret:
+        'public-anchor-signing-secret-that-is-at-least-32-characters',
+      requestTimeoutMs: 5000,
+      rateLimitPerMinute: 600,
+    };
+    expect(() => validateManagedConfig(base)).not.toThrow();
+    expect(() => validateManagedConfig({ ...base, instanceCount: 2 })).toThrow(
+      /every managed state path is transactional and shared/u,
+    );
+    expect(() =>
+      validateManagedConfig({
+        databasePath: '/tmp/schema-guard-private.db',
+        masterSecret: 'private-mode-secret-that-is-at-least-32-characters',
+        instanceCount: 2,
+      }),
+    ).toThrow(/must remain 1/u);
+    expect(() =>
+      validateManagedConfig({ ...base, sharedActionDatabaseUrl: 'https://database.example' }),
+    ).toThrow(/PostgreSQL URL/u);
+    expect(() =>
+      validateManagedConfig({ ...base, sharedControlDatabaseUrl: 'https://database.example' }),
+    ).toThrow(/PostgreSQL URL/u);
+    expect(() =>
+      validateManagedConfig({
+        ...base,
+        sharedActionDatabaseUrl: 'postgresql://database.example/schema_guard?sslmode=verify-full',
+      }),
+    ).not.toThrow();
+    expect(() =>
+      validateManagedConfig({
+        ...base,
+        sharedControlDatabaseUrl: 'postgresql://database.example/schema_guard?sslmode=verify-full',
+      }),
+    ).not.toThrow();
+    expect(() =>
+      validateManagedConfig({
+        ...base,
+        sharedActionDatabaseUrl: 'postgresql://database.example/schema_guard',
+      }),
+    ).toThrow(/sslmode/u);
+    expect(() =>
+      validateManagedConfig({
+        ...base,
+        sharedControlDatabaseUrl: 'postgresql://database.example/schema_guard',
+      }),
+    ).toThrow(/sslmode/u);
+    for (const invalid of [0, 101, 1.5, Number.NaN, Number.POSITIVE_INFINITY])
+      expect(() => validateManagedConfig({ ...base, instanceCount: invalid })).toThrow(
+        /INSTANCE_COUNT/u,
+      );
+    expect(() =>
+      validateManagedConfig({ ...base, actionCheckpointAnchorSigningSecret: undefined }),
+    ).toThrow(/configured together/u);
+    expect(() =>
+      validateManagedConfig({ ...base, actionCheckpointAnchorUrl: 'http://localhost/checkpoints' }),
+    ).toThrow(/public HTTPS URL/u);
+    expect(() =>
+      validateManagedConfig({ ...base, actionCheckpointAnchorSigningSecret: 'too-short' }),
+    ).toThrow(/at least 32/u);
+    expect(() => validateManagedConfig({ ...base, externalUrl: 'http://example.com' })).toThrow(
+      /https/u,
+    );
+    expect(() => validateManagedConfig({ ...base, trustProxy: false })).toThrow(/TRUST_PROXY/u);
+    expect(() =>
+      validateManagedConfig({
+        ...base,
+        masterSecret: 'too-short-for-public-mode-but-local-valid',
+      }),
+    ).toThrow(/64/u);
+    expect(() => validateManagedConfig({ ...base, requestTimeoutMs: 20_000 })).toThrow(/timeout/u);
+    expect(() => validateManagedConfig({ ...base, rateLimitPerMinute: 601 })).toThrow(
+      /rate limit/u,
+    );
+    expect(() =>
+      validateManagedConfig({ ...base, actionReconciliationMinAgeSeconds: 300 }),
+    ).not.toThrow();
+    expect(() =>
+      validateManagedConfig({
+        ...base,
+        alertWebhookPollIntervalMs: 5_000,
+        alertWebhookRequestTimeoutMs: 5_000,
+        alertWebhookMaxAttempts: 8,
+      }),
+    ).not.toThrow();
+    for (const invalid of [59, 86_401, Number.NaN, Number.POSITIVE_INFINITY, 1.5])
+      expect(() =>
+        validateManagedConfig({ ...base, actionReconciliationMinAgeSeconds: invalid }),
+      ).toThrow(/ACTION_RECONCILIATION_MIN_AGE/u);
+    for (const invalid of [99, 60_001, Number.NaN, Number.POSITIVE_INFINITY, 1.5])
+      expect(() => validateManagedConfig({ ...base, alertWebhookPollIntervalMs: invalid })).toThrow(
+        /ALERT_WEBHOOK_POLL_INTERVAL/u,
+      );
+    for (const invalid of [499, 10_001, Number.NaN, Number.POSITIVE_INFINITY, 1.5])
+      expect(() =>
+        validateManagedConfig({ ...base, alertWebhookRequestTimeoutMs: invalid }),
+      ).toThrow(/ALERT_WEBHOOK_REQUEST_TIMEOUT/u);
+    for (const invalid of [0, 21, Number.NaN, Number.POSITIVE_INFINITY, 1.5])
+      expect(() => validateManagedConfig({ ...base, alertWebhookMaxAttempts: invalid })).toThrow(
+        /ALERT_WEBHOOK_MAX_ATTEMPTS/u,
+      );
+    for (const invalid of [99, 60_001, Number.NaN, Number.POSITIVE_INFINITY, 1.5])
+      expect(() =>
+        validateManagedConfig({ ...base, actionCheckpointAnchorPollIntervalMs: invalid }),
+      ).toThrow(/ACTION_CHECKPOINT_ANCHOR_POLL_INTERVAL/u);
+    for (const invalid of [499, 10_001, Number.NaN, Number.POSITIVE_INFINITY, 1.5])
+      expect(() =>
+        validateManagedConfig({ ...base, actionCheckpointAnchorRequestTimeoutMs: invalid }),
+      ).toThrow(/ACTION_CHECKPOINT_ANCHOR_REQUEST_TIMEOUT/u);
+    for (const invalid of [0, 21, Number.NaN, Number.POSITIVE_INFINITY, 1.5])
+      expect(() =>
+        validateManagedConfig({ ...base, actionCheckpointAnchorMaxAttempts: invalid }),
+      ).toThrow(/ACTION_CHECKPOINT_ANCHOR_MAX_ATTEMPTS/u);
+    for (const invalid of [Number.NaN, Number.POSITIVE_INFINITY, 0, -1, 1.5]) {
+      expect(() => validateManagedConfig({ ...base, requestTimeoutMs: invalid })).toThrow(
+        /positive finite integer/u,
+      );
+      expect(() => validateManagedConfig({ ...base, rateLimitPerMinute: invalid })).toThrow(
+        /positive finite integer/u,
+      );
+    }
+  });
+
   it('authenticates keys without storing plaintext and isolates tenant audits', async () => {
     const store = new ManagedStore({ databasePath: await database(), masterSecret: secret });
     store.bootstrapTenant({ id: 'a', name: 'Tenant A', plan: 'trial', apiKey: 'sg_live_tenant_a' });
@@ -41,6 +172,36 @@ describe('managed local control plane', () => {
     store.recordDecision(a, decision);
     expect(store.listAudits(a)).toHaveLength(1);
     expect(store.listAudits(b)).toHaveLength(0);
+    store.close();
+  });
+
+  it('uses tenant-scoped audit and repair hashes for identical decisions', async () => {
+    const store = new ManagedStore({ databasePath: await database(), masterSecret: secret });
+    store.bootstrapTenant({ id: 'a', name: 'Tenant A', plan: 'trial', apiKey: 'key-a' });
+    store.bootstrapTenant({ id: 'b', name: 'Tenant B', plan: 'trial', apiKey: 'key-b' });
+    const request = {
+      tool_name: 'counter',
+      tool_schema: { type: 'object', properties: { count: { type: 'integer' } } },
+      raw_arguments: { count: '2' },
+    } as const;
+    const a = store.recordValidation(store.authenticate('key-a')!, validateToolCall(request));
+    const b = store.recordValidation(store.authenticate('key-b')!, validateToolCall(request));
+    expect(a.audit.arguments_hash).toMatch(/^hmac-sha256:/u);
+    expect(a.audit.arguments_hash).not.toBe(b.audit.arguments_hash);
+    expect(a.audit.tool_name_hash).not.toBe(b.audit.tool_name_hash);
+    expect(a.audit.schema_hash).not.toBe(b.audit.schema_hash);
+    expect(a.policy_result.applied_policy_hash).toBe(a.audit.policy_hash);
+    expect(a.repaired_fields[0]?.original_value_hash).not.toBe(
+      b.repaired_fields[0]?.original_value_hash,
+    );
+    expect(a.repaired_fields[0]?.output_value_hash).not.toBe(
+      b.repaired_fields[0]?.output_value_hash,
+    );
+    expect(a.repaired_fields[0]?.schema_fragment_hash).not.toBe(
+      b.repaired_fields[0]?.schema_fragment_hash,
+    );
+    expect(a.repaired_fields.every(verifyRepairReceipt)).toBe(true);
+    expect(b.repaired_fields.every(verifyRepairReceipt)).toBe(true);
     store.close();
   });
 
@@ -91,8 +252,7 @@ describe('managed local control plane', () => {
   it('enforces monthly quotas', async () => {
     const store = new ManagedStore({ databasePath: await database(), masterSecret: secret });
     store.bootstrapTenant({ id: 'a', name: 'A', plan: 'trial', apiKey: 'key-a' });
-    store.db.prepare('UPDATE tenants SET monthly_limit=1 WHERE id=?').run('a');
-    const principal = store.authenticate('key-a')!;
+    const principal = { ...store.authenticate('key-a')!, monthlyLimit: 1 };
     store.consumeValidation(principal);
     expect(() => store.consumeValidation(principal)).toThrow(ManagedError);
     store.close();
@@ -298,6 +458,14 @@ describe('managed local control plane', () => {
     const address = service.server.address();
     if (!address || typeof address === 'string') throw new Error('missing address');
     const base = `http://127.0.0.1:${address.port}`;
+    expect(await fetch(`${base}/readyz`).then((result) => result.json())).toEqual({
+      status: 'ready',
+    });
+    service.store.db.pragma('user_version = 12');
+    const unready = await fetch(`${base}/readyz`);
+    expect(unready.status).toBe(503);
+    expect(await unready.json()).toEqual({ status: 'database_unavailable' });
+    service.store.db.pragma('user_version = 14');
     expect((await fetch(`${base}/v1/usage`)).status).toBe(401);
     const response = await fetch(`${base}/v1/validate`, {
       method: 'POST',
@@ -311,6 +479,17 @@ describe('managed local control plane', () => {
     expect(response.status).toBe(200);
     expect(((await response.json()) as { decision: string }).decision).toBe('valid_with_repair');
     const headers = { authorization: 'Bearer key-a' };
+    const compiled = await fetch(`${base}/v1/contracts/compile`, {
+      method: 'POST',
+      headers: { ...headers, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        target: 'mcp',
+        tool_name: 'counter',
+        tool_schema: { type: 'object', properties: { count: { type: 'integer' } } },
+      }),
+    });
+    expect(compiled.status).toBe(200);
+    expect(((await compiled.json()) as { status: string }).status).toBe('runtime_unverified');
     expect(
       (
         (await fetch(`${base}/v1/audits/verify`, { headers }).then((r) => r.json())) as {
@@ -330,6 +509,52 @@ describe('managed local control plane', () => {
     const dashboardBody = await dashboard.text();
     expect(dashboardBody).toContain("clearPanels();q('status').className=''");
     expect(dashboardBody).toContain("catch(e){clearPanels();q('status').className='bad'");
+  });
+
+  it('does not let validate-only keys read operational or tenant configuration data', async () => {
+    const service = createManagedServer({ databasePath: await database(), masterSecret: secret });
+    open.push(service);
+    service.store.bootstrapTenant({ id: 'a', name: 'A', plan: 'trial', apiKey: 'admin-key' });
+    const admin = service.store.authenticate('admin-key')!;
+    const validateOnly = service.store.issueApiKey(admin, ['validate']);
+    await new Promise<void>((resolve) => service.server.listen(0, '127.0.0.1', resolve));
+    const address = service.server.address();
+    if (!address || typeof address === 'string') throw new Error('missing address');
+    const base = `http://127.0.0.1:${address.port}`;
+    const headers = { authorization: `Bearer ${validateOnly.api_key}` };
+    for (const path of [
+      '/v1/usage',
+      '/v1/environments',
+      '/v1/billing/statement',
+      '/v1/alerts',
+      '/v1/rulesets/latest',
+    ])
+      expect((await fetch(`${base}${path}`, { headers })).status, path).toBe(403);
+
+    expect(
+      (
+        await fetch(`${base}/v1/contracts/compile`, {
+          method: 'POST',
+          headers: { ...headers, 'content-type': 'application/json' },
+          body: JSON.stringify({
+            target: 'mcp',
+            tool_name: 'counter',
+            tool_schema: { type: 'object', properties: {} },
+          }),
+        })
+      ).status,
+    ).toBe(403);
+
+    const validation = await fetch(`${base}/v1/validate`, {
+      method: 'POST',
+      headers: { ...headers, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        tool_name: 'counter',
+        tool_schema: { type: 'object', properties: { count: { type: 'integer' } } },
+        raw_arguments: { count: '2' },
+      }),
+    });
+    expect(validation.status).toBe(200);
   });
 
   it('prevents callers from widening organization repair policy', async () => {

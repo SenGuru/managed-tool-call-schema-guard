@@ -14,3 +14,114 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm audit --audit-level=high
+  postgres-shared-state:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-bookworm
+        env:
+          POSTGRES_USER: schema_guard
+          POSTGRES_PASSWORD: schema_guard_ci
+          POSTGRES_DB: schema_guard_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U schema_guard -d schema_guard_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run build
+      - name: Exercise two independent PostgreSQL pools
+        env:
+          SCHEMA_GUARD_TEST_POSTGRES_URL: postgresql://schema_guard:schema_guard_ci@127.0.0.1:5432/schema_guard_test
+        run: npx vitest run tests/postgres-shared-state.test.ts
+  managed-container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build managed image
+        run: docker build --target managed --tag schema-guard-managed:ci .
+      - name: Start hardened managed image
+        run: |
+          docker run --detach --name schema-guard-managed-ci \
+            --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+            --tmpfs /data:rw,noexec,nosuid,size=128m,uid=10001,gid=10001,mode=0700 \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --pids-limit 256 \
+            --publish 127.0.0.1:8788:8788 \
+            --env HOST=0.0.0.0 \
+            --env PORT=8788 \
+            --env SCHEMA_GUARD_DATABASE=/data/managed.db \
+            --env SCHEMA_GUARD_PUBLIC_MODE=true \
+            --env SCHEMA_GUARD_TRUST_PROXY=true \
+            --env SCHEMA_GUARD_EXTERNAL_URL=https://schema-guard.invalid \
+            --env SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_URL=https://anchor.schema-guard.invalid/checkpoints \
+            --env SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_SIGNING_SECRET=ci-only-anchor-secret-0123456789-ci-only-anchor-secret \
+            --env SCHEMA_GUARD_MASTER_SECRET=ci-only-master-secret-0123456789-ci-only-master-secret-0123456789 \
+            schema-guard-managed:ci
+      - name: Verify health, readiness, identity, and HSTS
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8788/readyz > /tmp/ready.json; then
+              break
+            fi
+            sleep 1
+          done
+          grep -q '"status":"ready"' /tmp/ready.json
+          curl --fail --silent http://127.0.0.1:8788/healthz | grep -q '"status":"ok"'
+          curl --silent --dump-header /tmp/headers.txt --output /dev/null http://127.0.0.1:8788/readyz
+          grep -qi '^strict-transport-security:' /tmp/headers.txt
+          test "$(docker exec schema-guard-managed-ci id -u)" = '10001'
+      - name: Capture logs on failure
+        if: failure()
+        run: docker logs schema-guard-managed-ci
+      - name: Stop container
+        if: always()
+        run: docker rm --force schema-guard-managed-ci || true
+  anchor-receiver-container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build anchor receiver image
+        run: docker build --target anchor-receiver --tag schema-guard-anchor-receiver:ci .
+      - name: Start hardened anchor receiver image
+        run: |
+          docker run --detach --name schema-guard-anchor-receiver-ci \
+            --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,size=32m \
+            --tmpfs /anchor-data:rw,noexec,nosuid,size=64m,uid=10002,gid=10002,mode=0700 \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --pids-limit 128 \
+            --publish 127.0.0.1:8790:8790 \
+            --env HOST=0.0.0.0 \
+            --env PORT=8790 \
+            --env SCHEMA_GUARD_ANCHOR_DATABASE=/anchor-data/anchor.db \
+            --env SCHEMA_GUARD_ANCHOR_SIGNING_SECRET=ci-anchor-signing-secret-0123456789 \
+            --env SCHEMA_GUARD_ANCHOR_READ_TOKEN=ci-anchor-read-token-012345678901234 \
+            --env SCHEMA_GUARD_ANCHOR_CHAIN_SECRET=ci-anchor-chain-secret-0123456789012 \
+            schema-guard-anchor-receiver:ci
+      - name: Verify anchor health, readiness, and identity
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8790/readyz > /tmp/anchor-ready.json; then
+              break
+            fi
+            sleep 1
+          done
+          grep -q '"status":"ready"' /tmp/anchor-ready.json
+          curl --fail --silent http://127.0.0.1:8790/healthz | grep -q '"status":"ok"'
+          test "$(docker exec schema-guard-anchor-receiver-ci id -u)" = '10002'
+      - name: Capture anchor logs on failure
+        if: failure()
+        run: docker logs schema-guard-anchor-receiver-ci
+      - name: Stop anchor container
+        if: always()
+        run: docker rm --force schema-guard-anchor-receiver-ci || true

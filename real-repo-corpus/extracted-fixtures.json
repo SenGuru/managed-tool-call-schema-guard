@@ -1,0 +1,1295 @@
+{
+  "version": 1,
+  "generated_by": "scripts/real-repo-corpus-audit.mjs",
+  "generated_at": "2026-07-19T13:24:51.194Z",
+  "repos": [
+    {
+      "id": "mcp-python-sdk",
+      "url": "https://github.com/modelcontextprotocol/python-sdk.git",
+      "head": "3a6f2996cdd8358957479791e8b26198c07d6a75",
+      "signal_count_sampled": 200
+    },
+    {
+      "id": "openai-agents-python",
+      "url": "https://github.com/openai/openai-agents-python.git",
+      "head": "173eca4991091a1996cb1c8a0f86ef938a39eb68",
+      "signal_count_sampled": 200
+    },
+    {
+      "id": "pydantic-ai",
+      "url": "https://github.com/pydantic/pydantic-ai.git",
+      "head": "9688a9cca2fcf81451cdac35e701250dbdfec75e",
+      "signal_count_sampled": 200
+    },
+    {
+      "id": "google-adk-python",
+      "url": "https://github.com/google/adk-python.git",
+      "head": "be5828f317c7430411df29974cd9ccfa875e90de",
+      "signal_count_sampled": 200
+    },
+    {
+      "id": "modelcontextprotocol-servers",
+      "url": "https://github.com/modelcontextprotocol/servers.git",
+      "head": "d31124c982401739917fd817c2a59db344529c16",
+      "signal_count_sampled": 200
+    },
+    {
+      "id": "github-mcp-server",
+      "url": "https://github.com/github/github-mcp-server.git",
+      "head": "1338dbed4a044ee26422d4212bac3a8037fdb7ff",
+      "signal_count_sampled": 123
+    },
+    {
+      "id": "microsoft-mcp",
+      "url": "https://github.com/microsoft/mcp.git",
+      "head": "ec1027d6bb8c8e270a409383b394db52dedc4706",
+      "signal_count_sampled": 200
+    },
+    {
+      "id": "awslabs-mcp",
+      "url": "https://github.com/awslabs/mcp.git",
+      "head": "5806ec09c070d5b8172a007f893a00ed2df41d75",
+      "signal_count_sampled": 200
+    },
+    {
+      "id": "cloudflare-mcp-server",
+      "url": "https://github.com/cloudflare/mcp-server-cloudflare.git",
+      "head": "e1b9c17936b903d3e336ebf84c58ab8403e67c1a",
+      "signal_count_sampled": 200
+    },
+    {
+      "id": "mongodb-mcp-server",
+      "url": "https://github.com/mongodb-js/mongodb-mcp-server.git",
+      "head": "6ff848526dc4bb2f12db168a9d7312c302c25eed",
+      "signal_count_sampled": 200
+    },
+    {
+      "id": "redis-mcp",
+      "url": "https://github.com/redis/mcp-redis.git",
+      "head": "fc491ae0ba368ecd5614818c1527f2f050ee5e34",
+      "signal_count_sampled": 79
+    },
+    {
+      "id": "browserbase-mcp-server",
+      "url": "https://github.com/browserbase/mcp-server-browserbase.git",
+      "head": "1e196b3d3c4dc70944e0d19038dd9eb3608b207a",
+      "signal_count_sampled": 114
+    },
+    {
+      "id": "mcp-playwright",
+      "url": "https://github.com/executeautomation/mcp-playwright.git",
+      "head": "2349c2891e7c499c8c07b7d78c7f3fb4c797a1da",
+      "signal_count_sampled": 200
+    },
+    {
+      "id": "mcp-go",
+      "url": "https://github.com/mark3labs/mcp-go.git",
+      "head": "f6f3485b3bc1b3d9212da58b3cf18cb7cf9d137a",
+      "signal_count_sampled": 200
+    },
+    {
+      "id": "openai-agents-js",
+      "url": "https://github.com/openai/openai-agents-js.git",
+      "head": "710cccfd8fd26b395f8e3470419852d76de80967",
+      "signal_count_sampled": 200
+    },
+    {
+      "id": "openai-node",
+      "url": "https://github.com/openai/openai-node.git",
+      "head": "2706888499a777b47d851aeb479f846f80932765",
+      "signal_count_sampled": 200
+    },
+    {
+      "id": "vercel-ai",
+      "url": "https://github.com/vercel/ai.git",
+      "head": "6cd7c74acf0d7ec84dd58a841fc0e20970d6f2e8",
+      "signal_count_sampled": 200
+    },
+    {
+      "id": "langchainjs",
+      "url": "https://github.com/langchain-ai/langchainjs.git",
+      "head": "ee76ea0347fb611153e5ec7d0e70fa405f5293a3",
+      "signal_count_sampled": 200
+    },
+    {
+      "id": "semantic-kernel",
+      "url": "https://github.com/microsoft/semantic-kernel.git",
+      "head": "c781da134e38acbee57616efc8662d2cfd8130d5",
+      "signal_count_sampled": 159
+    },
+    {
+      "id": "genai-toolbox",
+      "url": "https://github.com/googleapis/genai-toolbox.git",
+      "head": "944f6ce97bc77a92a052de92b88f0fc09ac7578c",
+      "signal_count_sampled": 200
+    }
+  ],
+  "fixtures": [
+    {
+      "id": "mcp-python-sdk:1",
+      "repo_id": "mcp-python-sdk",
+      "source_file": "tests/types/test_methods.py",
+      "adapter": "mcp",
+      "tool_name": "echo",
+      "source_fingerprint": "sha256:bd06b167a4a87e91cb6b72f90ed4f43ba779a178899bd3e4832b3579966e0758",
+      "schema_hash": "sha256:a2c799262a3ce3c19ef5cdd983bf3d12b43ab3c426227091b909dcb7054738c0",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "openai-agents-python:1",
+      "repo_id": "openai-agents-python",
+      "source_file": "tests/extensions/experimental/hosted_multi_agent/test_live.py",
+      "adapter": "openai_agents",
+      "tool_name": "get_proposal",
+      "source_fingerprint": "sha256:86a01f25e2effe7394e14566d2ef70a52bba520473f60cf073c71a0be87c27c4",
+      "schema_hash": "sha256:75f5f188c7ddcab3177053b6ae0430ae49e863397d9dadde55692be45237ce76",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "openai-agents-python:2",
+      "repo_id": "openai-agents-python",
+      "source_file": "tests/extensions/experimental/hosted_multi_agent/test_live.py",
+      "adapter": "openai_agents",
+      "tool_name": "get_proposal",
+      "source_fingerprint": "sha256:86a01f25e2effe7394e14566d2ef70a52bba520473f60cf073c71a0be87c27c4",
+      "schema_hash": "sha256:75f5f188c7ddcab3177053b6ae0430ae49e863397d9dadde55692be45237ce76",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "openai-agents-python:3",
+      "repo_id": "openai-agents-python",
+      "source_file": "tests/extensions/memory/test_advanced_sqlite_session.py",
+      "adapter": "openai_agents",
+      "tool_name": "lookup_account",
+      "source_fingerprint": "sha256:b8d784e533a3cc9dd0132d03f154466923526331451183f63059caf4a1a2d934",
+      "schema_hash": "sha256:fbbeb38f0d73a669c7ecda4ef91197e943b19927005446304ad91f280224b4f7",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "openai-agents-python:4",
+      "repo_id": "openai-agents-python",
+      "source_file": "tests/extensions/memory/test_advanced_sqlite_session.py",
+      "adapter": "openai_agents",
+      "tool_name": "lookup_account",
+      "source_fingerprint": "sha256:3e302231388311fa49cba4208d5033182ac1c3d3ade7082d94fcfaca72a7bc18",
+      "schema_hash": "sha256:fbbeb38f0d73a669c7ecda4ef91197e943b19927005446304ad91f280224b4f7",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "openai-agents-python:5",
+      "repo_id": "openai-agents-python",
+      "source_file": "tests/test_process_model_response.py",
+      "adapter": "openai_agents",
+      "tool_name": "get_customer_profile",
+      "source_fingerprint": "sha256:3da7087ce88dc7bb6cc6b103fe68859cbae2d2fe683fe8b86201266311473d0d",
+      "schema_hash": "sha256:68bd4151c38f54f9b286b3dfb301e3df943a83c40a41ab9e696cf722e0b4ae1b",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "openai-agents-python:6",
+      "repo_id": "openai-agents-python",
+      "source_file": "tests/test_run_state.py",
+      "adapter": "openai_agents",
+      "tool_name": "get_customer_profile",
+      "source_fingerprint": "sha256:3da7087ce88dc7bb6cc6b103fe68859cbae2d2fe683fe8b86201266311473d0d",
+      "schema_hash": "sha256:68bd4151c38f54f9b286b3dfb301e3df943a83c40a41ab9e696cf722e0b4ae1b",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "openai-agents-python:7",
+      "repo_id": "openai-agents-python",
+      "source_file": "tests/test_run_state.py",
+      "adapter": "openai_agents",
+      "tool_name": "get_customer_profile",
+      "source_fingerprint": "sha256:3da7087ce88dc7bb6cc6b103fe68859cbae2d2fe683fe8b86201266311473d0d",
+      "schema_hash": "sha256:68bd4151c38f54f9b286b3dfb301e3df943a83c40a41ab9e696cf722e0b4ae1b",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "openai-agents-python:8",
+      "repo_id": "openai-agents-python",
+      "source_file": "tests/test_run_step_execution.py",
+      "adapter": "openai_agents",
+      "tool_name": "lookup_account",
+      "source_fingerprint": "sha256:8f0370a9be1c4b2be91c96c1dd3773ce194079eb96a0f243e0a46ff924bc1428",
+      "schema_hash": "sha256:fbbeb38f0d73a669c7ecda4ef91197e943b19927005446304ad91f280224b4f7",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "openai-agents-python:9",
+      "repo_id": "openai-agents-python",
+      "source_file": "tests/test_stream_events.py",
+      "adapter": "openai_agents",
+      "tool_name": "list_open_orders",
+      "source_fingerprint": "sha256:f613e33d13095340f4a3629791f8e46317b9949ccc72c355662ffc57b7a1db67",
+      "schema_hash": "sha256:68bd4151c38f54f9b286b3dfb301e3df943a83c40a41ab9e696cf722e0b4ae1b",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "pydantic-ai:1",
+      "repo_id": "pydantic-ai",
+      "source_file": "tests/models/test_fallback.py",
+      "adapter": "openai_agents",
+      "tool_name": "final_result",
+      "source_fingerprint": "sha256:33eb87cff0ad56ae4d9416baf50ae7ebfad6dfd37dc04cdc48f06b3590b4db1e",
+      "schema_hash": "sha256:d28daa1020236cb29d99a89074eaf2a95b50cc2733701332ac59cc0f66409c3f",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "pydantic-ai:2",
+      "repo_id": "pydantic-ai",
+      "source_file": "tests/models/test_instrumented.py",
+      "adapter": "openai_agents",
+      "tool_name": "get_weather",
+      "source_fingerprint": "sha256:053827d925d2c2f16d1c2508554b51672ad6b7806c036213e5694050d1f68daa",
+      "schema_hash": "sha256:fc0b1a9e7eab1cc05ffc017418fb27a021167b58285b7659e50609d161bbd816",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "pydantic-ai:3",
+      "repo_id": "pydantic-ai",
+      "source_file": "tests/models/test_instrumented.py",
+      "adapter": "openai_agents",
+      "tool_name": "get_weather",
+      "source_fingerprint": "sha256:053827d925d2c2f16d1c2508554b51672ad6b7806c036213e5694050d1f68daa",
+      "schema_hash": "sha256:fc0b1a9e7eab1cc05ffc017418fb27a021167b58285b7659e50609d161bbd816",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "pydantic-ai:4",
+      "repo_id": "pydantic-ai",
+      "source_file": "tests/models/test_instrumented.py",
+      "adapter": "openai_agents",
+      "tool_name": "weather",
+      "source_fingerprint": "sha256:c8fa93f1cfda9a1fc8009f2f7d8606ec52a7abf50070e51bf15cb287b060760c",
+      "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "pydantic-ai:5",
+      "repo_id": "pydantic-ai",
+      "source_file": "tests/models/test_instrumented.py",
+      "adapter": "openai_agents",
+      "tool_name": "weather",
+      "source_fingerprint": "sha256:c8fa93f1cfda9a1fc8009f2f7d8606ec52a7abf50070e51bf15cb287b060760c",
+      "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "pydantic-ai:6",
+      "repo_id": "pydantic-ai",
+      "source_file": "tests/models/test_instrumented.py",
+      "adapter": "openai_agents",
+      "tool_name": "weather",
+      "source_fingerprint": "sha256:c8fa93f1cfda9a1fc8009f2f7d8606ec52a7abf50070e51bf15cb287b060760c",
+      "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "pydantic-ai:7",
+      "repo_id": "pydantic-ai",
+      "source_file": "tests/models/test_instrumented.py",
+      "adapter": "openai_agents",
+      "tool_name": "weather",
+      "source_fingerprint": "sha256:c8fa93f1cfda9a1fc8009f2f7d8606ec52a7abf50070e51bf15cb287b060760c",
+      "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "pydantic-ai:8",
+      "repo_id": "pydantic-ai",
+      "source_file": "tests/models/test_instrumented.py",
+      "adapter": "openai_agents",
+      "tool_name": "weather",
+      "source_fingerprint": "sha256:c8fa93f1cfda9a1fc8009f2f7d8606ec52a7abf50070e51bf15cb287b060760c",
+      "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "pydantic-ai:9",
+      "repo_id": "pydantic-ai",
+      "source_file": "tests/models/test_instrumented.py",
+      "adapter": "openai_agents",
+      "tool_name": "get_weather",
+      "source_fingerprint": "sha256:053827d925d2c2f16d1c2508554b51672ad6b7806c036213e5694050d1f68daa",
+      "schema_hash": "sha256:fc0b1a9e7eab1cc05ffc017418fb27a021167b58285b7659e50609d161bbd816",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "pydantic-ai:10",
+      "repo_id": "pydantic-ai",
+      "source_file": "tests/models/test_instrumented.py",
+      "adapter": "openai_agents",
+      "tool_name": "get_weather",
+      "source_fingerprint": "sha256:053827d925d2c2f16d1c2508554b51672ad6b7806c036213e5694050d1f68daa",
+      "schema_hash": "sha256:fc0b1a9e7eab1cc05ffc017418fb27a021167b58285b7659e50609d161bbd816",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "pydantic-ai:11",
+      "repo_id": "pydantic-ai",
+      "source_file": "tests/models/test_instrumented.py",
+      "adapter": "openai_agents",
+      "tool_name": "get_weather",
+      "source_fingerprint": "sha256:053827d925d2c2f16d1c2508554b51672ad6b7806c036213e5694050d1f68daa",
+      "schema_hash": "sha256:fc0b1a9e7eab1cc05ffc017418fb27a021167b58285b7659e50609d161bbd816",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "pydantic-ai:12",
+      "repo_id": "pydantic-ai",
+      "source_file": "tests/models/test_instrumented.py",
+      "adapter": "openai_agents",
+      "tool_name": "get_weather",
+      "source_fingerprint": "sha256:053827d925d2c2f16d1c2508554b51672ad6b7806c036213e5694050d1f68daa",
+      "schema_hash": "sha256:fc0b1a9e7eab1cc05ffc017418fb27a021167b58285b7659e50609d161bbd816",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "pydantic-ai:13",
+      "repo_id": "pydantic-ai",
+      "source_file": "tests/models/test_model_request_parameters.py",
+      "adapter": "pydantic_ai",
+      "tool_name": "final_result",
+      "source_fingerprint": "sha256:f472718ec6e2fd8836244f69a1bdf7753bebf83bdf6c926a495eacb17886e9f1",
+      "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "pydantic-ai:14",
+      "repo_id": "pydantic-ai",
+      "source_file": "tests/models/test_model_request_parameters.py",
+      "adapter": "pydantic_ai",
+      "tool_name": "final_result",
+      "source_fingerprint": "sha256:f472718ec6e2fd8836244f69a1bdf7753bebf83bdf6c926a495eacb17886e9f1",
+      "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "pydantic-ai:15",
+      "repo_id": "pydantic-ai",
+      "source_file": "tests/models/test_openai.py",
+      "adapter": "openai_agents",
+      "tool_name": "my_tool",
+      "source_fingerprint": "sha256:884a1aed7696f86444f41f8813b9639c2f72d494d5d8b99aaa7bbfd80ddc25f5",
+      "schema_hash": "sha256:3dd3078e0ec8b4ec6656602a13e4f15f563a8117a84b79a5437a0bfd9184ea57",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "pydantic-ai:16",
+      "repo_id": "pydantic-ai",
+      "source_file": "tests/models/test_openai.py",
+      "adapter": "openai_agents",
+      "tool_name": "my_tool",
+      "source_fingerprint": "sha256:efdd6f94bf2076426f320679278cc6608eebd68ed6c5031dbbf411fe4b4737be",
+      "schema_hash": "sha256:3dd3078e0ec8b4ec6656602a13e4f15f563a8117a84b79a5437a0bfd9184ea57",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "pydantic-ai:17",
+      "repo_id": "pydantic-ai",
+      "source_file": "tests/test_logfire.py",
+      "adapter": "pydantic_ai",
+      "tool_name": "final_result",
+      "source_fingerprint": "sha256:07886b2451d8ad6a2183797bf8ad74b96f56cd46dd36a7d7a7e44c32895b3f24",
+      "schema_hash": "sha256:a6a818f81548e36b64c1a2de4e50463977f771130d59c1f8ee7b6864649d6e2e",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "pydantic-ai:18",
+      "repo_id": "pydantic-ai",
+      "source_file": "tests/test_logfire.py",
+      "adapter": "openai_agents",
+      "tool_name": "my_ret",
+      "source_fingerprint": "sha256:e07a1cc6d9c710b8e78e799cd1ec737605279902b606ac6f67f2d5e4fd4001d5",
+      "schema_hash": "sha256:4de4adefef0dd78118403058a6bc55185949b2ad83d12d55db3e5f83c7b81018",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "pydantic-ai:19",
+      "repo_id": "pydantic-ai",
+      "source_file": "tests/test_logfire.py",
+      "adapter": "pydantic_ai",
+      "tool_name": "final_result",
+      "source_fingerprint": "sha256:07886b2451d8ad6a2183797bf8ad74b96f56cd46dd36a7d7a7e44c32895b3f24",
+      "schema_hash": "sha256:a6a818f81548e36b64c1a2de4e50463977f771130d59c1f8ee7b6864649d6e2e",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "pydantic-ai:20",
+      "repo_id": "pydantic-ai",
+      "source_file": "tests/test_logfire.py",
+      "adapter": "openai_agents",
+      "tool_name": "final_result",
+      "source_fingerprint": "sha256:f9465a77d5ffbd5ea02f2532b187e0f08d5094a9b3d7d00bec235803b5829ce7",
+      "schema_hash": "sha256:a6a818f81548e36b64c1a2de4e50463977f771130d59c1f8ee7b6864649d6e2e",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "pydantic-ai:21",
+      "repo_id": "pydantic-ai",
+      "source_file": "tests/test_tools.py",
+      "adapter": "pydantic_ai",
+      "tool_name": "google_style_docstring",
+      "source_fingerprint": "sha256:9193e60104201db0453d81839cb8024b948dbda2f507d34ef248bc28cc574cb7",
+      "schema_hash": "sha256:a4cf8bb785b8385d2811c1ad85aac04b0150be785b23802b1b48d8d2d9c3e909",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "pydantic-ai:22",
+      "repo_id": "pydantic-ai",
+      "source_file": "tests/test_tools.py",
+      "adapter": "pydantic_ai",
+      "tool_name": "sphinx_style_docstring",
+      "source_fingerprint": "sha256:d863391d1147fe8a17cd1acc01dc838216cf0365a94371e7b47fefb60d9fc444",
+      "schema_hash": "sha256:bfb40b5a6cbb8561bb2fa205aa9ff4303a8dbdd43138c04bb76665478fa70746",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "pydantic-ai:23",
+      "repo_id": "pydantic-ai",
+      "source_file": "tests/test_tools.py",
+      "adapter": "pydantic_ai",
+      "tool_name": "numpy_style_docstring",
+      "source_fingerprint": "sha256:933456b5076d897a845ff27a640aef527c4829bdabbb8c78d04f461a16a3d8f8",
+      "schema_hash": "sha256:a4cf8bb785b8385d2811c1ad85aac04b0150be785b23802b1b48d8d2d9c3e909",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "pydantic-ai:24",
+      "repo_id": "pydantic-ai",
+      "source_file": "tests/test_tools.py",
+      "adapter": "pydantic_ai",
+      "tool_name": "unknown_docstring",
+      "source_fingerprint": "sha256:00b8f78d86ac5d5b55c0e6c2ab9e1f33319466d164ca3e99eddb51abeceb95e5",
+      "schema_hash": "sha256:aa3c55afaa05079cb85b1e9c6c0cbcf3d93ddd098d1493b8838c4635c12c8787",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "pydantic-ai:25",
+      "repo_id": "pydantic-ai",
+      "source_file": "tests/test_tools.py",
+      "adapter": "pydantic_ai",
+      "tool_name": "google_style_docstring_no_body",
+      "source_fingerprint": "sha256:03d707554d4389c62cf762dfc78e5f5ae96cbe2a496557aa7c89d5a757fb4411",
+      "schema_hash": "sha256:2cfec66a77a64c992e15d6a793d4028a343582bd76781b331b4be02beb4c7da7",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "google-adk-python:1",
+      "repo_id": "google-adk-python",
+      "source_file": "tests/integration/models/test_litellm_with_function.py",
+      "adapter": "google_adk",
+      "tool_name": "get_weather",
+      "source_fingerprint": "sha256:5de5010e31400e30aca37983dd1afc13afab853c84909c6c5094f2f19dae41af",
+      "schema_hash": "sha256:d43882ac57092ec105be2ea0cc95d0fc397f4fe3b2a096d403b6f6306c9d9326",
+      "probe_decision": "valid",
+      "warnings": ["Google ADK uppercase primitive type labels were normalized when present"]
+    },
+    {
+      "id": "google-adk-python:2",
+      "repo_id": "google-adk-python",
+      "source_file": "tests/unittests/models/test_gemma_llm.py",
+      "adapter": "google_adk",
+      "tool_name": "search_web",
+      "source_fingerprint": "sha256:369aa7b6cc92944250c2f2946456c3ad389cf4cc780acc38b72b9cdda61a3a91",
+      "schema_hash": "sha256:b4cc3472df396389cbc3edc4d8814fca1084d99f83d8c8a6280399cc64c70b18",
+      "probe_decision": "rejected",
+      "warnings": ["Google ADK uppercase primitive type labels were normalized when present"]
+    },
+    {
+      "id": "google-adk-python:3",
+      "repo_id": "google-adk-python",
+      "source_file": "tests/unittests/models/test_gemma_llm.py",
+      "adapter": "google_adk",
+      "tool_name": "search_web",
+      "source_fingerprint": "sha256:369aa7b6cc92944250c2f2946456c3ad389cf4cc780acc38b72b9cdda61a3a91",
+      "schema_hash": "sha256:b4cc3472df396389cbc3edc4d8814fca1084d99f83d8c8a6280399cc64c70b18",
+      "probe_decision": "rejected",
+      "warnings": ["Google ADK uppercase primitive type labels were normalized when present"]
+    },
+    {
+      "id": "google-adk-python:4",
+      "repo_id": "google-adk-python",
+      "source_file": "tests/unittests/models/test_gemma_llm.py",
+      "adapter": "google_adk",
+      "tool_name": "get_current_time",
+      "source_fingerprint": "sha256:884caa0ad817670e61a6d7aab25d89f73cde889473c859280b012cd1ac8474e3",
+      "schema_hash": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "probe_decision": "valid",
+      "warnings": ["Google ADK uppercase primitive type labels were normalized when present"]
+    },
+    {
+      "id": "google-adk-python:5",
+      "repo_id": "google-adk-python",
+      "source_file": "tests/unittests/models/test_gemma_llm.py",
+      "adapter": "google_adk",
+      "tool_name": "first_call",
+      "source_fingerprint": "sha256:69f07195ad46533b1cea02da75ef1fea0fa97f3623587b29f5e1d4e8ede2bf84",
+      "schema_hash": "sha256:015abd7f5cc57a2dd94b7590f04ad8084273905ee33ec5cebeae62276a97f862",
+      "probe_decision": "rejected",
+      "warnings": ["Google ADK uppercase primitive type labels were normalized when present"]
+    },
+    {
+      "id": "google-adk-python:6",
+      "repo_id": "google-adk-python",
+      "source_file": "tests/unittests/models/test_gemma_llm.py",
+      "adapter": "google_adk",
+      "tool_name": "first_call",
+      "source_fingerprint": "sha256:69f07195ad46533b1cea02da75ef1fea0fa97f3623587b29f5e1d4e8ede2bf84",
+      "schema_hash": "sha256:015abd7f5cc57a2dd94b7590f04ad8084273905ee33ec5cebeae62276a97f862",
+      "probe_decision": "rejected",
+      "warnings": ["Google ADK uppercase primitive type labels were normalized when present"]
+    },
+    {
+      "id": "google-adk-python:7",
+      "repo_id": "google-adk-python",
+      "source_file": "tests/unittests/models/test_litellm.py",
+      "adapter": "openai_agents",
+      "tool_name": "test_function_none_params",
+      "source_fingerprint": "sha256:c85377e86f9d963c039e5ca67e20203c6ed73f181c601baa1ec8ff1178b09c36",
+      "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "google-adk-python:8",
+      "repo_id": "google-adk-python",
+      "source_file": "tests/unittests/models/test_litellm.py",
+      "adapter": "openai_agents",
+      "tool_name": "test_function_none_params",
+      "source_fingerprint": "sha256:c85377e86f9d963c039e5ca67e20203c6ed73f181c601baa1ec8ff1178b09c36",
+      "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "google-adk-python:9",
+      "repo_id": "google-adk-python",
+      "source_file": "tests/unittests/models/test_litellm.py",
+      "adapter": "openai_agents",
+      "tool_name": "test_function_none_params",
+      "source_fingerprint": "sha256:c85377e86f9d963c039e5ca67e20203c6ed73f181c601baa1ec8ff1178b09c36",
+      "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "google-adk-python:10",
+      "repo_id": "google-adk-python",
+      "source_file": "tests/unittests/models/test_litellm.py",
+      "adapter": "openai_agents",
+      "tool_name": "test_function",
+      "source_fingerprint": "sha256:05dafb53847b3f967a5370557c10b3b222240763af925d224e4e6e9aad94e9e1",
+      "schema_hash": "sha256:55bea1fb8a0666433f4e9d8c4d94fe69c3a6bc379d449464bf544ea9ecedba54",
+      "probe_decision": "rejected",
+      "warnings": []
+    },
+    {
+      "id": "google-adk-python:11",
+      "repo_id": "google-adk-python",
+      "source_file": "tests/unittests/models/test_litellm.py",
+      "adapter": "openai_agents",
+      "tool_name": "test_function_nested_array",
+      "source_fingerprint": "sha256:36f7db53d50ca3de06393c6586c4b57af3f3e4aba0458d23bb1c030497798db3",
+      "schema_hash": "sha256:6e2de4766dc0a6917143c40c453e4d84d5c2d3b81d44d99fbcfabfa5ca32a2a1",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "google-adk-python:12",
+      "repo_id": "google-adk-python",
+      "source_file": "tests/unittests/models/test_litellm.py",
+      "adapter": "openai_agents",
+      "tool_name": "test_function_nested_properties",
+      "source_fingerprint": "sha256:c1d74471ed4f5e95a877a90047edbd9454083bd616a0b462f741342b50d47a49",
+      "schema_hash": "sha256:4de9a2a2eb67b0e521dbb1b1225e0393645cfd80c4f763f5693b5e5e00c34613",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "google-adk-python:13",
+      "repo_id": "google-adk-python",
+      "source_file": "tests/unittests/models/test_litellm.py",
+      "adapter": "openai_agents",
+      "tool_name": "test_function_no_params",
+      "source_fingerprint": "sha256:415f633f6a9700847c4649bca3512913f04858424a59c531008dc545b95cbf37",
+      "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "google-adk-python:14",
+      "repo_id": "google-adk-python",
+      "source_file": "tests/unittests/models/test_litellm.py",
+      "adapter": "openai_agents",
+      "tool_name": "function_without_required_attr",
+      "source_fingerprint": "sha256:6a356eb316c7bb69fde9bf4d52cf6a968f6d8c7b596f726b36514a5144cb69cb",
+      "schema_hash": "sha256:e838f792bd678e9c5219e9ec91fa9dab17a5dadd68b45040a8b8cecb81285191",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "google-adk-python:15",
+      "repo_id": "google-adk-python",
+      "source_file": "tests/unittests/models/test_litellm.py",
+      "adapter": "openai_agents",
+      "tool_name": "test_function_none_params",
+      "source_fingerprint": "sha256:c85377e86f9d963c039e5ca67e20203c6ed73f181c601baa1ec8ff1178b09c36",
+      "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "google-adk-python:16",
+      "repo_id": "google-adk-python",
+      "source_file": "tests/unittests/models/test_litellm.py",
+      "adapter": "openai_agents",
+      "tool_name": "test_function",
+      "source_fingerprint": "sha256:05dafb53847b3f967a5370557c10b3b222240763af925d224e4e6e9aad94e9e1",
+      "schema_hash": "sha256:55bea1fb8a0666433f4e9d8c4d94fe69c3a6bc379d449464bf544ea9ecedba54",
+      "probe_decision": "rejected",
+      "warnings": []
+    },
+    {
+      "id": "google-adk-python:17",
+      "repo_id": "google-adk-python",
+      "source_file": "tests/unittests/models/test_litellm.py",
+      "adapter": "openai_agents",
+      "tool_name": "test_function_no_description",
+      "source_fingerprint": "sha256:1217ed7c622db15a6b453a036e86a746b401a63d73059bdf535ca43230307d30",
+      "schema_hash": "sha256:b7c4461503bfca84dc599ea412db1a0ea390992a4ccb36be4a73aa017cce7d0d",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "google-adk-python:18",
+      "repo_id": "google-adk-python",
+      "source_file": "tests/unittests/models/test_litellm.py",
+      "adapter": "openai_agents",
+      "tool_name": "test_function_nested_array",
+      "source_fingerprint": "sha256:36f7db53d50ca3de06393c6586c4b57af3f3e4aba0458d23bb1c030497798db3",
+      "schema_hash": "sha256:6e2de4766dc0a6917143c40c453e4d84d5c2d3b81d44d99fbcfabfa5ca32a2a1",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "google-adk-python:19",
+      "repo_id": "google-adk-python",
+      "source_file": "tests/unittests/models/test_litellm.py",
+      "adapter": "openai_agents",
+      "tool_name": "test_function_nested_properties",
+      "source_fingerprint": "sha256:c1d74471ed4f5e95a877a90047edbd9454083bd616a0b462f741342b50d47a49",
+      "schema_hash": "sha256:4de9a2a2eb67b0e521dbb1b1225e0393645cfd80c4f763f5693b5e5e00c34613",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "google-adk-python:20",
+      "repo_id": "google-adk-python",
+      "source_file": "tests/unittests/models/test_litellm.py",
+      "adapter": "openai_agents",
+      "tool_name": "test_function_no_params",
+      "source_fingerprint": "sha256:415f633f6a9700847c4649bca3512913f04858424a59c531008dc545b95cbf37",
+      "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "google-adk-python:21",
+      "repo_id": "google-adk-python",
+      "source_file": "tests/unittests/models/test_litellm.py",
+      "adapter": "openai_agents",
+      "tool_name": "test_function_no_params",
+      "source_fingerprint": "sha256:415f633f6a9700847c4649bca3512913f04858424a59c531008dc545b95cbf37",
+      "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "google-adk-python:22",
+      "repo_id": "google-adk-python",
+      "source_file": "tests/unittests/models/test_litellm.py",
+      "adapter": "openai_agents",
+      "tool_name": "test_function_no_params",
+      "source_fingerprint": "sha256:415f633f6a9700847c4649bca3512913f04858424a59c531008dc545b95cbf37",
+      "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "google-adk-python:23",
+      "repo_id": "google-adk-python",
+      "source_file": "tests/unittests/models/test_litellm.py",
+      "adapter": "openai_agents",
+      "tool_name": "test_function_no_params",
+      "source_fingerprint": "sha256:415f633f6a9700847c4649bca3512913f04858424a59c531008dc545b95cbf37",
+      "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "google-adk-python:24",
+      "repo_id": "google-adk-python",
+      "source_file": "tests/unittests/models/test_litellm.py",
+      "adapter": "openai_agents",
+      "tool_name": "function_without_required_attr",
+      "source_fingerprint": "sha256:6a356eb316c7bb69fde9bf4d52cf6a968f6d8c7b596f726b36514a5144cb69cb",
+      "schema_hash": "sha256:e838f792bd678e9c5219e9ec91fa9dab17a5dadd68b45040a8b8cecb81285191",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "google-adk-python:25",
+      "repo_id": "google-adk-python",
+      "source_file": "tests/unittests/models/test_litellm.py",
+      "adapter": "openai_agents",
+      "tool_name": "test_function_none_params",
+      "source_fingerprint": "sha256:c85377e86f9d963c039e5ca67e20203c6ed73f181c601baa1ec8ff1178b09c36",
+      "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "awslabs-mcp:1",
+      "repo_id": "awslabs-mcp",
+      "source_file": "src/amazon-bedrock-agentcore-mcp-server/awslabs/amazon_bedrock_agentcore_mcp_server/tools/gateway/guide.py",
+      "adapter": "mcp",
+      "tool_name": "get_weather",
+      "source_fingerprint": "sha256:7024f322336b099da2074c9e5cfa330acce89fca161deb9cee88e8ed7d9d4de5",
+      "schema_hash": "sha256:3832962b59f3c6dd615d72a69be5626fb1c7261795e763eb3a4b52f830711c17",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "awslabs-mcp:2",
+      "repo_id": "awslabs-mcp",
+      "source_file": "src/aws-dataprocessing-mcp-server/awslabs/aws_dataprocessing_mcp_server/handlers/athena/athena_data_catalog_handler.py",
+      "adapter": "openai_agents",
+      "tool_name": "my-glue-catalog",
+      "source_fingerprint": "sha256:d9ed3fa5c88501cba5496d171297bc153daef9aba59f9cb33fbd1e1688c23c57",
+      "schema_hash": "sha256:c2f7079487adc8245fa5ccca55bd920f9458241f95495025fc944f740c75c88d",
+      "probe_decision": "rejected",
+      "warnings": []
+    },
+    {
+      "id": "awslabs-mcp:3",
+      "repo_id": "awslabs-mcp",
+      "source_file": "src/aws-healthomics-mcp-server/tests/test_configuration_tools_properties.py",
+      "adapter": "openai_agents",
+      "tool_name": "test-run",
+      "source_fingerprint": "sha256:030da3d5a214925442b1bf9480af371bd6a4d35ed01c3d14b128c73223d7512f",
+      "schema_hash": "sha256:7c314c83ecef0c06c834548307d09823647464778c928d82c288958e7037d192",
+      "probe_decision": "rejected",
+      "warnings": []
+    },
+    {
+      "id": "awslabs-mcp:4",
+      "repo_id": "awslabs-mcp",
+      "source_file": "src/aws-healthomics-mcp-server/tests/test_configuration_tools_properties.py",
+      "adapter": "openai_agents",
+      "tool_name": "test-run",
+      "source_fingerprint": "sha256:030da3d5a214925442b1bf9480af371bd6a4d35ed01c3d14b128c73223d7512f",
+      "schema_hash": "sha256:7c314c83ecef0c06c834548307d09823647464778c928d82c288958e7037d192",
+      "probe_decision": "rejected",
+      "warnings": []
+    },
+    {
+      "id": "awslabs-mcp:5",
+      "repo_id": "awslabs-mcp",
+      "source_file": "src/aws-healthomics-mcp-server/tests/test_workflow_execution.py",
+      "adapter": "openai_agents",
+      "tool_name": "test-run",
+      "source_fingerprint": "sha256:2a03e79d54349c5b505c8f75d1101d797b2d28aba55cbface66672a372f11581",
+      "schema_hash": "sha256:96b741ee2c2bfeaf4a486306d6346125c44c4e51f78c298b830a6cbcdff7bee5",
+      "probe_decision": "rejected",
+      "warnings": []
+    },
+    {
+      "id": "awslabs-mcp:6",
+      "repo_id": "awslabs-mcp",
+      "source_file": "src/aws-healthomics-mcp-server/tests/test_workflow_execution.py",
+      "adapter": "openai_agents",
+      "tool_name": "test-run",
+      "source_fingerprint": "sha256:2a03e79d54349c5b505c8f75d1101d797b2d28aba55cbface66672a372f11581",
+      "schema_hash": "sha256:96b741ee2c2bfeaf4a486306d6346125c44c4e51f78c298b830a6cbcdff7bee5",
+      "probe_decision": "rejected",
+      "warnings": []
+    },
+    {
+      "id": "awslabs-mcp:7",
+      "repo_id": "awslabs-mcp",
+      "source_file": "src/aws-serverless-mcp-server/awslabs/aws_serverless_mcp_server/resources/template_details.py",
+      "adapter": "openai_agents",
+      "tool_name": "backend",
+      "source_fingerprint": "sha256:c52fcc0193b6a148797c594e24801716ce8c1ee08a2bcd94d604bfee5c26449a",
+      "schema_hash": "sha256:1048bcc51e277f6968281b710f13e8439cb7d8abe4e3ad48f549d0c62ee088f2",
+      "probe_decision": "rejected",
+      "warnings": []
+    },
+    {
+      "id": "awslabs-mcp:8",
+      "repo_id": "awslabs-mcp",
+      "source_file": "src/aws-serverless-mcp-server/awslabs/aws_serverless_mcp_server/resources/template_details.py",
+      "adapter": "openai_agents",
+      "tool_name": "frontend",
+      "source_fingerprint": "sha256:6d7f8f8d792735bcf5fee3cd65d01618c3489694f0bd4ec989094e542c0af7f0",
+      "schema_hash": "sha256:dd8225f5e3ebcd48ea322a9de804896cef2dd37cfad138b630280d91cd390088",
+      "probe_decision": "rejected",
+      "warnings": []
+    },
+    {
+      "id": "awslabs-mcp:9",
+      "repo_id": "awslabs-mcp",
+      "source_file": "src/timestream-for-influxdb-mcp-server/tests/test_server.py",
+      "adapter": "openai_agents",
+      "tool_name": "custom-params",
+      "source_fingerprint": "sha256:049a51a03098b18d5bd062a4d29dfddcc079a893e9a8ab4d259403b0f1867c78",
+      "schema_hash": "sha256:98b55080a139c42f0ac9aa2db61bdba4ad18047139d0a82cd24a0a604090dd20",
+      "probe_decision": "rejected",
+      "warnings": []
+    },
+    {
+      "id": "awslabs-mcp:10",
+      "repo_id": "awslabs-mcp",
+      "source_file": "src/timestream-for-influxdb-mcp-server/tests/test_server.py",
+      "adapter": "openai_agents",
+      "tool_name": "custom-params",
+      "source_fingerprint": "sha256:049a51a03098b18d5bd062a4d29dfddcc079a893e9a8ab4d259403b0f1867c78",
+      "schema_hash": "sha256:98b55080a139c42f0ac9aa2db61bdba4ad18047139d0a82cd24a0a604090dd20",
+      "probe_decision": "rejected",
+      "warnings": []
+    },
+    {
+      "id": "awslabs-mcp:11",
+      "repo_id": "awslabs-mcp",
+      "source_file": "src/timestream-for-influxdb-mcp-server/tests/test_server.py",
+      "adapter": "openai_agents",
+      "tool_name": "custom-params",
+      "source_fingerprint": "sha256:049a51a03098b18d5bd062a4d29dfddcc079a893e9a8ab4d259403b0f1867c78",
+      "schema_hash": "sha256:98b55080a139c42f0ac9aa2db61bdba4ad18047139d0a82cd24a0a604090dd20",
+      "probe_decision": "rejected",
+      "warnings": []
+    },
+    {
+      "id": "awslabs-mcp:12",
+      "repo_id": "awslabs-mcp",
+      "source_file": "src/timestream-for-influxdb-mcp-server/tests/test_server.py",
+      "adapter": "openai_agents",
+      "tool_name": "custom-params",
+      "source_fingerprint": "sha256:dc2bd640d14b94bdcb0fee2ed8ad074d69d8c2f26ac06a0d67629159846e4c29",
+      "schema_hash": "sha256:98b55080a139c42f0ac9aa2db61bdba4ad18047139d0a82cd24a0a604090dd20",
+      "probe_decision": "rejected",
+      "warnings": []
+    },
+    {
+      "id": "awslabs-mcp:13",
+      "repo_id": "awslabs-mcp",
+      "source_file": "src/timestream-for-influxdb-mcp-server/tests/test_server.py",
+      "adapter": "openai_agents",
+      "tool_name": "custom-params",
+      "source_fingerprint": "sha256:dc2bd640d14b94bdcb0fee2ed8ad074d69d8c2f26ac06a0d67629159846e4c29",
+      "schema_hash": "sha256:98b55080a139c42f0ac9aa2db61bdba4ad18047139d0a82cd24a0a604090dd20",
+      "probe_decision": "rejected",
+      "warnings": []
+    },
+    {
+      "id": "awslabs-mcp:14",
+      "repo_id": "awslabs-mcp",
+      "source_file": "src/timestream-for-influxdb-mcp-server/tests/test_server.py",
+      "adapter": "openai_agents",
+      "tool_name": "custom-params",
+      "source_fingerprint": "sha256:dc2bd640d14b94bdcb0fee2ed8ad074d69d8c2f26ac06a0d67629159846e4c29",
+      "schema_hash": "sha256:98b55080a139c42f0ac9aa2db61bdba4ad18047139d0a82cd24a0a604090dd20",
+      "probe_decision": "rejected",
+      "warnings": []
+    },
+    {
+      "id": "vercel-ai:1",
+      "repo_id": "vercel-ai",
+      "source_file": "examples/next-fastapi/api/index.py",
+      "adapter": "openai_agents",
+      "tool_name": "get_current_weather",
+      "source_fingerprint": "sha256:9f39d627b818fd6dde8cf49900668e1735cb0708ad79cb300639c10e1992562c",
+      "schema_hash": "sha256:b8de19aca2d602def9653d78ac1d5027b216250584de6e8a93d99820fcb00a4f",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "vercel-ai:2",
+      "repo_id": "vercel-ai",
+      "source_file": "examples/next-fastapi/api/index.py",
+      "adapter": "openai_agents",
+      "tool_name": "get_current_weather",
+      "source_fingerprint": "sha256:9f39d627b818fd6dde8cf49900668e1735cb0708ad79cb300639c10e1992562c",
+      "schema_hash": "sha256:b8de19aca2d602def9653d78ac1d5027b216250584de6e8a93d99820fcb00a4f",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "vercel-ai:3",
+      "repo_id": "vercel-ai",
+      "source_file": "packages/ai/src/generate-text/generate-text.test.ts",
+      "adapter": "mcp",
+      "tool_name": "tool1",
+      "source_fingerprint": "sha256:6e377f9a00b56ce80ca6be1db152d89decab4eb6b3c7f5f1d7641949e07010e8",
+      "schema_hash": "sha256:17309a1902f90252461db9af82afdc400d7dea9d2c4cb274a7b2434f539c0512",
+      "probe_decision": "rejected",
+      "warnings": []
+    },
+    {
+      "id": "vercel-ai:4",
+      "repo_id": "vercel-ai",
+      "source_file": "packages/ai/src/generate-text/generate-text.test.ts",
+      "adapter": "mcp",
+      "tool_name": "tool1",
+      "source_fingerprint": "sha256:6e377f9a00b56ce80ca6be1db152d89decab4eb6b3c7f5f1d7641949e07010e8",
+      "schema_hash": "sha256:17309a1902f90252461db9af82afdc400d7dea9d2c4cb274a7b2434f539c0512",
+      "probe_decision": "rejected",
+      "warnings": []
+    },
+    {
+      "id": "vercel-ai:5",
+      "repo_id": "vercel-ai",
+      "source_file": "packages/ai/src/generate-text/generate-text.test.ts",
+      "adapter": "mcp",
+      "tool_name": "rollDie",
+      "source_fingerprint": "sha256:8769789018d2c3b52fb2919e3ce544f3b5fb76dc981f2ff0b9080a3c7749fd3e",
+      "schema_hash": "sha256:2466ae4ab4edda9e28e85393e71085539f84af86f4bb03a871654f287aeae491",
+      "probe_decision": "rejected",
+      "warnings": []
+    },
+    {
+      "id": "vercel-ai:6",
+      "repo_id": "vercel-ai",
+      "source_file": "packages/ai/src/generate-text/stream-language-model-call.test.ts",
+      "adapter": "mcp",
+      "tool_name": "testTool",
+      "source_fingerprint": "sha256:c4634ac6bd82857772b5bc56ddee240e3f13c646bc9c76b229b509aa1a24dafe",
+      "schema_hash": "sha256:17309a1902f90252461db9af82afdc400d7dea9d2c4cb274a7b2434f539c0512",
+      "probe_decision": "rejected",
+      "warnings": []
+    },
+    {
+      "id": "vercel-ai:7",
+      "repo_id": "vercel-ai",
+      "source_file": "packages/ai/src/middleware/add-tool-input-examples-middleware.test.ts",
+      "adapter": "mcp",
+      "tool_name": "weather",
+      "source_fingerprint": "sha256:9cb40d6ab88df6c46c7ba58a2ad7d6233512e7bba55cc90878faebb555a2db72",
+      "schema_hash": "sha256:684396b4daecb876082e4fd1734895ec6cc79772f717e2c28d9cea874347f908",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "vercel-ai:8",
+      "repo_id": "vercel-ai",
+      "source_file": "packages/ai/src/middleware/add-tool-input-examples-middleware.test.ts",
+      "adapter": "mcp",
+      "tool_name": "time",
+      "source_fingerprint": "sha256:f74504728ca7928e70cde5b8ea25ccf19a1a7e4a9db98bf594f8ee1a71782bf7",
+      "schema_hash": "sha256:ca16bb7645dbb6ba3892cc6177be154c1f9e88efcbfb2725c19f588c7979e442",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "vercel-ai:9",
+      "repo_id": "vercel-ai",
+      "source_file": "packages/ai/src/prompt/prepare-tools.test.ts",
+      "adapter": "mcp",
+      "tool_name": "tool1",
+      "source_fingerprint": "sha256:003d41641b0c1cc22130349527e8ae9a42bea081b0c426b9a15ff147201b322f",
+      "schema_hash": "sha256:a075116639cb635ca8f1aa9e8d72d7dbf79410905888f1847aabe8fbda0f2498",
+      "probe_decision": "rejected",
+      "warnings": []
+    },
+    {
+      "id": "vercel-ai:10",
+      "repo_id": "vercel-ai",
+      "source_file": "packages/azure/src/__fixtures__/azure-reasoning-encrypted-content.1.json",
+      "adapter": "openai_agents",
+      "tool_name": "calculator",
+      "source_fingerprint": "sha256:11765ea19b5ccc2b1c4ba54edde0f9c0d60fc85eba8a720e7513df40b1206b0d",
+      "schema_hash": "sha256:983659c28254b74db9911f2f3c566f5d6ea01d4c7a4f3a02baa851989b86e268",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "vercel-ai:11",
+      "repo_id": "vercel-ai",
+      "source_file": "packages/cohere/src/cohere-chat-language-model.test.ts",
+      "adapter": "openai_agents",
+      "tool_name": "test-tool",
+      "source_fingerprint": "sha256:260d9c14b67e60dee19864a6a44fd03993d71a706c940e525bbddac183d49af1",
+      "schema_hash": "sha256:17309a1902f90252461db9af82afdc400d7dea9d2c4cb274a7b2434f539c0512",
+      "probe_decision": "rejected",
+      "warnings": []
+    },
+    {
+      "id": "vercel-ai:12",
+      "repo_id": "vercel-ai",
+      "source_file": "packages/deepseek/src/chat/deepseek-prepare-tools.test.ts",
+      "adapter": "openai_agents",
+      "tool_name": "testFunction",
+      "source_fingerprint": "sha256:64c897f9fcaaa2495a04390605dbfe363ab09e70b9bb238b234af0e5612b1331",
+      "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "vercel-ai:13",
+      "repo_id": "vercel-ai",
+      "source_file": "packages/deepseek/src/chat/deepseek-prepare-tools.test.ts",
+      "adapter": "openai_agents",
+      "tool_name": "nonStrictTool",
+      "source_fingerprint": "sha256:cdbd709eb4ec23f418c513a685f7fc4524e14329f286d5807a0ca6cb30ecb5f4",
+      "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "vercel-ai:14",
+      "repo_id": "vercel-ai",
+      "source_file": "packages/deepseek/src/chat/deepseek-prepare-tools.test.ts",
+      "adapter": "openai_agents",
+      "tool_name": "defaultTool",
+      "source_fingerprint": "sha256:7b02d8b191f1f61955da38cb8c7807be1ffe3fcbe0f947b7435849ecc6e4470b",
+      "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "vercel-ai:15",
+      "repo_id": "vercel-ai",
+      "source_file": "packages/google/src/interactions/google-interactions-language-model.test.ts",
+      "adapter": "openai_agents",
+      "tool_name": "getWeather",
+      "source_fingerprint": "sha256:31d17b9c5ec82e07e0b79410423ea739d1f4dd40035ad2fcd9ddb70a834b94e0",
+      "schema_hash": "sha256:849407308aae5a1cb6047e11680edb318ee01880865d74fb7f2bc342271c50cb",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "vercel-ai:16",
+      "repo_id": "vercel-ai",
+      "source_file": "packages/google/src/interactions/google-interactions-language-model.test.ts",
+      "adapter": "openai_agents",
+      "tool_name": "getWeather",
+      "source_fingerprint": "sha256:31d17b9c5ec82e07e0b79410423ea739d1f4dd40035ad2fcd9ddb70a834b94e0",
+      "schema_hash": "sha256:849407308aae5a1cb6047e11680edb318ee01880865d74fb7f2bc342271c50cb",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "vercel-ai:17",
+      "repo_id": "vercel-ai",
+      "source_file": "packages/huggingface/src/responses/huggingface-responses-language-model.test.ts",
+      "adapter": "openai_agents",
+      "tool_name": "getWeather",
+      "source_fingerprint": "sha256:5d3e53601f6b57fb6040175b07193ccfc108a142e98c3f081c7b93f8831945fc",
+      "schema_hash": "sha256:3832962b59f3c6dd615d72a69be5626fb1c7261795e763eb3a4b52f830711c17",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "vercel-ai:18",
+      "repo_id": "vercel-ai",
+      "source_file": "packages/mistral/src/mistral-prepare-tools.test.ts",
+      "adapter": "openai_agents",
+      "tool_name": "testFunction",
+      "source_fingerprint": "sha256:64c897f9fcaaa2495a04390605dbfe363ab09e70b9bb238b234af0e5612b1331",
+      "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "vercel-ai:19",
+      "repo_id": "vercel-ai",
+      "source_file": "packages/mistral/src/mistral-prepare-tools.test.ts",
+      "adapter": "openai_agents",
+      "tool_name": "nonStrictTool",
+      "source_fingerprint": "sha256:cdbd709eb4ec23f418c513a685f7fc4524e14329f286d5807a0ca6cb30ecb5f4",
+      "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "vercel-ai:20",
+      "repo_id": "vercel-ai",
+      "source_file": "packages/mistral/src/mistral-prepare-tools.test.ts",
+      "adapter": "openai_agents",
+      "tool_name": "defaultTool",
+      "source_fingerprint": "sha256:7b02d8b191f1f61955da38cb8c7807be1ffe3fcbe0f947b7435849ecc6e4470b",
+      "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "vercel-ai:21",
+      "repo_id": "vercel-ai",
+      "source_file": "packages/openai/src/chat/openai-chat-language-model.test.ts",
+      "adapter": "openai_agents",
+      "tool_name": "test-tool",
+      "source_fingerprint": "sha256:291ca4e12d0f753020472a51b91add19b46abaeed2aceaa8447dab6ed24d400b",
+      "schema_hash": "sha256:17309a1902f90252461db9af82afdc400d7dea9d2c4cb274a7b2434f539c0512",
+      "probe_decision": "rejected",
+      "warnings": []
+    },
+    {
+      "id": "vercel-ai:22",
+      "repo_id": "vercel-ai",
+      "source_file": "packages/openai/src/chat/openai-chat-prepare-tools.test.ts",
+      "adapter": "openai_agents",
+      "tool_name": "testFunction",
+      "source_fingerprint": "sha256:5598a6f0380078102f30fc74a3bacf41ff5d13d2c3395e1a6de5a2306d66847a",
+      "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "vercel-ai:23",
+      "repo_id": "vercel-ai",
+      "source_file": "packages/openai/src/chat/openai-chat-prepare-tools.test.ts",
+      "adapter": "openai_agents",
+      "tool_name": "testFunction",
+      "source_fingerprint": "sha256:5598a6f0380078102f30fc74a3bacf41ff5d13d2c3395e1a6de5a2306d66847a",
+      "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "vercel-ai:24",
+      "repo_id": "vercel-ai",
+      "source_file": "packages/openai/src/chat/openai-chat-prepare-tools.test.ts",
+      "adapter": "openai_agents",
+      "tool_name": "strictTool",
+      "source_fingerprint": "sha256:2ac91f9d3386ab775e8c58261b7946ccb4e35b9b37ceda892864d68f69ff281b",
+      "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "vercel-ai:25",
+      "repo_id": "vercel-ai",
+      "source_file": "packages/openai/src/chat/openai-chat-prepare-tools.test.ts",
+      "adapter": "openai_agents",
+      "tool_name": "defaultTool",
+      "source_fingerprint": "sha256:26f32ab5b40e0fa16002d4581b45c31a1d680420672ccdbd306d4b15e8f2881d",
+      "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "semantic-kernel:1",
+      "repo_id": "semantic-kernel",
+      "source_file": "docs/decisions/0035-skfunction-type-descriptions.md",
+      "adapter": "openai_agents",
+      "tool_name": "DatePluginSimpleComplex.GetDate1",
+      "source_fingerprint": "sha256:74207c780a130a06a530dcb3ef1a4ccaef8085325b10e94c70f45f21bff3c500",
+      "schema_hash": "sha256:9107d7f8cc37a2d2898b17ce87632e9506ce00a4fffc074692f5107fed2bd573",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "semantic-kernel:2",
+      "repo_id": "semantic-kernel",
+      "source_file": "docs/decisions/0035-skfunction-type-descriptions.md",
+      "adapter": "openai_agents",
+      "tool_name": "DatePluginSimpleComplex.GetDate1",
+      "source_fingerprint": "sha256:74207c780a130a06a530dcb3ef1a4ccaef8085325b10e94c70f45f21bff3c500",
+      "schema_hash": "sha256:9107d7f8cc37a2d2898b17ce87632e9506ce00a4fffc074692f5107fed2bd573",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "semantic-kernel:3",
+      "repo_id": "semantic-kernel",
+      "source_file": "docs/decisions/0035-skfunction-type-descriptions.md",
+      "adapter": "openai_agents",
+      "tool_name": "WeatherPluginSimpleComplex.GetWeatherForecast1",
+      "source_fingerprint": "sha256:c8cc2ce775b698ea07ef83ab083f76dcba6ab00bf305a99c4b77428dcf0e25f6",
+      "schema_hash": "sha256:d821036b4f1e55aba1c694dec03828e5d55548986ea7114e0be5b55410e3f712",
+      "probe_decision": "valid",
+      "warnings": []
+    },
+    {
+      "id": "genai-toolbox:1",
+      "repo_id": "genai-toolbox",
+      "source_file": "docs/en/integrations/looker/tools/looker-create-agent.md",
+      "adapter": "openai_agents",
+      "tool_name": "looker-create-agent",
+      "source_fingerprint": "sha256:ac2e3c7ae244d5e18a47e8e0e50d0c2243a8aedb8ba5fd2932a8907888611050",
+      "schema_hash": "sha256:18e0bd0c99fcf6d5c283b3cefd5abbeb768e699c8f36b3aed965f26af46cdb76",
+      "probe_decision": "rejected",
+      "warnings": []
+    },
+    {
+      "id": "genai-toolbox:2",
+      "repo_id": "genai-toolbox",
+      "source_file": "docs/en/integrations/looker/tools/looker-delete-agent.md",
+      "adapter": "openai_agents",
+      "tool_name": "looker-delete-agent",
+      "source_fingerprint": "sha256:06fbf4f1bf9292f2bc0788eb1e4fa8d89fff5180b27029cb16fbec6f76a4cb11",
+      "schema_hash": "sha256:37e850da0392c8a1efb68fd7e7cbd935a14e6352a64e193043f1a6cfcf1cb481",
+      "probe_decision": "rejected",
+      "warnings": []
+    },
+    {
+      "id": "genai-toolbox:3",
+      "repo_id": "genai-toolbox",
+      "source_file": "docs/en/integrations/looker/tools/looker-get-agent.md",
+      "adapter": "openai_agents",
+      "tool_name": "looker-get-agent",
+      "source_fingerprint": "sha256:b4325a84389b988f053b9536ecfcbe5ce8cbb7480f0d73eb53f96af0e3468e01",
+      "schema_hash": "sha256:37e850da0392c8a1efb68fd7e7cbd935a14e6352a64e193043f1a6cfcf1cb481",
+      "probe_decision": "rejected",
+      "warnings": []
+    },
+    {
+      "id": "genai-toolbox:4",
+      "repo_id": "genai-toolbox",
+      "source_file": "docs/en/integrations/looker/tools/looker-update-agent.md",
+      "adapter": "openai_agents",
+      "tool_name": "looker-update-agent",
+      "source_fingerprint": "sha256:ddfc47e7cc8925031fa12935c518ec963a96903b1e88e09248297aba101266e8",
+      "schema_hash": "sha256:a983025ae7a6ebf2eff332abe8f1130f35b8e0d23c762c2edd8b40552d95de9b",
+      "probe_decision": "rejected",
+      "warnings": []
+    }
+  ]
+}

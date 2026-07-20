@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 import { generateApiKey } from './crypto.js';
 import { ManagedStore } from './store.js';
+import {
+  PostgresAlertState,
+  PostgresControlState,
+  PostgresSchemaState,
+  PostgresIntelligenceState,
+} from '@schema-guard/shared-state';
 import type { PlanId } from './types.js';
 
 function option(name: string): string | undefined {
@@ -17,6 +23,26 @@ const apiKey = option('api-key') ?? generateApiKey();
 const tenantId = option('tenant-id') ?? 'local-demo';
 const tenantName = option('tenant-name') ?? 'Local demo';
 const plan = (option('plan') ?? 'trial') as PlanId;
+if (plan !== 'trial' && plan !== 'team') throw new Error('--plan must be trial or team');
+const sharedControlDatabaseUrl = process.env.SCHEMA_GUARD_SHARED_CONTROL_DATABASE_URL;
+if (sharedControlDatabaseUrl) {
+  const control = new PostgresControlState(sharedControlDatabaseUrl, masterSecret);
+  const schema = new PostgresSchemaState(sharedControlDatabaseUrl, masterSecret);
+  const alerts = new PostgresAlertState(sharedControlDatabaseUrl, masterSecret);
+  const intelligence = new PostgresIntelligenceState(sharedControlDatabaseUrl, masterSecret);
+  try {
+    await control.migrate();
+    await control.bootstrapTenant({ id: tenantId, name: tenantName, plan, apiKey });
+    await schema.migrate();
+    await schema.bootstrapTenant(tenantId);
+    await alerts.migrate();
+    await alerts.bootstrapTenant(tenantId);
+    await intelligence.migrate();
+    await intelligence.bootstrapTenant(tenantId);
+  } finally {
+    await Promise.all([control.close(), schema.close(), alerts.close(), intelligence.close()]);
+  }
+}
 const store = new ManagedStore({ databasePath, masterSecret });
 store.bootstrapTenant({ id: tenantId, name: tenantName, plan, apiKey });
 store.close();

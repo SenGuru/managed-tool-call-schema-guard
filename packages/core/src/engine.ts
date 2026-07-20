@@ -1,21 +1,102 @@
-import { Ajv2020, type AnySchema, type ErrorObject } from 'ajv/dist/2020.js';
+import { Ajv, type AnySchema, type ErrorObject, type ValidateFunction } from 'ajv';
+import { Ajv2019 } from 'ajv/dist/2019.js';
+import { Ajv2020 } from 'ajv/dist/2020.js';
+import addFormatsModule from 'ajv-formats';
 import { createAuditEnvelope } from './audit.js';
 import { sha256 } from './hash.js';
 import { assertJsonSafety, assertSafeSchemaPatterns, JsonResourceLimitError } from './limits.js';
 import { evaluatePolicy, policyValidationError } from './policy.js';
-import { applyRepairs } from './repair.js';
+import { applyRepairs, finalizeRepairReceipts } from './repair.js';
+import { parseUnambiguousJson } from './strict-json.js';
 import {
   PROTOCOL_VERSION,
+  type AcceptedDecision,
   type GuardDecision,
   type JsonObject,
   type PolicyResult,
   type ReasonCode,
   type RepairRecord,
+  type RejectedDecision,
   type ValidateRequest,
   type ValidationIssue,
 } from './types.js';
 
-const ajv = new Ajv2020({ allErrors: true, strict: true, validateSchema: true });
+export function rejectAcceptedDecisionByPolicy(
+  decision: AcceptedDecision,
+  input: {
+    policy_id: string;
+    policy_reasons: string[];
+    reason: string;
+    repair_hint: string;
+  },
+): RejectedDecision {
+  if (
+    !/^[a-z0-9][a-z0-9._-]{0,127}$/u.test(input.policy_id) ||
+    !input.policy_reasons.length ||
+    input.policy_reasons.some((reason) => reason.length === 0 || reason.length > 512) ||
+    input.reason.length === 0 ||
+    input.reason.length > 1_000 ||
+    input.repair_hint.length > 1_000
+  )
+    throw new TypeError('external policy rejection metadata is invalid');
+  const repairedFields = finalizeRepairReceipts(decision.repaired_fields, {
+    schema: 'passed',
+    policy: 'denied',
+  });
+  const policyResult: PolicyResult = {
+    outcome: 'denied',
+    applied_policy_hash: sha256({
+      upstream_policy_hash: decision.policy_result.applied_policy_hash,
+      policy_id: input.policy_id,
+      reasons: input.policy_reasons,
+    }),
+    reasons: [...input.policy_reasons],
+  };
+  const audit: GuardDecision['audit'] = {
+    ...decision.audit,
+    decision: 'rejected',
+    reason_code: 'POLICY_DENIED',
+    repair_receipt_hashes: repairedFields.map((repair) => repair.receipt_hash),
+    policy_hash: policyResult.applied_policy_hash,
+  };
+  delete audit.validated_arguments_hash;
+  return {
+    protocol_version: PROTOCOL_VERSION,
+    decision: 'rejected',
+    reason_code: 'POLICY_DENIED',
+    reason: input.reason,
+    repair_hint: input.repair_hint,
+    repaired_fields: repairedFields,
+    policy_result: policyResult,
+    audit_id: decision.audit_id,
+    audit,
+  };
+}
+
+const ajvOptions = {
+  allErrors: true,
+  strict: true,
+  // JSON Schema permits `required` without a sibling `properties`; real tool
+  // declarations use this to require keys while intentionally leaving values open.
+  strictRequired: false,
+  validateSchema: true,
+} as const;
+const ajvDraft7 = new Ajv(ajvOptions);
+const ajv2019 = new Ajv2019(ajvOptions);
+const ajv2020 = new Ajv2020(ajvOptions);
+// ajv-formats is CommonJS and TypeScript's NodeNext interpretation varies by
+// package-manager layout. The runtime default is the callable plugin.
+const addFormats = addFormatsModule as unknown as (ajv: Ajv) => Ajv;
+for (const instance of [ajvDraft7, ajv2019, ajv2020]) addFormats(instance);
+
+function compileSchema(schema: AnySchema): ValidateFunction {
+  if (typeof schema === 'boolean') return ajv2020.compile(schema);
+  const dialect = (schema as Record<string, unknown>).$schema;
+  if (typeof dialect !== 'string') return ajv2020.compile(schema);
+  if (/draft-0[467](?:\/|#|$)/u.test(dialect)) return ajvDraft7.compile(schema);
+  if (/2019-09/u.test(dialect)) return ajv2019.compile(schema);
+  return ajv2020.compile(schema);
+}
 function withoutPolicy(request: ValidateRequest): ValidateRequest {
   const safe = { ...request };
   delete safe.policy;
@@ -23,7 +104,7 @@ function withoutPolicy(request: ValidateRequest): ValidateRequest {
 }
 
 function parseArguments(raw: ValidateRequest['raw_arguments']): JsonObject {
-  const parsed: unknown = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  const parsed: unknown = typeof raw === 'string' ? parseUnambiguousJson(raw) : raw;
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed))
     throw new TypeError('tool arguments must be a JSON object');
   assertJsonSafety(parsed, 'tool arguments');
@@ -46,9 +127,15 @@ function reject(input: {
   repairs?: RepairRecord[];
   validationErrors?: ValidationIssue[];
   policyResult?: PolicyResult;
+  repairPostValidation?: RepairRecord['post_validation'];
 }): GuardDecision {
-  const repairs = input.repairs ?? [];
-  const policy = input.policyResult ?? evaluatePolicy(input.request.policy, input.args, repairs);
+  const pendingRepairs = input.repairs ?? [];
+  const policy =
+    input.policyResult ?? evaluatePolicy(input.request.policy, input.args, pendingRepairs);
+  const repairs = finalizeRepairReceipts(
+    pendingRepairs,
+    input.repairPostValidation ?? { schema: 'not_run', policy: 'not_run' },
+  );
   let auditSchema: AnySchema = {};
   let auditArguments: JsonObject = {};
   try {
@@ -214,7 +301,7 @@ export function validateToolCall(request: ValidateRequest): GuardDecision {
     try {
       assertJsonSafety(request.tool_schema, 'tool schema');
       assertSafeSchemaPatterns(request.tool_schema);
-      validate = ajv.compile(request.tool_schema as AnySchema);
+      validate = compileSchema(request.tool_schema as AnySchema);
     } catch (error) {
       return reject({
         request,
@@ -247,6 +334,7 @@ export function validateToolCall(request: ValidateRequest): GuardDecision {
         toolName: request.tool_name,
         schema: request.tool_schema,
         arguments: args,
+        validatedArguments: args,
         decision: 'valid',
         repairs: [],
         policyHash: policy.applied_policy_hash,
@@ -289,6 +377,7 @@ export function validateToolCall(request: ValidateRequest): GuardDecision {
         hint: hint(after),
         repairs: repaired.repairs,
         validationErrors: after,
+        repairPostValidation: { schema: 'failed', policy: 'not_run' },
       });
     }
     const policy = evaluatePolicy(request.policy, repairedArgs, repaired.repairs);
@@ -311,20 +400,26 @@ export function validateToolCall(request: ValidateRequest): GuardDecision {
         hint: 'tighten the input or explicitly revise the guard policy',
         repairs: repaired.repairs,
         policyResult: policy,
+        repairPostValidation: { schema: 'passed', policy: 'denied' },
       });
+    const acceptedRepairs = finalizeRepairReceipts(repaired.repairs, {
+      schema: 'passed',
+      policy: 'allowed',
+    });
     const audit = createAuditEnvelope({
       toolName: request.tool_name,
       schema: request.tool_schema,
       arguments: args,
+      validatedArguments: repairedArgs,
       decision: 'valid_with_repair',
-      repairs: repaired.repairs,
+      repairs: acceptedRepairs,
       policyHash: policy.applied_policy_hash,
     });
     return {
       protocol_version: PROTOCOL_VERSION,
       decision: 'valid_with_repair',
       valid_arguments: repairedArgs,
-      repaired_fields: repaired.repairs,
+      repaired_fields: acceptedRepairs,
       policy_result: policy,
       audit_id: audit.audit_id,
       audit,

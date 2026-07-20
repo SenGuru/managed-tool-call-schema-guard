@@ -34,6 +34,36 @@ export function generateApiKey(): string {
 function encryptionKey(secret: string): Buffer {
   return createHash('sha256').update('schema-guard-signing-key-v1\0').update(secret).digest();
 }
+
+function sealedValueKey(secret: string, purpose: string): Buffer {
+  return createHash('sha256')
+    .update('schema-guard-sealed-value-v1\0')
+    .update(purpose)
+    .update('\0')
+    .update(secret)
+    .digest();
+}
+
+export function sealValue(secret: string, purpose: string, value: string): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', sealedValueKey(secret, purpose), iv);
+  cipher.setAAD(Buffer.from(purpose));
+  const ciphertext = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
+  return Buffer.concat([iv, cipher.getAuthTag(), ciphertext]).toString('base64url');
+}
+
+export function openSealedValue(secret: string, purpose: string, sealed: string): string {
+  const packed = Buffer.from(sealed, 'base64url');
+  if (packed.length < 29) throw new Error('sealed value is malformed');
+  const decipher = createDecipheriv(
+    'aes-256-gcm',
+    sealedValueKey(secret, purpose),
+    packed.subarray(0, 12),
+  );
+  decipher.setAAD(Buffer.from(purpose));
+  decipher.setAuthTag(packed.subarray(12, 28));
+  return Buffer.concat([decipher.update(packed.subarray(28)), decipher.final()]).toString('utf8');
+}
 export function createEncryptedSigningKey(secret: string): {
   keyId: string;
   publicKey: string;

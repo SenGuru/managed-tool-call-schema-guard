@@ -14,7 +14,7 @@ describe('wire protocol schemas', () => {
     const validate = ajv.compile(load('validate-request'));
     expect(
       validate({
-        protocol_version: '2026-07-18',
+        protocol_version: '2026-07-20',
         tool_name: 'counter',
         tool_schema: { type: 'object' },
         raw_arguments: {},
@@ -49,6 +49,9 @@ describe('wire protocol schemas', () => {
       expect(decision.audit_id).toBe(decision.audit.audit_id);
       expect(decision.decision).toBe(decision.audit.decision);
       expect(decision.policy_result.applied_policy_hash).toBe(decision.audit.policy_hash);
+      if (decision.decision === 'rejected')
+        expect(decision.audit.validated_arguments_hash).toBeUndefined();
+      else expect(decision.audit.validated_arguments_hash).toMatch(/^sha256:/u);
     }
   });
 });

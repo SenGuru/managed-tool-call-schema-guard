@@ -1,0 +1,115 @@
+{
+  "version": 1,
+  "generated_at": "2026-07-19T14:53:48.049Z",
+  "policy": "benchmark data and license files only; downloaded benchmark code and dependencies were not executed",
+  "benchmarks": [
+    {
+      "id": "toolbench",
+      "repository": "https://github.com/OpenBMB/ToolBench.git",
+      "commit": "d56fdd89faf8c91fa135090b212bb9057ee5cfc2",
+      "license": "Apache-2.0",
+      "license_sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "recorded_calls": 1408,
+      "conforming_calls": 1394,
+      "schema_conflicts": 14,
+      "mutations": 4805,
+      "mutations_matched": 4805,
+      "mutations_mismatched": 0
+    },
+    {
+      "id": "stabletoolbench",
+      "repository": "https://github.com/THUNLP-MT/StableToolBench.git",
+      "commit": "aa4ed9f4737ad98bd706663f01d63623c3427812",
+      "license": "Apache-2.0",
+      "license_sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "recorded_calls": 46,
+      "conforming_calls": 46,
+      "schema_conflicts": 0,
+      "mutations": 184,
+      "mutations_matched": 184,
+      "mutations_mismatched": 0
+    },
+    {
+      "id": "toolalpaca",
+      "repository": "https://github.com/tangqiaoyu/ToolAlpaca.git",
+      "commit": "189069998d64a7baf1b4a1c3c4b2e75eb9d05532",
+      "license": "Apache-2.0",
+      "license_sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "recorded_calls": 201,
+      "conforming_calls": 149,
+      "schema_conflicts": 52,
+      "mutations": 597,
+      "mutations_matched": 597,
+      "mutations_mismatched": 0
+    },
+    {
+      "id": "seal-tools",
+      "repository": "https://github.com/fairyshine/Seal-Tools.git",
+      "commit": "ce753ecd60ed08dd376984035de531ab8421f1c6",
+      "license": "Apache-2.0",
+      "license_sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "recorded_calls": 5536,
+      "conforming_calls": 5509,
+      "schema_conflicts": 27,
+      "mutations": 22704,
+      "mutations_matched": 22704,
+      "mutations_mismatched": 0
+    },
+    {
+      "id": "api-bank",
+      "repository": "https://github.com/AlibabaResearch/DAMO-ConvAI.git",
+      "commit": "483554eae102996f5ec1f4feab4e78ef29c2a394",
+      "license": "MIT",
+      "license_sha256": "16f9444e99d9f667b3e376186831d54250039a1d67e820f0955fa651f092454d",
+      "recorded_calls": 508,
+      "conforming_calls": 466,
+      "schema_conflicts": 42,
+      "mutations": 1865,
+      "mutations_matched": 1865,
+      "mutations_mismatched": 0
+    }
+  ],
+  "totals": {
+    "repositories": 5,
+    "recorded_calls": 7699,
+    "conforming_calls": 7564,
+    "schema_conflicts": 135,
+    "mutations": 30155,
+    "mutations_matched": 30155,
+    "mutations_mismatched": 0
+  },
+  "value_tests": {
+    "observed_failure_interception": {
+      "recorded_calls": 7699,
+      "intercepted_source_contract_failures": 135,
+      "plain_validator_agreement": 124,
+      "rejection_reasons": {
+        "SCHEMA_VALIDATION_FAILED": 92,
+        "ARGUMENTS_JSON_INVALID": 32,
+        "SCHEMA_INVALID": 11
+      },
+      "interception_rate": 0.01753474477204832
+    },
+    "repair_advantage": {
+      "safe_scalar_stringification_cases": 1110,
+      "plain_validator_rejected_guard_repaired": 1110,
+      "repair_rules": {
+        "coerce.string_to_integer": 768,
+        "coerce.string_to_boolean": 1,
+        "coerce.string_to_number": 341
+      },
+      "recovery_rate": 1
+    },
+    "diagnostic_workflow_proxy": {
+      "cases": 21616,
+      "guard_one_response_triage_ready": 21616,
+      "basic_has_machine_readable_field_issue": 14009,
+      "required_guard_fields": ["reason_code", "repair_hint", "audit_id"],
+      "limitation": "This measures structured diagnostic completeness, not elapsed human debugging time.",
+      "guard_triage_ready_rate": 1,
+      "basic_field_issue_rate": 0.6480847520355293
+    }
+  },
+  "failures": [],
+  "passed": true
+}

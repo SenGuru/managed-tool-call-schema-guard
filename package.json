@@ -1,6 +1,6 @@
 {
   "name": "schema-guard",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -8,23 +8,36 @@
   ],
   "scripts": {
     "build": "tsc -b",
-    "check": "npm run format:check && npm run lint && npm run check:scripts && npm run check:packages && npm run typecheck && npm run conformance:check && npm test && npm run test:python",
+    "check": "npm run format:check && npm run lint && npm run check:scripts && npm run probe:live:dry && npm run check:packages && npm run typecheck && npm run conformance:check && npm test && npm run test:python",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prelint": "npm run build",
     "lint": "eslint .",
-    "check:scripts": "node --check examples/agent-loop/mcp-guard-server.mjs && node --check examples/agent-loop/run-live.mjs && node --check examples/agent-loop/verify-results.mjs",
+    "check:scripts": "node --check examples/agent-loop/mcp-guard-server.mjs && node --check examples/agent-loop/run-live.mjs && node --check examples/agent-loop/verify-results.mjs && node --check scripts/extreme-production-audit.mjs && node --check scripts/five-repo-native-fixture-audit.mjs && node --check scripts/framework-integration-audit.mjs && node --check scripts/live-provider-probe.mjs && node --check scripts/managed-load-audit.mjs && node --check scripts/managed-recovery-drill.mjs && node --check scripts/multi-benchmark-replay-audit.mjs && node --check scripts/real-data-replay-audit.mjs && node --check scripts/real-repo-corpus-audit.mjs && node --check scripts/release-candidate-audit.mjs",
     "check:packages": "tsx scripts/check-packages.ts",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
     "test:python": "npm run build && PYTHONPATH=python python3 -m unittest discover -s python/tests",
     "benchmark": "npm run build --silent && tsx benchmarks/core.ts",
+    "audit:recovery": "npm run build --silent && node scripts/managed-recovery-drill.mjs",
+    "audit:managed-load": "npm run build --silent && node scripts/managed-load-audit.mjs",
+    "audit:extreme": "node scripts/extreme-production-audit.mjs",
+    "audit:release-candidate": "node scripts/release-candidate-audit.mjs",
+    "audit:framework-integrations": "npm run build --silent && node scripts/framework-integration-audit.mjs",
+    "audit:five-repos": "npm run build --silent && node scripts/five-repo-native-fixture-audit.mjs",
+    "audit:benchmarks": "npm run build --silent && node scripts/multi-benchmark-replay-audit.mjs",
+    "audit:real-data": "npm run build --silent && node scripts/real-data-replay-audit.mjs",
+    "audit:real-repos": "npm run build --silent && node scripts/real-repo-corpus-audit.mjs",
+    "audit:real-repos:update": "npm run build --silent && node scripts/real-repo-corpus-audit.mjs --fixtures-out real-repo-corpus/extracted-fixtures.json",
+    "probe:live": "npm run build --silent && node scripts/live-provider-probe.mjs",
+    "probe:live:dry": "node scripts/live-provider-probe.mjs --provider all --trials 3 --dry-run",
     "conformance": "tsx scripts/run-conformance.ts",
     "conformance:check": "tsx scripts/run-conformance.ts --baseline conformance/baseline.json",
     "demo": "npm run build --silent && tsx examples/demo.ts",
     "schemaguard": "npm run build --silent && tsx packages/cli/src/cli.ts",
     "api": "npm run build --silent && tsx packages/api/src/server.ts",
     "managed": "npm run build --silent && tsx packages/managed/src/server.ts",
+    "anchor-receiver": "npm run build --silent && tsx packages/anchor-receiver/src/server.ts",
     "managed:bootstrap": "npm run build --silent && tsx packages/managed/src/bootstrap.ts",
     "agent-test:live": "npm run build --silent && node examples/agent-loop/run-live.mjs",
     "agent-test:verify": "node examples/agent-loop/verify-results.mjs"
@@ -35,8 +48,11 @@
   "license": "MIT",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "@openai/agents": "0.13.5",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^26.1.1",
+    "@types/pg": "^8.20.0",
     "ajv": "^8.20.0",
     "eslint": "^10.7.0",
     "fast-check": "^4.9.0",
@@ -44,7 +60,8 @@
     "tsx": "^4.23.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.64.0",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "zod": "4.4.3"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1"

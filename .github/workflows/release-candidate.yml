@@ -1,0 +1,51 @@
+name: Release candidate certification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16-bookworm
+        env:
+          POSTGRES_USER: schema_guard
+          POSTGRES_PASSWORD: schema_guard_release
+          POSTGRES_DB: schema_guard_release
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U schema_guard -d schema_guard_release"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      SCHEMA_GUARD_TEST_POSTGRES_URL: postgresql://schema_guard:schema_guard_release@127.0.0.1:5432/schema_guard_release
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      SCHEMA_GUARD_OPENAI_MODEL: ${{ vars.SCHEMA_GUARD_OPENAI_MODEL }}
+      SCHEMA_GUARD_ANTHROPIC_MODEL: ${{ vars.SCHEMA_GUARD_ANTHROPIC_MODEL }}
+      SCHEMA_GUARD_GEMINI_MODEL: ${{ vars.SCHEMA_GUARD_GEMINI_MODEL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Run non-skippable release-candidate certification
+        run: npm run audit:release-candidate -- --output release-candidate-report.json
+      - name: Preserve certification report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-candidate-report
+          path: release-candidate-report.json
+          if-no-files-found: error
+          retention-days: 90

@@ -38,6 +38,11 @@ describe('schema drift', () => {
       ).compatibility,
     ).toBe('backward_compatible');
   });
+  it('classifies disjoint property type changes as breaking', () => {
+    expect(detectSchemaDrift({ type: 'string' }, { type: 'integer' }).compatibility).toBe(
+      'breaking',
+    );
+  });
   it('never labels unrecognized or boolean schema changes as compatible', () => {
     expect(detectSchemaDrift(true, false).compatibility).toBe('breaking');
     const report = detectSchemaDrift(

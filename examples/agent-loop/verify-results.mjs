@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 
 const paths = process.argv.slice(2);
 if (!paths.length) throw new Error('pass one or more agent-loop JSONL result paths');
-const expected = new Map([
+const baseExpected = new Map([
   ['valid_call', ['valid', true]],
   ['repairable_strings', ['valid_with_repair', true]],
   ['missing_required', ['rejected', false]],
@@ -11,11 +11,20 @@ const expected = new Map([
   ['secret_extra_field', ['rejected', false]],
   ['allowlisted_singleton', ['valid_with_repair', true]],
   ['organization_policy_denial', ['rejected', false]],
+]);
+const expected = new Map();
+for (let round = 1; round <= 13; round += 1) {
+  const suffix = String(round).padStart(3, '0');
+  for (const [caseId, expectation] of baseExpected)
+    expected.set(`${caseId}_${suffix}`, expectation);
+}
+for (const [caseId, expectation] of [
   ['minimum_tightened', ['breaking', false]],
   ['combinator_changed', ['review', false]],
   ['google_nested_union', ['valid', true]],
   ['mcp_repairable', ['valid_with_repair', true]],
-]);
+])
+  expected.set(caseId, expectation);
 let failed = false;
 for (const path of paths) {
   const raw = readFileSync(path, 'utf8');
