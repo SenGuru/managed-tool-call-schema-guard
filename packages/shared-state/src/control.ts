@@ -303,6 +303,7 @@ const CONTROL_SCHEMA = `
 
 export class PostgresControlState implements ControlState {
   readonly pool: Pool;
+  private readonly ownsPool: boolean;
   readonly recordsValidationAlerts: boolean;
   readonly recordsValidationIntelligence: boolean;
   readonly recordsAcceptedActionDecisions: boolean;
@@ -319,6 +320,7 @@ export class PostgresControlState implements ControlState {
       acceptedDecisionWriter?: TransactionalAcceptedDecisionWriter;
     } = {},
   ) {
+    this.ownsPool = pool === undefined;
     this.pool = pool ?? new Pool({ connectionString: databaseUrl, max: 10 });
     this.planLimits = {
       trial: options.trialMonthlyLimit ?? defaultLimits.trial,
@@ -1332,7 +1334,7 @@ export class PostgresControlState implements ControlState {
     return this.usageFrom(row);
   }
   async close(): Promise<void> {
-    await this.pool.end();
+    if (this.ownsPool) await this.pool.end();
   }
 }
 

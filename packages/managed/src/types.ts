@@ -59,6 +59,7 @@ export interface ManagedConfig {
   sharedControlDatabaseUrl?: string;
   externalUrl?: string;
   trustProxy?: boolean;
+  accessLog?: boolean;
   rateLimitPerMinute?: number;
   aggregateTenantThreshold?: number;
   alertFile?: string;

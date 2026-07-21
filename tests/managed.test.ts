@@ -18,6 +18,72 @@ async function database(): Promise<string> {
   return join(await mkdtemp(join(tmpdir(), 'schema-guard-managed-')), 'managed.db');
 }
 describe('managed local control plane', () => {
+  it('emits privacy-safe structured access logs and response correlation IDs', async () => {
+    const service = createManagedServer({
+      databasePath: await database(),
+      masterSecret: secret,
+      accessLog: true,
+    });
+    open.push(service);
+    service.store.bootstrapTenant({ id: 'logs', name: 'Logs', plan: 'trial', apiKey: 'log-key' });
+    const principal = service.store.authenticate('log-key')!;
+    await new Promise<void>((resolve) => service.server.listen(0, '127.0.0.1', resolve));
+    const address = service.server.address();
+    if (!address || typeof address === 'string') throw new Error('missing address');
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:${address.port}/v1/admin/api-keys/${principal.keyId}`,
+        { method: 'DELETE', headers: { authorization: 'Bearer log-key' } },
+      );
+      expect(response.status).toBe(409);
+      expect(response.headers.get('x-request-id')).toMatch(/^req_[0-9a-f-]{36}$/u);
+      const access = log.mock.calls
+        .map(([message]) => JSON.parse(String(message)) as Record<string, unknown>)
+        .find((entry) => entry.event === 'http_request_completed');
+      expect(access).toMatchObject({
+        level: 'info',
+        service: 'schema-guard-managed',
+        method: 'DELETE',
+        route: '/v1/admin/api-keys/:id',
+        status: 409,
+      });
+      expect(JSON.stringify(access)).not.toContain(principal.keyId);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('does not let a public tenant self-upgrade without a verified billing workflow', async () => {
+    const service = createManagedServer({
+      databasePath: await database(),
+      masterSecret: 'public-mode-secret-that-is-long-enough-public-mode-secret-that-is-long-enough',
+      publicMode: true,
+      instanceCount: 1,
+      externalUrl: 'https://app.invokeguard.example',
+      trustProxy: true,
+      actionCheckpointAnchorUrl: 'https://anchor.invokeguard.example/checkpoints',
+      actionCheckpointAnchorSigningSecret:
+        'public-anchor-signing-secret-that-is-at-least-32-characters',
+      actionCheckpointAnchorRequestTimeoutMs: 3_000,
+      requestTimeoutMs: 5000,
+      rateLimitPerMinute: 600,
+    });
+    open.push(service);
+    service.store.bootstrapTenant({ id: 'billing', name: 'Billing', plan: 'trial', apiKey: 'key' });
+    await new Promise<void>((resolve) => service.server.listen(0, '127.0.0.1', resolve));
+    const address = service.server.address();
+    if (!address || typeof address === 'string') throw new Error('missing address');
+    const response = await fetch(`http://127.0.0.1:${address.port}/v1/admin/plan`, {
+      method: 'PUT',
+      headers: { authorization: 'Bearer key', 'content-type': 'application/json' },
+      body: JSON.stringify({ plan: 'team' }),
+    });
+    expect(response.status).toBe(501);
+    expect(await response.json()).toMatchObject({ error: 'billing_integration_required' });
+    expect(service.store.authenticate('key')?.plan).toBe('trial');
+  });
+
   it('fails closed when public-mode production controls are missing', async () => {
     const base = {
       databasePath: await database(),
@@ -29,6 +95,7 @@ describe('managed local control plane', () => {
       actionCheckpointAnchorUrl: 'https://anchor.invokeguard.example/checkpoints',
       actionCheckpointAnchorSigningSecret:
         'public-anchor-signing-secret-that-is-at-least-32-characters',
+      actionCheckpointAnchorRequestTimeoutMs: 3_000,
       requestTimeoutMs: 5000,
       rateLimitPerMinute: 600,
     };
@@ -97,6 +164,9 @@ describe('managed local control plane', () => {
       }),
     ).toThrow(/64/u);
     expect(() => validateManagedConfig({ ...base, requestTimeoutMs: 20_000 })).toThrow(/timeout/u);
+    expect(() =>
+      validateManagedConfig({ ...base, actionCheckpointAnchorRequestTimeoutMs: 5_000 }),
+    ).toThrow(/must be lower/u);
     expect(() => validateManagedConfig({ ...base, rateLimitPerMinute: 601 })).toThrow(
       /rate limit/u,
     );
@@ -506,9 +576,13 @@ describe('managed local control plane', () => {
     ).toBe(1);
     const dashboard = await fetch(`${base}/dashboard`);
     expect(dashboard.status).toBe(200);
+    expect(dashboard.headers.get('content-security-policy')).not.toContain("'unsafe-inline'");
     const dashboardBody = await dashboard.text();
-    expect(dashboardBody).toContain("clearPanels();q('status').className=''");
-    expect(dashboardBody).toContain("catch(e){clearPanels();q('status').className='bad'");
+    expect(dashboardBody).toContain('src="/dashboard/app.js"');
+    expect(dashboardBody).toContain('href="/dashboard/app.css"');
+    const dashboardScript = await fetch(`${base}/dashboard/app.js`);
+    expect(dashboardScript.status).toBe(200);
+    expect(await dashboardScript.text()).toContain("clearPanels();q('status').className=''");
   });
 
   it('does not let validate-only keys read operational or tenant configuration data', async () => {

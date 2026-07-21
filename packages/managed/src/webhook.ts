@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
 import { request } from 'node:https';
-import { isIP } from 'node:net';
+import { isIP, type LookupFunction } from 'node:net';
 import type { ActionState, AlertState } from '@schema-guard/shared-state';
 import type { ManagedStore } from './store.js';
 
@@ -19,6 +19,13 @@ interface DeliveryResult {
   retryable: boolean;
   responseStatus?: number;
   errorCode?: string;
+}
+
+export function pinnedIpv4Lookup(address: string): LookupFunction {
+  return (_hostname, options, callback) => {
+    if (options.all) callback(null, [{ address, family: 4 }]);
+    else callback(null, address, 4);
+  };
 }
 
 export function signAlertWebhookPayload(
@@ -105,9 +112,11 @@ export async function deliverAlertWebhook(
   const signature = signAlertWebhookPayload(signingSecret, timestamp, payload);
   return new Promise<DeliveryResult>((resolve) => {
     let settled = false;
+    const deliveryDeadline: { timer?: ReturnType<typeof setTimeout> } = {};
     const finish = (result: DeliveryResult): void => {
       if (settled) return;
       settled = true;
+      if (deliveryDeadline.timer) clearTimeout(deliveryDeadline.timer);
       resolve(result);
     };
     const outbound = request(
@@ -122,7 +131,7 @@ export async function deliverAlertWebhook(
           'x-schema-guard-timestamp': timestamp,
           'x-schema-guard-signature': signature,
         },
-        lookup: (_hostname, _options, callback) => callback(null, address, 4),
+        lookup: pinnedIpv4Lookup(address),
       },
       (response) => {
         const status = response.statusCode ?? 0;
@@ -138,6 +147,10 @@ export async function deliverAlertWebhook(
           });
         response.destroy();
       },
+    );
+    deliveryDeadline.timer = setTimeout(
+      () => outbound.destroy(new Error('request_timeout')),
+      timeoutMs,
     );
     outbound.setTimeout(timeoutMs, () => outbound.destroy(new Error('request_timeout')));
     outbound.on('error', (error) =>

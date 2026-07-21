@@ -9,6 +9,7 @@ import { ManagedStore } from '../packages/managed/src/store.js';
 import {
   deliverAlertWebhook,
   dispatchAlertWebhooksOnce,
+  pinnedIpv4Lookup,
   signAlertWebhookPayload,
 } from '../packages/managed/src/webhook.js';
 
@@ -34,6 +35,17 @@ function rejected(
 }
 
 describe('managed alert webhook outbox', () => {
+  it('pins both single-address and all-address DNS callback shapes', () => {
+    const lookup = pinnedIpv4Lookup('203.0.113.42');
+    lookup('alerts.example.com', { all: false }, (_error, address, family) => {
+      expect(address).toBe('203.0.113.42');
+      expect(family).toBe(4);
+    });
+    lookup('alerts.example.com', { all: true }, (_error, addresses) => {
+      expect(addresses).toEqual([{ address: '203.0.113.42', family: 4 }]);
+    });
+  });
+
   it('encrypts endpoint credentials, projects value-free payloads, and records delivery', async () => {
     const store = new ManagedStore({
       databasePath: await database(),

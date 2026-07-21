@@ -260,12 +260,14 @@ const safeDetail = (kind: string, detail: unknown): Record<string, unknown> => {
 
 export class PostgresAlertState implements AlertState {
   readonly pool: Pool;
+  private readonly ownsPool: boolean;
   constructor(
     databaseUrl: string,
     private readonly masterSecret: string,
     pool?: Pool,
     private readonly maxAttempts = 8,
   ) {
+    this.ownsPool = pool === undefined;
     this.pool = pool ?? new Pool({ connectionString: databaseUrl, max: 10 });
     if (
       masterSecret.length < 32 ||
@@ -680,7 +682,25 @@ export class PostgresAlertState implements AlertState {
         await client.query(
           `INSERT INTO sg_alert_deliveries(delivery_id,tenant_id,webhook_id,alert_id,payload_json,payload_hmac,status,attempt_count,next_attempt_at,last_attempt_at,delivered_at,response_status,error_code,lease_id,lease_expires_at,created_at,state_hmac)
            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
-          [...Object.values(delivery), this.stateHmac(delivery)],
+          [
+            delivery.delivery_id,
+            delivery.tenant_id,
+            delivery.webhook_id,
+            delivery.alert_id,
+            delivery.payload_json,
+            delivery.payload_hmac,
+            delivery.status,
+            delivery.attempt_count,
+            delivery.next_attempt_at,
+            delivery.last_attempt_at,
+            delivery.delivered_at,
+            delivery.response_status,
+            delivery.error_code,
+            delivery.lease_id,
+            delivery.lease_expires_at,
+            delivery.created_at,
+            this.stateHmac(delivery),
+          ],
         );
       }
       const updated = {
@@ -1125,6 +1145,6 @@ export class PostgresAlertState implements AlertState {
     });
   }
   async close(): Promise<void> {
-    await this.pool.end();
+    if (this.ownsPool) await this.pool.end();
   }
 }

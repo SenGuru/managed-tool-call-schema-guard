@@ -10,9 +10,11 @@ import {
   PostgresControlState,
   PostgresSchemaState,
   PostgresIntelligenceState,
+  createSharedStatePool,
   SharedQuotaExceededError,
   SharedRateLimitExceededError,
   SharedStateIntegrityError,
+  type SharedStatePool,
 } from '../packages/shared-state/src/index.js';
 
 const postgresUrl = process.env.SCHEMA_GUARD_TEST_POSTGRES_URL;
@@ -27,6 +29,8 @@ let firstAlerts: PostgresAlertState;
 let secondAlerts: PostgresAlertState;
 let firstIntelligence: PostgresIntelligenceState;
 let secondIntelligence: PostgresIntelligenceState;
+let firstPool: SharedStatePool;
+let secondPool: SharedStatePool;
 
 async function sqliteDatabase(): Promise<string> {
   return join(await mkdtemp(join(tmpdir(), 'schema-guard-postgres-http-')), 'managed.db');
@@ -34,20 +38,22 @@ async function sqliteDatabase(): Promise<string> {
 
 describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', () => {
   beforeAll(async () => {
-    first = new PostgresActionState(postgresUrl!, secret);
-    second = new PostgresActionState(postgresUrl!, secret);
-    firstControl = new PostgresControlState(postgresUrl!, secret, undefined, {
+    firstPool = createSharedStatePool(postgresUrl!, 20);
+    secondPool = createSharedStatePool(postgresUrl!, 20);
+    first = new PostgresActionState(postgresUrl!, secret, firstPool);
+    second = new PostgresActionState(postgresUrl!, secret, secondPool);
+    firstControl = new PostgresControlState(postgresUrl!, secret, firstPool, {
       trialMonthlyLimit: 8,
     });
-    secondControl = new PostgresControlState(postgresUrl!, secret, undefined, {
+    secondControl = new PostgresControlState(postgresUrl!, secret, secondPool, {
       trialMonthlyLimit: 8,
     });
-    firstSchema = new PostgresSchemaState(postgresUrl!, secret);
-    secondSchema = new PostgresSchemaState(postgresUrl!, secret);
-    firstAlerts = new PostgresAlertState(postgresUrl!, secret, undefined, 2);
-    secondAlerts = new PostgresAlertState(postgresUrl!, secret, undefined, 2);
-    firstIntelligence = new PostgresIntelligenceState(postgresUrl!, secret);
-    secondIntelligence = new PostgresIntelligenceState(postgresUrl!, secret);
+    firstSchema = new PostgresSchemaState(postgresUrl!, secret, firstPool);
+    secondSchema = new PostgresSchemaState(postgresUrl!, secret, secondPool);
+    firstAlerts = new PostgresAlertState(postgresUrl!, secret, firstPool, 2);
+    secondAlerts = new PostgresAlertState(postgresUrl!, secret, secondPool, 2);
+    firstIntelligence = new PostgresIntelligenceState(postgresUrl!, secret, firstPool);
+    secondIntelligence = new PostgresIntelligenceState(postgresUrl!, secret, secondPool);
     await Promise.all([first.migrate(), firstControl.migrate()]);
     await firstSchema.migrate();
     await firstAlerts.migrate();
@@ -70,9 +76,12 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
       firstIntelligence.close(),
       secondIntelligence.close(),
     ]);
+    await Promise.all([firstPool.end(), secondPool.end()]);
   });
 
   it('shares authentication, revocation, policy, and an atomic tenant quota across pools', async () => {
+    expect(firstPool.listenerCount('error')).toBeGreaterThan(0);
+    expect(secondPool.listenerCount('error')).toBeGreaterThan(0);
     await firstControl.bootstrapTenant({
       id: 'control-tenant',
       name: 'Control Tenant',
@@ -498,10 +507,10 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
     await firstControl.pool.query(`DELETE FROM sg_control_tenants WHERE id='alert-tenant'`);
     await expect(secondAlerts.ready()).resolves.toBe(true);
 
-    const coupledControl = new PostgresControlState(postgresUrl!, secret, undefined, {
+    const coupledControl = new PostgresControlState(postgresUrl!, secret, firstPool, {
       alertWriter: firstAlerts,
     });
-    const coupledSchema = new PostgresSchemaState(postgresUrl!, secret, undefined, {
+    const coupledSchema = new PostgresSchemaState(postgresUrl!, secret, firstPool, {
       alertWriter: firstAlerts,
     });
     try {
@@ -572,7 +581,7 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
       await Promise.all([coupledControl.close(), coupledSchema.close()]);
     }
 
-    const coupledAction = new PostgresActionState(postgresUrl!, secret, undefined, {
+    const coupledAction = new PostgresActionState(postgresUrl!, secret, firstPool, {
       alertWriter: firstAlerts,
     });
     try {
@@ -886,7 +895,7 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
   });
 
   it('queues, acknowledges, and deletion-checks shared checkpoint anchors', async () => {
-    const anchored = new PostgresActionState(postgresUrl!, secret, undefined, {
+    const anchored = new PostgresActionState(postgresUrl!, secret, firstPool, {
       checkpointAnchoring: true,
       checkpointAnchorMaxAttempts: 1,
     });
@@ -955,10 +964,10 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
 
   it('shares atomic value-free intelligence, conformance, and signed ruleset history', async () => {
     await firstIntelligence.migrate();
-    const coupledFirst = new PostgresControlState(postgresUrl!, secret, undefined, {
+    const coupledFirst = new PostgresControlState(postgresUrl!, secret, firstPool, {
       intelligenceWriter: firstIntelligence,
     });
-    const coupledSecond = new PostgresControlState(postgresUrl!, secret, undefined, {
+    const coupledSecond = new PostgresControlState(postgresUrl!, secret, secondPool, {
       intelligenceWriter: secondIntelligence,
     });
     try {
@@ -1111,8 +1120,8 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
   }, 30_000);
 
   it('rolls back shared validation when same-database accepted-decision proof fails', async () => {
-    const acceptedAction = new PostgresActionState(postgresUrl!, secret);
-    const acceptedControl = new PostgresControlState(postgresUrl!, secret, undefined, {
+    const acceptedAction = new PostgresActionState(postgresUrl!, secret, firstPool);
+    const acceptedControl = new PostgresControlState(postgresUrl!, secret, firstPool, {
       acceptedDecisionWriter: acceptedAction,
     });
     try {

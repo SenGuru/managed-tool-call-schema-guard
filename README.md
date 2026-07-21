@@ -331,10 +331,12 @@ The repository does not yet contain an accumulated
 customer production corpus; current compatibility signals come from checked-in
 fixtures and locally generated privacy-safe signatures. Drift classification is
 structural, not learned from observed runtime outcomes. The managed control plane
-is still partly local: payment-provider settlement, TLS/public ingress, external
-email/Slack delivery, cloud secret/KMS integration, wider multi-instance state,
-distributed rate limiting, and multi-region
-availability still require explicitly chosen external infrastructure. They are
-labeled `integration_required`, not mocked as complete.
+is still partly local: hosted human identity/organization membership,
+payment-provider settlement, TLS/public ingress, receiver-specific email/Slack
+delivery, cloud KMS and key rotation, removal of the remaining single-instance
+projection boundaries, and multi-region availability still require explicitly
+chosen external infrastructure. They are labeled `integration_required`, not
+mocked as complete. The public-server decision and required evidence are tracked
+in [Enterprise launch gates](docs/ENTERPRISE_LAUNCH_GATES.md).
 
 License: MIT.

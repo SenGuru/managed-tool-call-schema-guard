@@ -1,11 +1,12 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { timingSafeEqual } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import {
   AnchorConflict,
   AnchorStore,
   parseAnchorEvent,
   verifyTransportSignature,
 } from './store.js';
+import { environmentValue } from './environment.js';
 
 export interface AnchorReceiverConfig {
   databasePath: string;
@@ -14,6 +15,11 @@ export interface AnchorReceiverConfig {
   chainSecret: string;
   host?: string;
   port?: number;
+  accessLog?: boolean;
+}
+
+function logRoute(pathname: string): string {
+  return pathname.startsWith('/v1/checkpoints/') ? '/v1/checkpoints/:tenant_ref' : pathname;
 }
 
 function json(response: ServerResponse, status: number, value: unknown): void {
@@ -55,6 +61,32 @@ export function createAnchorReceiver(config: AnchorReceiverConfig) {
   const store = new AnchorStore(config.databasePath, config.chainSecret);
   let ready = true;
   const server = createServer((request, response) => {
+    const started = performance.now();
+    const requestId = `req_${randomUUID()}`;
+    response.setHeader('x-request-id', requestId);
+    if (config.accessLog) {
+      response.once('finish', () => {
+        let route = '/invalid-url';
+        try {
+          route = logRoute(new URL(request.url ?? '/', 'http://local').pathname);
+        } catch {
+          // Keep the privacy-safe fallback route for malformed URLs.
+        }
+        process.stdout.write(
+          `${JSON.stringify({
+            timestamp: new Date().toISOString(),
+            level: 'info',
+            service: 'schema-guard-anchor-receiver',
+            event: 'http_request_completed',
+            request_id: requestId,
+            method: request.method ?? 'UNKNOWN',
+            route,
+            status: response.statusCode,
+            duration_ms: Number((performance.now() - started).toFixed(3)),
+          })}\n`,
+        );
+      });
+    }
     void (async () => {
       try {
         const url = new URL(request.url ?? '/', 'http://local');
@@ -125,9 +157,9 @@ export function createAnchorReceiver(config: AnchorReceiverConfig) {
 
 function environment(): AnchorReceiverConfig {
   const databasePath = process.env.SCHEMA_GUARD_ANCHOR_DATABASE;
-  const signingSecret = process.env.SCHEMA_GUARD_ANCHOR_SIGNING_SECRET;
-  const readToken = process.env.SCHEMA_GUARD_ANCHOR_READ_TOKEN;
-  const chainSecret = process.env.SCHEMA_GUARD_ANCHOR_CHAIN_SECRET;
+  const signingSecret = environmentValue('SCHEMA_GUARD_ANCHOR_SIGNING_SECRET');
+  const readToken = environmentValue('SCHEMA_GUARD_ANCHOR_READ_TOKEN');
+  const chainSecret = environmentValue('SCHEMA_GUARD_ANCHOR_CHAIN_SECRET');
   if (!databasePath || !signingSecret || !readToken || !chainSecret)
     throw new Error('anchor receiver database and three secrets are required');
   return {
@@ -137,6 +169,7 @@ function environment(): AnchorReceiverConfig {
     chainSecret,
     host: process.env.HOST ?? '127.0.0.1',
     port: Number(process.env.PORT ?? 8790),
+    accessLog: process.env.SCHEMA_GUARD_ANCHOR_ACCESS_LOG !== 'false',
   };
 }
 

@@ -6,15 +6,17 @@ import {
   PostgresControlState,
   PostgresSchemaState,
   PostgresIntelligenceState,
+  createSharedStatePool,
 } from '@schema-guard/shared-state';
 import type { PlanId } from './types.js';
+import { environmentValue } from './environment.js';
 
 function option(name: string): string | undefined {
   const index = process.argv.indexOf(`--${name}`);
   return index >= 0 ? process.argv[index + 1] : undefined;
 }
 const databasePath = option('database') ?? process.env.SCHEMA_GUARD_DATABASE;
-const masterSecret = process.env.SCHEMA_GUARD_MASTER_SECRET;
+const masterSecret = environmentValue('SCHEMA_GUARD_MASTER_SECRET');
 if (!databasePath || !masterSecret || masterSecret.length < 32)
   throw new Error(
     '--database/SCHEMA_GUARD_DATABASE and a 32+ character SCHEMA_GUARD_MASTER_SECRET are required',
@@ -24,12 +26,13 @@ const tenantId = option('tenant-id') ?? 'local-demo';
 const tenantName = option('tenant-name') ?? 'Local demo';
 const plan = (option('plan') ?? 'trial') as PlanId;
 if (plan !== 'trial' && plan !== 'team') throw new Error('--plan must be trial or team');
-const sharedControlDatabaseUrl = process.env.SCHEMA_GUARD_SHARED_CONTROL_DATABASE_URL;
+const sharedControlDatabaseUrl = environmentValue('SCHEMA_GUARD_SHARED_CONTROL_DATABASE_URL');
 if (sharedControlDatabaseUrl) {
-  const control = new PostgresControlState(sharedControlDatabaseUrl, masterSecret);
-  const schema = new PostgresSchemaState(sharedControlDatabaseUrl, masterSecret);
-  const alerts = new PostgresAlertState(sharedControlDatabaseUrl, masterSecret);
-  const intelligence = new PostgresIntelligenceState(sharedControlDatabaseUrl, masterSecret);
+  const pool = createSharedStatePool(sharedControlDatabaseUrl);
+  const control = new PostgresControlState(sharedControlDatabaseUrl, masterSecret, pool);
+  const schema = new PostgresSchemaState(sharedControlDatabaseUrl, masterSecret, pool);
+  const alerts = new PostgresAlertState(sharedControlDatabaseUrl, masterSecret, pool);
+  const intelligence = new PostgresIntelligenceState(sharedControlDatabaseUrl, masterSecret, pool);
   try {
     await control.migrate();
     await control.bootstrapTenant({ id: tenantId, name: tenantName, plan, apiKey });
@@ -41,6 +44,7 @@ if (sharedControlDatabaseUrl) {
     await intelligence.bootstrapTenant(tenantId);
   } finally {
     await Promise.all([control.close(), schema.close(), alerts.close(), intelligence.close()]);
+    await pool.end();
   }
 }
 const store = new ManagedStore({ databasePath, masterSecret });

@@ -5,7 +5,7 @@ services:
       target: managed
     image: schema-guard-managed:0.2.0
     restart: unless-stopped
-    user: '10001:10001'
+    user: '65532:65532'
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
@@ -13,9 +13,10 @@ services:
       SCHEMA_GUARD_DATABASE: /data/managed.db
       SCHEMA_GUARD_PUBLIC_MODE: 'true'
       SCHEMA_GUARD_INSTANCE_COUNT: '1'
-      SCHEMA_GUARD_SHARED_ACTION_DATABASE_URL: ${SCHEMA_GUARD_SHARED_ACTION_DATABASE_URL:-}
-      SCHEMA_GUARD_SHARED_CONTROL_DATABASE_URL: ${SCHEMA_GUARD_SHARED_CONTROL_DATABASE_URL:-}
+      SCHEMA_GUARD_SHARED_ACTION_DATABASE_URL_FILE: /run/secrets/schema_guard_action_database_url
+      SCHEMA_GUARD_SHARED_CONTROL_DATABASE_URL_FILE: /run/secrets/schema_guard_control_database_url
       SCHEMA_GUARD_TRUST_PROXY: 'true'
+      SCHEMA_GUARD_ACCESS_LOG: 'true'
       SCHEMA_GUARD_RATE_LIMIT_PER_MINUTE: '600'
       SCHEMA_GUARD_REQUEST_TIMEOUT_MS: '5000'
       SCHEMA_GUARD_ACTION_RECONCILIATION_MIN_AGE_SECONDS: '300'
@@ -23,12 +24,17 @@ services:
       SCHEMA_GUARD_ALERT_WEBHOOK_REQUEST_TIMEOUT_MS: '5000'
       SCHEMA_GUARD_ALERT_WEBHOOK_MAX_ATTEMPTS: '8'
       SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_URL: ${SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_URL}
-      SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_SIGNING_SECRET: ${SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_SIGNING_SECRET}
+      SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_SIGNING_SECRET_FILE: /run/secrets/schema_guard_anchor_signing
       SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_POLL_INTERVAL_MS: '5000'
-      SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_REQUEST_TIMEOUT_MS: '5000'
+      SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_REQUEST_TIMEOUT_MS: '3000'
       SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_MAX_ATTEMPTS: '8'
       SCHEMA_GUARD_EXTERNAL_URL: ${SCHEMA_GUARD_EXTERNAL_URL}
-      SCHEMA_GUARD_MASTER_SECRET: ${SCHEMA_GUARD_MASTER_SECRET}
+      SCHEMA_GUARD_MASTER_SECRET_FILE: /run/secrets/schema_guard_master
+    secrets:
+      - schema_guard_master
+      - schema_guard_action_database_url
+      - schema_guard_control_database_url
+      - schema_guard_anchor_signing
     ports:
       - '127.0.0.1:8788:8788'
     volumes:
@@ -45,3 +51,13 @@ services:
 
 volumes:
   schema-guard-data:
+
+secrets:
+  schema_guard_master:
+    file: ${SCHEMA_GUARD_MASTER_SECRET_FILE}
+  schema_guard_action_database_url:
+    file: ${SCHEMA_GUARD_SHARED_ACTION_DATABASE_URL_FILE}
+  schema_guard_control_database_url:
+    file: ${SCHEMA_GUARD_SHARED_CONTROL_DATABASE_URL_FILE}
+  schema_guard_anchor_signing:
+    file: ${SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_SIGNING_SECRET_FILE}

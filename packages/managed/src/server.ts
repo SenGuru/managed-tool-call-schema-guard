@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { randomUUID } from 'node:crypto';
 import {
   assertJsonSafety,
   compileToolContract,
@@ -21,6 +22,7 @@ import {
   PostgresSchemaState,
   PostgresAlertState,
   PostgresIntelligenceState,
+  createSharedStatePool,
   SharedQuotaExceededError,
   SharedRateLimitExceededError,
   SharedStateIntegrityError,
@@ -31,8 +33,10 @@ import {
   type IntelligenceState,
   type SharedObservationContext,
   type SharedReservationResult,
+  type SharedStatePool,
 } from '@schema-guard/shared-state';
-import { dashboardHtml } from './dashboard.js';
+import { dashboardHtml, dashboardScript, dashboardStyle } from './dashboard.js';
+import { environmentValue } from './environment.js';
 import { FixedWindowRateLimiter } from './rate-limit.js';
 import { ManagedError, ManagedStore, normalizedPublicWebhookEndpoint } from './store.js';
 import {
@@ -60,6 +64,14 @@ import {
 
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
+function privacySafeRoute(pathname: string): string {
+  return pathname
+    .split('/')
+    .map((segment) =>
+      /^(?:ach|alert|delivery|env|key|res|webhook)_[A-Za-z0-9-]+$/u.test(segment) ? ':id' : segment,
+    )
+    .join('/');
+}
 function json(
   response: ServerResponse,
   status: number,
@@ -359,13 +371,35 @@ export function createManagedServer(
 ) {
   validateManagedConfig(config);
   const store = new ManagedStore(config);
+  const ownedSharedPools = new Set<SharedStatePool>();
+  const needsSharedControlPool = Boolean(
+    config.sharedControlDatabaseUrl &&
+    (dependencies.alertState === undefined ||
+      dependencies.controlState === undefined ||
+      dependencies.schemaState === undefined ||
+      dependencies.intelligenceState === undefined ||
+      (dependencies.actionState === undefined &&
+        config.sharedActionDatabaseUrl === config.sharedControlDatabaseUrl)),
+  );
+  const sharedControlPool =
+    needsSharedControlPool && config.sharedControlDatabaseUrl
+      ? createSharedStatePool(config.sharedControlDatabaseUrl)
+      : undefined;
+  if (sharedControlPool) ownedSharedPools.add(sharedControlPool);
+  const sharedActionPool =
+    dependencies.actionState === undefined && config.sharedActionDatabaseUrl
+      ? config.sharedActionDatabaseUrl === config.sharedControlDatabaseUrl && sharedControlPool
+        ? sharedControlPool
+        : createSharedStatePool(config.sharedActionDatabaseUrl)
+      : undefined;
+  if (sharedActionPool) ownedSharedPools.add(sharedActionPool);
   const alertState =
     dependencies.alertState ??
     (config.sharedControlDatabaseUrl
       ? new PostgresAlertState(
           config.sharedControlDatabaseUrl,
           config.masterSecret,
-          undefined,
+          sharedControlPool,
           config.alertWebhookMaxAttempts ?? 8,
         )
       : undefined);
@@ -374,14 +408,19 @@ export function createManagedServer(
   const actionState =
     dependencies.actionState ??
     (config.sharedActionDatabaseUrl
-      ? new PostgresActionState(config.sharedActionDatabaseUrl, config.masterSecret, undefined, {
-          checkpointAnchoring: Boolean(config.actionCheckpointAnchorUrl),
-          checkpointAnchorMaxAttempts: config.actionCheckpointAnchorMaxAttempts ?? 8,
-          ...(transactionalAlertWriter &&
-          config.sharedActionDatabaseUrl === config.sharedControlDatabaseUrl
-            ? { alertWriter: transactionalAlertWriter }
-            : {}),
-        })
+      ? new PostgresActionState(
+          config.sharedActionDatabaseUrl,
+          config.masterSecret,
+          sharedActionPool,
+          {
+            checkpointAnchoring: Boolean(config.actionCheckpointAnchorUrl),
+            checkpointAnchorMaxAttempts: config.actionCheckpointAnchorMaxAttempts ?? 8,
+            ...(transactionalAlertWriter &&
+            config.sharedActionDatabaseUrl === config.sharedControlDatabaseUrl
+              ? { alertWriter: transactionalAlertWriter }
+              : {}),
+          },
+        )
       : undefined);
   const transactionalAcceptedDecisionWriter =
     dependencies.actionState === undefined &&
@@ -392,29 +431,43 @@ export function createManagedServer(
   const intelligenceState =
     dependencies.intelligenceState ??
     (config.sharedControlDatabaseUrl
-      ? new PostgresIntelligenceState(config.sharedControlDatabaseUrl, config.masterSecret)
+      ? new PostgresIntelligenceState(
+          config.sharedControlDatabaseUrl,
+          config.masterSecret,
+          sharedControlPool,
+        )
       : undefined);
   const transactionalIntelligenceWriter =
     intelligenceState instanceof PostgresIntelligenceState ? intelligenceState : undefined;
   const controlState =
     dependencies.controlState ??
     (config.sharedControlDatabaseUrl
-      ? new PostgresControlState(config.sharedControlDatabaseUrl, config.masterSecret, undefined, {
-          ...(transactionalAlertWriter ? { alertWriter: transactionalAlertWriter } : {}),
-          ...(transactionalIntelligenceWriter
-            ? { intelligenceWriter: transactionalIntelligenceWriter }
-            : {}),
-          ...(transactionalAcceptedDecisionWriter
-            ? { acceptedDecisionWriter: transactionalAcceptedDecisionWriter }
-            : {}),
-        })
+      ? new PostgresControlState(
+          config.sharedControlDatabaseUrl,
+          config.masterSecret,
+          sharedControlPool,
+          {
+            ...(transactionalAlertWriter ? { alertWriter: transactionalAlertWriter } : {}),
+            ...(transactionalIntelligenceWriter
+              ? { intelligenceWriter: transactionalIntelligenceWriter }
+              : {}),
+            ...(transactionalAcceptedDecisionWriter
+              ? { acceptedDecisionWriter: transactionalAcceptedDecisionWriter }
+              : {}),
+          },
+        )
       : undefined);
   const schemaState =
     dependencies.schemaState ??
     (config.sharedControlDatabaseUrl
-      ? new PostgresSchemaState(config.sharedControlDatabaseUrl, config.masterSecret, undefined, {
-          ...(transactionalAlertWriter ? { alertWriter: transactionalAlertWriter } : {}),
-        })
+      ? new PostgresSchemaState(
+          config.sharedControlDatabaseUrl,
+          config.masterSecret,
+          sharedControlPool,
+          {
+            ...(transactionalAlertWriter ? { alertWriter: transactionalAlertWriter } : {}),
+          },
+        )
       : undefined);
   const limiter = new FixedWindowRateLimiter(config.rateLimitPerMinute ?? 120);
   let draining = false;
@@ -567,6 +620,38 @@ export function createManagedServer(
     void handle(request, response);
   });
   async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const requestId = `req_${randomUUID()}`;
+    const requestStarted = process.hrtime.bigint();
+    response.setHeader('x-request-id', requestId);
+    if (config.accessLog ?? config.publicMode ?? false) {
+      let logged = false;
+      const emitAccessLog = (): void => {
+        if (logged) return;
+        logged = true;
+        const elapsed = Number(process.hrtime.bigint() - requestStarted) / 1_000_000;
+        let route = '/invalid-request-target';
+        try {
+          route = privacySafeRoute(pathOf(request).pathname);
+        } catch {
+          // Malformed request targets must not break or enrich the access log.
+        }
+        console.log(
+          JSON.stringify({
+            timestamp: new Date().toISOString(),
+            level: 'info',
+            service: 'schema-guard-managed',
+            event: 'http_request_completed',
+            request_id: requestId,
+            method: request.method ?? 'UNKNOWN',
+            route,
+            status: response.statusCode,
+            duration_ms: Number(elapsed.toFixed(3)),
+          }),
+        );
+      };
+      response.once('finish', emitAccessLog);
+      response.once('close', emitAccessLog);
+    }
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
@@ -657,11 +742,33 @@ export function createManagedServer(
           'content-type': 'text/html; charset=utf-8',
           'cache-control': 'no-store',
           'content-security-policy':
-            "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'",
+            "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
           'x-content-type-options': 'nosniff',
           ...publicResponseHeaders,
         });
-        response.end(dashboardHtml);
+        response.end(dashboardHtml(Boolean(config.publicMode)));
+        return;
+      }
+      if (request.method === 'GET' && url.pathname === '/dashboard/app.js') {
+        response.writeHead(200, {
+          'content-type': 'application/javascript; charset=utf-8',
+          'cache-control': 'no-store',
+          'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+          'x-content-type-options': 'nosniff',
+          ...publicResponseHeaders,
+        });
+        response.end(dashboardScript);
+        return;
+      }
+      if (request.method === 'GET' && url.pathname === '/dashboard/app.css') {
+        response.writeHead(200, {
+          'content-type': 'text/css; charset=utf-8',
+          'cache-control': 'no-store',
+          'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+          'x-content-type-options': 'nosniff',
+          ...publicResponseHeaders,
+        });
+        response.end(dashboardStyle);
         return;
       }
       await controlStateInitialization;
@@ -1145,11 +1252,7 @@ export function createManagedServer(
             context,
           });
         if (gate.status === 'allowed' && gate.reservation && config.actionCheckpointAnchorUrl) {
-          for (
-            let attempt = 0;
-            attempt < 4 && !(await actionCheckpointAcknowledged(principal));
-            attempt += 1
-          )
+          if (!(await actionCheckpointAcknowledged(principal)))
             await runCheckpointAnchorDispatch(100);
           const acknowledged = await actionCheckpointAcknowledged(principal);
           if (!acknowledged)
@@ -2119,6 +2222,12 @@ export function createManagedServer(
         return;
       }
       if (request.method === 'PUT' && url.pathname === '/v1/admin/plan') {
+        if (config.publicMode)
+          throw new ManagedError(
+            501,
+            'billing_integration_required',
+            'public plan changes require a verified billing or operator workflow',
+          );
         const input = asRecord(await guardedBody());
         if (input.plan !== 'trial' && input.plan !== 'team')
           throw new ManagedError(400, 'invalid_plan', 'plan must be trial or team');
@@ -2190,6 +2299,7 @@ export function createManagedServer(
       if (schemaState) await schemaState.close();
       if (alertState) await alertState.close();
       if (intelligenceState) await intelligenceState.close();
+      await Promise.all([...ownedSharedPools].map((pool) => pool.end()));
       store.close();
     },
   };
@@ -2331,6 +2441,13 @@ export function validateManagedConfig(config: ManagedConfig): void {
     throw new Error(
       'SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_MAX_ATTEMPTS must be an integer from 1 through 20',
     );
+  if (
+    config.actionCheckpointAnchorUrl &&
+    (config.actionCheckpointAnchorRequestTimeoutMs ?? 5_000) >= (config.requestTimeoutMs ?? 10_000)
+  )
+    throw new Error(
+      'SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_REQUEST_TIMEOUT_MS must be lower than SCHEMA_GUARD_REQUEST_TIMEOUT_MS',
+    );
   if (config.publicMode) {
     if (config.masterSecret.length < 64)
       throw new Error('public mode requires a 64+ character SCHEMA_GUARD_MASTER_SECRET');
@@ -2372,7 +2489,7 @@ export function validateManagedConfig(config: ManagedConfig): void {
 
 function configFromEnvironment(): ManagedConfig {
   const databasePath = process.env.SCHEMA_GUARD_DATABASE;
-  const masterSecret = process.env.SCHEMA_GUARD_MASTER_SECRET;
+  const masterSecret = environmentValue('SCHEMA_GUARD_MASTER_SECRET');
   if (!databasePath || !masterSecret)
     throw new Error('SCHEMA_GUARD_DATABASE and SCHEMA_GUARD_MASTER_SECRET are required');
   const config: ManagedConfig = {
@@ -2383,16 +2500,19 @@ function configFromEnvironment(): ManagedConfig {
     publicMode: process.env.SCHEMA_GUARD_PUBLIC_MODE === 'true',
     instanceCount: Number(process.env.SCHEMA_GUARD_INSTANCE_COUNT ?? 1),
     trustProxy: process.env.SCHEMA_GUARD_TRUST_PROXY === 'true',
+    ...(process.env.SCHEMA_GUARD_ACCESS_LOG
+      ? { accessLog: process.env.SCHEMA_GUARD_ACCESS_LOG === 'true' }
+      : {}),
     ...(process.env.SCHEMA_GUARD_ALERT_FILE
       ? { alertFile: process.env.SCHEMA_GUARD_ALERT_FILE }
       : {}),
   };
   if (process.env.SCHEMA_GUARD_EXTERNAL_URL)
     config.externalUrl = process.env.SCHEMA_GUARD_EXTERNAL_URL;
-  if (process.env.SCHEMA_GUARD_SHARED_ACTION_DATABASE_URL)
-    config.sharedActionDatabaseUrl = process.env.SCHEMA_GUARD_SHARED_ACTION_DATABASE_URL;
-  if (process.env.SCHEMA_GUARD_SHARED_CONTROL_DATABASE_URL)
-    config.sharedControlDatabaseUrl = process.env.SCHEMA_GUARD_SHARED_CONTROL_DATABASE_URL;
+  const sharedActionDatabaseUrl = environmentValue('SCHEMA_GUARD_SHARED_ACTION_DATABASE_URL');
+  if (sharedActionDatabaseUrl) config.sharedActionDatabaseUrl = sharedActionDatabaseUrl;
+  const sharedControlDatabaseUrl = environmentValue('SCHEMA_GUARD_SHARED_CONTROL_DATABASE_URL');
+  if (sharedControlDatabaseUrl) config.sharedControlDatabaseUrl = sharedControlDatabaseUrl;
   if (process.env.SCHEMA_GUARD_RATE_LIMIT_PER_MINUTE)
     config.rateLimitPerMinute = Number(process.env.SCHEMA_GUARD_RATE_LIMIT_PER_MINUTE);
   if (process.env.SCHEMA_GUARD_REQUEST_TIMEOUT_MS)
@@ -2413,9 +2533,11 @@ function configFromEnvironment(): ManagedConfig {
     config.alertWebhookMaxAttempts = Number(process.env.SCHEMA_GUARD_ALERT_WEBHOOK_MAX_ATTEMPTS);
   if (process.env.SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_URL)
     config.actionCheckpointAnchorUrl = process.env.SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_URL;
-  if (process.env.SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_SIGNING_SECRET)
-    config.actionCheckpointAnchorSigningSecret =
-      process.env.SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_SIGNING_SECRET;
+  const actionCheckpointAnchorSigningSecret = environmentValue(
+    'SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_SIGNING_SECRET',
+  );
+  if (actionCheckpointAnchorSigningSecret)
+    config.actionCheckpointAnchorSigningSecret = actionCheckpointAnchorSigningSecret;
   if (process.env.SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_POLL_INTERVAL_MS)
     config.actionCheckpointAnchorPollIntervalMs = Number(
       process.env.SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_POLL_INTERVAL_MS,

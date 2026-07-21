@@ -287,11 +287,13 @@ export class PostgresIntelligenceState
   implements IntelligenceState, TransactionalIntelligenceWriter
 {
   readonly pool: Pool;
+  private readonly ownsPool: boolean;
   constructor(
     databaseUrl: string,
     private readonly masterSecret: string,
     pool?: Pool,
   ) {
+    this.ownsPool = pool === undefined;
     this.pool = pool ?? new Pool({ connectionString: databaseUrl, max: 10 });
   }
   private async transaction<T>(body: (client: PoolClient) => Promise<T>): Promise<T> {
@@ -1181,6 +1183,6 @@ export class PostgresIntelligenceState
     }
   }
   async close(): Promise<void> {
-    await this.pool.end();
+    if (this.ownsPool) await this.pool.end();
   }
 }

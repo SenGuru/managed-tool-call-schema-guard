@@ -91,7 +91,8 @@ const temp = mkdtempSync(join(tmpdir(), 'schema-guard-release-candidate.'));
 const liveProviderReport = join(temp, 'live-provider-report.json');
 
 run('extreme_audit', 'npm', ['run', 'audit:extreme']);
-run('postgres_shared_state', 'npx', ['vitest', 'run', 'tests/postgres-shared-state.test.ts']);
+run('postgres_coverage', 'npm', ['run', 'test:coverage']);
+run('framework_integrations', 'npm', ['run', 'audit:framework-integrations']);
 run('live_provider_probes', 'npm', [
   'run',
   'probe:live',
@@ -119,22 +120,8 @@ if (!failures.length) {
   if (!verified) failures.push('live provider report did not verify all configured providers');
 }
 
-run('managed_container_build', 'docker', [
-  'build',
-  '--target',
-  'managed',
-  '--tag',
-  'schema-guard-managed:release-candidate',
-  '.',
-]);
-run('anchor_receiver_container_build', 'docker', [
-  'build',
-  '--target',
-  'anchor-receiver',
-  '--tag',
-  'schema-guard-anchor-receiver:release-candidate',
-  '.',
-]);
+run('container_end_to_end', 'npm', ['run', 'audit:container-e2e']);
+run('container_vulnerability_audit', 'npm', ['run', 'audit:images']);
 
 const report = {
   report_version: '1',

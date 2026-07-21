@@ -243,6 +243,7 @@ const SCHEMA_DDL = `
 
 export class PostgresSchemaState implements SchemaState {
   readonly pool: Pool;
+  private readonly ownsPool: boolean;
   readonly recordsSchemaAlerts: boolean;
   constructor(
     databaseUrl: string,
@@ -250,6 +251,7 @@ export class PostgresSchemaState implements SchemaState {
     pool?: Pool,
     private readonly options: { alertWriter?: TransactionalAlertWriter } = {},
   ) {
+    this.ownsPool = pool === undefined;
     this.pool = pool ?? new Pool({ connectionString: databaseUrl, max: 10 });
     this.recordsSchemaAlerts = options.alertWriter !== undefined;
   }
@@ -1213,6 +1215,6 @@ export class PostgresSchemaState implements SchemaState {
     });
   }
   async close(): Promise<void> {
-    await this.pool.end();
+    if (this.ownsPool) await this.pool.end();
   }
 }

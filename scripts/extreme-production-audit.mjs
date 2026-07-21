@@ -176,6 +176,7 @@ const managed = start('managed', 'npm', ['run', 'managed'], {
     'extreme-audit-anchor-signing-secret-that-is-at-least-32-characters',
   SCHEMA_GUARD_RATE_LIMIT_PER_MINUTE: '600',
   SCHEMA_GUARD_REQUEST_TIMEOUT_MS: '5000',
+  SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_REQUEST_TIMEOUT_MS: '3000',
   HOST: '127.0.0.1',
   PORT: '8798',
 });

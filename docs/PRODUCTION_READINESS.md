@@ -83,9 +83,11 @@ Set these outside the repo, ideally through the host secret manager:
 
 ```bash
 SCHEMA_GUARD_EXTERNAL_URL=https://app.invokeguard.example
-SCHEMA_GUARD_MASTER_SECRET=<64+ random characters>
+SCHEMA_GUARD_MASTER_SECRET_FILE=/run/secrets/schema_guard_master
 SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_URL=https://independent-anchor.example.com/v1/checkpoints
-SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_SIGNING_SECRET=<32+ random characters>
+SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_SIGNING_SECRET_FILE=/run/secrets/schema_guard_anchor_signing
+SCHEMA_GUARD_SHARED_ACTION_DATABASE_URL_FILE=/run/secrets/schema_guard_action_database_url
+SCHEMA_GUARD_SHARED_CONTROL_DATABASE_URL_FILE=/run/secrets/schema_guard_control_database_url
 ```
 
 The Compose file also sets:
@@ -103,13 +105,16 @@ SCHEMA_GUARD_ALERT_WEBHOOK_POLL_INTERVAL_MS=5000
 SCHEMA_GUARD_ALERT_WEBHOOK_REQUEST_TIMEOUT_MS=5000
 SCHEMA_GUARD_ALERT_WEBHOOK_MAX_ATTEMPTS=8
 SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_POLL_INTERVAL_MS=5000
-SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_REQUEST_TIMEOUT_MS=5000
+SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_REQUEST_TIMEOUT_MS=3000
 SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_MAX_ATTEMPTS=8
 ```
 
 The container listens on loopback only. Put Cloudflare and a reviewed reverse
 proxy in front of it for TLS, request logging controls, compression policy, and
 public routing.
+
+The machine-readable launch position and the evidence still required before a
+public server are tracked in [ENTERPRISE_LAUNCH_GATES.md](ENTERPRISE_LAUNCH_GATES.md).
 
 ## Launch checklist
 

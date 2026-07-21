@@ -299,6 +299,7 @@ export class SharedStateIntegrityError extends Error {
 
 export class PostgresActionState implements ActionState {
   readonly pool: Pool;
+  private readonly ownsPool: boolean;
   readonly recordsReconciliationAlerts: boolean;
   readonly recordsAcceptedDecisions = true;
   constructor(
@@ -313,6 +314,7 @@ export class PostgresActionState implements ActionState {
   ) {
     if (!connectionString || masterSecret.length < 32)
       throw new TypeError('PostgreSQL URL and a 32+ character master secret are required');
+    this.ownsPool = pool === undefined;
     this.pool = pool ?? new Pool({ connectionString, max: 20, statement_timeout: 10_000 });
     this.recordsReconciliationAlerts = options.alertWriter !== undefined;
   }
@@ -464,7 +466,7 @@ export class PostgresActionState implements ActionState {
     }
   }
   async close(): Promise<void> {
-    await this.pool.end();
+    if (this.ownsPool) await this.pool.end();
   }
   async ready(): Promise<boolean> {
     try {

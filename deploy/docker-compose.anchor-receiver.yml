@@ -5,15 +5,20 @@ services:
       target: anchor-receiver
     image: schema-guard-anchor-receiver:0.2.0
     restart: unless-stopped
-    user: '10002:10002'
+    user: '65532:65532'
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 8790
       SCHEMA_GUARD_ANCHOR_DATABASE: /anchor-data/anchor.db
-      SCHEMA_GUARD_ANCHOR_SIGNING_SECRET: ${SCHEMA_GUARD_ANCHOR_SIGNING_SECRET}
-      SCHEMA_GUARD_ANCHOR_READ_TOKEN: ${SCHEMA_GUARD_ANCHOR_READ_TOKEN}
-      SCHEMA_GUARD_ANCHOR_CHAIN_SECRET: ${SCHEMA_GUARD_ANCHOR_CHAIN_SECRET}
+      SCHEMA_GUARD_ANCHOR_ACCESS_LOG: 'true'
+      SCHEMA_GUARD_ANCHOR_SIGNING_SECRET_FILE: /run/secrets/schema_guard_anchor_signing
+      SCHEMA_GUARD_ANCHOR_READ_TOKEN_FILE: /run/secrets/schema_guard_anchor_read
+      SCHEMA_GUARD_ANCHOR_CHAIN_SECRET_FILE: /run/secrets/schema_guard_anchor_chain
+    secrets:
+      - schema_guard_anchor_signing
+      - schema_guard_anchor_read
+      - schema_guard_anchor_chain
     ports:
       - '127.0.0.1:8790:8790'
     volumes:
@@ -30,3 +35,11 @@ services:
 
 volumes:
   schema-guard-anchor-data:
+
+secrets:
+  schema_guard_anchor_signing:
+    file: ${SCHEMA_GUARD_ANCHOR_SIGNING_SECRET_FILE}
+  schema_guard_anchor_read:
+    file: ${SCHEMA_GUARD_ANCHOR_READ_TOKEN_FILE}
+  schema_guard_anchor_chain:
+    file: ${SCHEMA_GUARD_ANCHOR_CHAIN_SECRET_FILE}

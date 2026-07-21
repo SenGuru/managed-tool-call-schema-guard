@@ -7,11 +7,9 @@ coverage/
 !.env.example
 *.log
 .DS_Store
-node_modules/
-dist/
-coverage/
-*.log
-.DS_Store
 .schema-guard-audit.jsonl
+.schema-guard-container-e2e-secrets.*
 work/
 *.tsbuildinfo
+__pycache__/
+*.py[cod]

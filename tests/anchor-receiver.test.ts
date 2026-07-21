@@ -2,7 +2,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createAnchorReceiver } from '../packages/anchor-receiver/src/server.js';
 import type { AnchorEvent } from '../packages/anchor-receiver/src/store.js';
 import { signAlertWebhookPayload } from '../packages/managed/src/webhook.js';
@@ -39,6 +39,43 @@ function event(revision: number, eventDigit: string, checkpointDigit = eventDigi
 }
 
 describe('independent checkpoint anchor receiver', () => {
+  it('emits correlation IDs and privacy-normalized structured access logs', async () => {
+    const output: string[] = [];
+    const write = vi
+      .spyOn(process.stdout, 'write')
+      .mockImplementation((chunk: string | Uint8Array) => {
+        output.push(String(chunk));
+        return true;
+      });
+    try {
+      const service = createAnchorReceiver({
+        databasePath: await database(),
+        signingSecret,
+        readToken,
+        chainSecret,
+        accessLog: true,
+      });
+      open.push(service);
+      await new Promise<void>((resolve) => service.server.listen(0, '127.0.0.1', resolve));
+      const address = service.server.address();
+      if (!address || typeof address === 'string') throw new Error('missing receiver address');
+      const response = await fetch(
+        `http://127.0.0.1:${address.port}/v1/checkpoints/${encodeURIComponent(tenantRef)}`,
+        { headers: { authorization: `Bearer ${readToken}` } },
+      );
+      expect(response.status).toBe(404);
+      expect(response.headers.get('x-request-id')).toMatch(/^req_[0-9a-f-]{36}$/u);
+      await new Promise((resolve) => setImmediate(resolve));
+      const logs = output.join('');
+      expect(logs).toContain('"event":"http_request_completed"');
+      expect(logs).toContain('"route":"/v1/checkpoints/:tenant_ref"');
+      expect(logs).not.toContain(tenantRef);
+      expect(logs).not.toContain(readToken);
+    } finally {
+      write.mockRestore();
+    }
+  });
+
   it('authenticates exact bodies and enforces monotonic rollback/fork semantics', async () => {
     const databasePath = await database();
     const service = createAnchorReceiver({ databasePath, signingSecret, readToken, chainSecret });
