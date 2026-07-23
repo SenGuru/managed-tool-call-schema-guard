@@ -1,0 +1,29 @@
+FROM --platform=$BUILDPLATFORM golang:1.26.5-alpine3.23@sha256:622e56dbc11a8cfe87cafa2331e9a201877271cbff918af53d3be315f3da88cc AS builder
+
+ENV CGO_ENABLED=0
+ARG TARGETOS
+ARG TARGETARCH
+
+# Build the released Caddy module with version metadata and a Go toolchain
+# containing the security fixes that post-date the upstream 2.11.4 image. Go
+# verifies downloaded modules against go.sum/checksum-database data.
+RUN go install github.com/caddyserver/xcaddy/cmd/xcaddy@v0.4.5
+RUN GOOS=$TARGETOS GOARCH=$TARGETARCH /go/bin/xcaddy build v2.11.4 \
+    --replace google.golang.org/grpc@v1.81.0=google.golang.org/grpc@v1.82.1 \
+    --output /go/bin/caddy
+RUN mkdir -p /runtime-data/data /runtime-data/config
+
+FROM scratch
+
+ENV XDG_CONFIG_HOME=/config
+ENV XDG_DATA_HOME=/data
+
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=builder /go/bin/caddy /usr/bin/caddy
+COPY --from=builder --chown=65532:65532 /runtime-data/data /data
+COPY --from=builder --chown=65532:65532 /runtime-data/config /config
+
+USER 65532:65532
+
+ENTRYPOINT ["/usr/bin/caddy"]
+CMD ["run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]

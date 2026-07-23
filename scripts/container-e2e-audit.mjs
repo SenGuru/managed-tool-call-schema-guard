@@ -19,8 +19,7 @@ const names = {
 const images = {
   managed: 'schema-guard-managed:container-e2e',
   anchor: 'schema-guard-anchor-receiver:container-e2e',
-  postgres:
-    'postgres:16.14-bookworm@sha256:92620daddcd947f8d5ab5ba66e848702fe443d87fed30c4cea8e389fd78dfc55',
+  postgres: 'schema-guard-postgres:container-e2e',
   anchorProxy:
     'caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d',
 };
@@ -31,6 +30,7 @@ const anchorAddress = `11.${networkSecondOctet}.0.251`;
 const anchorHostname = 'anchor-e2e.invalid';
 const masterSecret = 'container-e2e-master-secret-'.padEnd(80, 'm');
 const adminKey = 'container-e2e-admin-key-at-least-32-characters';
+const tenantTwoId = 'container-e2e-tenant-two';
 const tenantTwoAdminKey = 'container-e2e-tenant-two-admin-key-at-least-32-characters';
 const postgresPassword = 'container-e2e-postgres-password';
 const anchorSigningSecret = 'container-e2e-anchor-signing-secret'.padEnd(48, 's');
@@ -109,6 +109,18 @@ async function waitForHttp(url, expected = 200, timeoutMs = 30_000) {
   throw new Error(`timed out waiting for ${url}: ${last.slice(-500)}`);
 }
 
+async function waitForDockerExec(container, args, timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs;
+  let last = 'command not attempted';
+  while (Date.now() < deadline) {
+    const result = docker(['exec', container, ...args], { allowFailure: true });
+    if (result.status === 0) return;
+    last = (result.stderr || result.stdout || `exit ${String(result.status)}`).slice(-500);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  throw new Error(`timed out waiting for ${container} dependency: ${last}`);
+}
+
 function publishedPort(container, internalPort) {
   const output = docker(['port', container, `${internalPort}/tcp`]).stdout.trim();
   const match = output.match(/127\.0\.0\.1:(\d+)$/u);
@@ -171,11 +183,36 @@ try {
   chmodSync(tlsCertificate, 0o444);
   docker(['build', '--target', 'managed', '--tag', images.managed, '.']);
   docker(['build', '--target', 'anchor-receiver', '--tag', images.anchor, '.']);
+  docker(['build', '--file', 'deploy/Dockerfile.postgres', '--tag', images.postgres, '.']);
   record('production images build');
 
   docker(['network', 'create', '--subnet', networkSubnet, names.network]);
   for (const volume of [names.managedVolume, names.anchorVolume, names.postgresVolume])
     docker(['volume', 'create', volume]);
+  docker([
+    'run',
+    '--rm',
+    '--network',
+    'none',
+    '--read-only',
+    '--cap-drop',
+    'ALL',
+    '--cap-add',
+    'CHOWN',
+    '--cap-add',
+    'DAC_OVERRIDE',
+    '--cap-add',
+    'FOWNER',
+    '--user',
+    '0:0',
+    '--entrypoint',
+    'sh',
+    '-v',
+    `${names.postgresVolume}:/var/lib/postgresql/data`,
+    images.postgres,
+    '-c',
+    'chown -R 999:999 /var/lib/postgresql/data',
+  ]);
   docker([
     'run',
     '-d',
@@ -185,6 +222,17 @@ try {
     names.network,
     '--network-alias',
     'postgres',
+    '--user',
+    '999:999',
+    '--read-only',
+    '--cap-drop',
+    'ALL',
+    '--security-opt',
+    'no-new-privileges:true',
+    '--tmpfs',
+    '/tmp:size=64m,mode=1777',
+    '--tmpfs',
+    '/var/run/postgresql:size=16m,uid=999,gid=999,mode=3775',
     '-v',
     `${names.postgresVolume}:/var/lib/postgresql/data`,
     '-e',
@@ -258,6 +306,8 @@ try {
     'team',
     '--api-key',
     adminKey,
+    '--service-state',
+    'stopped',
   ]);
   docker([
     'run',
@@ -273,13 +323,15 @@ try {
     images.managed,
     'packages/managed/dist/bootstrap.js',
     '--tenant-id',
-    'container-e2e-tenant-two',
+    tenantTwoId,
     '--tenant-name',
     'Container E2E Tenant Two',
     '--plan',
     'team',
     '--api-key',
     tenantTwoAdminKey,
+    '--service-state',
+    'stopped',
   ]);
   record('two tenants bootstrap against SQLite projection and shared PostgreSQL');
 
@@ -390,14 +442,12 @@ try {
   let anchorBase = `http://127.0.0.1:${publishedPort(names.anchor, 8790)}`;
   await waitForHttp(`${managedBase}/readyz`);
   await waitForHttp(`${anchorBase}/readyz`);
-  const anchoredHealth = docker([
-    'exec',
-    names.managed,
+  await waitForDockerExec(names.managed, [
     '/nodejs/bin/node',
     '-e',
     `fetch('https://${anchorHostname}/healthz').then(async r=>{if(!r.ok)throw new Error(await r.text())}).catch(e=>{console.error(e);process.exit(1)})`,
   ]);
-  assert(anchoredHealth.status === 0, 'managed container reaches anchor through trusted HTTPS');
+  record('managed container reaches anchor through trusted HTTPS');
   record('managed and independent anchor containers are ready');
   record('managed and anchor secrets are loaded from read-only files');
 
@@ -411,6 +461,11 @@ try {
   assert(
     typeof dashboard.body === 'string' && dashboard.body.includes('Schema Guard'),
     'dashboard asset is served from the production image',
+  );
+  assert(
+    dashboard.body.includes('Tenant lifecycle') &&
+      dashboard.body.includes('Request tenant deletion'),
+    'dashboard exposes lifecycle, export, and exact-confirmation deletion controls',
   );
   assert(
     !dashboard.headers['content-security-policy'].includes("'unsafe-inline'"),
@@ -538,6 +593,61 @@ try {
     isolatedUsage.body.usage.validation_count === 0,
     'second tenant cannot read first tenant usage',
   );
+  const tenantTwoLifecycle = await request(managedBase, '/v1/admin/tenant/lifecycle', 200, {
+    key: tenantTwoAdminKey,
+  });
+  assert(
+    tenantTwoLifecycle.body.lifecycle.status === 'active',
+    'new tenant lifecycle starts active in the production image',
+  );
+  const tenantTwoExport = await request(managedBase, '/v1/admin/tenant/export', 200, {
+    key: tenantTwoAdminKey,
+  });
+  assert(
+    /^sha256:[0-9a-f]{64}$/u.test(tenantTwoExport.body.content_sha256) &&
+      !JSON.stringify(tenantTwoExport.body).includes('control_hmac') &&
+      !JSON.stringify(tenantTwoExport.body).includes('key_hash'),
+    'tenant export is complete, hashed, and excludes credential verifiers',
+  );
+  await request(managedBase, '/v1/admin/tenant/deletion-request', 400, {
+    method: 'POST',
+    key: tenantTwoAdminKey,
+    body: { confirm_tenant_id: 'wrong-tenant' },
+  });
+  const deletionRequested = await request(managedBase, '/v1/admin/tenant/deletion-request', 202, {
+    method: 'POST',
+    key: tenantTwoAdminKey,
+    body: { confirm_tenant_id: tenantTwoId },
+  });
+  assert(
+    deletionRequested.body.lifecycle.status === 'deletion_pending',
+    'exact tenant confirmation records a deletion request',
+  );
+  const projectedLifecycle = JSON.parse(
+    docker([
+      'exec',
+      names.managed,
+      '/nodejs/bin/node',
+      'packages/managed/dist/tenant-operator.js',
+      'inspect',
+      '--tenant-id',
+      tenantTwoId,
+    ]).stdout,
+  );
+  assert(
+    projectedLifecycle.synchronized === true &&
+      projectedLifecycle.local?.status === 'deletion_pending' &&
+      projectedLifecycle.shared?.status === 'deletion_pending',
+    'public deletion request synchronizes local and shared lifecycle projections',
+  );
+  await request(managedBase, '/v1/usage', 423, { key: tenantTwoAdminKey });
+  await request(managedBase, '/v1/admin/tenant/lifecycle', 200, {
+    key: tenantTwoAdminKey,
+  });
+  await request(managedBase, '/v1/admin/tenant/export', 200, {
+    key: tenantTwoAdminKey,
+  });
+  record('deletion-pending tenants fail closed while lifecycle and export remain available');
   const auditIntegrity = await request(managedBase, '/v1/audits/verify', 200, { key: adminKey });
   assert(auditIntegrity.body.valid === true, 'shared audit chain verifies');
   const conformance = {

@@ -1,0 +1,4 @@
+services:
+  schema-guard-anchor-receiver:
+    ports:
+      - '10.77.0.1:8790:8790'

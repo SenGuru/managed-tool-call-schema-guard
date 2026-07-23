@@ -65,7 +65,11 @@ The local package demonstrates the product spine: shared policy, schema history,
   bounded backoff, dead-letter status, explicit redrive, and SSRF controls.
 - Aggregate compatibility intelligence is released only when a signature appears in at least three distinct tenants by default. Results contain no tenant identifiers.
 - Rulesets are tenant-scoped and use an Ed25519 signing key. The private key is encrypted at rest with AES-256-GCM under the master secret; embedded public keys must match the authenticated local trust record, and expired rulesets are not served.
-- Trial/team plans, monthly quotas, fixed-window per-key limits, usage statements, JSON/CSV audit export, local-file and generic HTTPS webhook alerts, liveness/readiness, request size/deadline controls, graceful shutdown, and a tenant dashboard are operational.
+- Trial/team plans, monthly quotas, fixed-window per-key limits, usage
+  statements, JSON/CSV audit export, complete tenant export, lifecycle locking,
+  exact-confirmation deletion requests, offline verified deletion, local-file
+  and generic HTTPS webhook alerts, liveness/readiness, request size/deadline
+  controls, graceful shutdown, and a tenant dashboard are operational.
 
 ## Bootstrap and run
 
@@ -77,6 +81,16 @@ npm run managed
 ```
 
 Keep the master secret and one bootstrap admin key in a secret manager in any non-local environment. Losing the master secret makes stored API-key verifiers unusable and the encrypted ruleset signing key unrecoverable.
+
+The local single-process quickstart may bootstrap before starting the service.
+Public mode or any shared-control configuration additionally requires
+`--service-state stopped`; stop every managed instance, run bootstrap with that
+assertion, then restart and wait for `/readyz`. An out-of-process SQLite
+bootstrap while the server is running is unsupported and can make readiness
+fail until restart. The public staging drill measured a 3-second
+stop/bootstrap/restart window. This operator-led workflow is acceptable only
+for a controlled cohort; self-serve onboarding requires a transactional hosted
+provisioning control plane.
 
 Validation requests may add bounded operational labels under `context` so failures can be compared without capturing payloads:
 
@@ -130,17 +144,57 @@ Validation requests may add bounded operational labels under `context` so failur
 - `POST /v1/admin/environments`, `PUT /v1/admin/environments/:id/policy`
 - `PUT /v1/admin/environments/:id/schema-enforcement`
 - `PUT /v1/admin/policy`, `PUT /v1/admin/plan`
+- `GET /v1/admin/tenant/lifecycle`
+- `GET /v1/admin/tenant/export`
+- `POST /v1/admin/tenant/deletion-request`
 - `GET /v1/admin/control-plane-integrity`
 - `POST /v1/admin/retention/purge`
 - `GET /healthz`, `GET /readyz`, `GET /dashboard`
 
+## Tenant lifecycle and deletion
+
+An authenticated tenant admin can inspect lifecycle status, download a
+value-safe complete export, and request deletion. The request body must contain
+`confirm_tenant_id` exactly matching the authenticated tenant. A successful
+request moves the tenant to `deletion_pending`; validation and ordinary control
+routes then fail with HTTP 423 while lifecycle inspection and export remain
+available.
+
+When shared control state is configured, the request synchronizes the local
+SQLite projection and shared PostgreSQL lifecycle. It updates local state first
+and restores the prior signed local lifecycle if the shared transaction fails.
+The offline operator still requires both stores to report `deletion_pending`
+before deletion.
+
+Suspension, cancellation, resumption and irreversible deletion are offline
+operator actions. Stop every managed-service instance first. Supply the master
+secret and optional PostgreSQL URLs through environment variables or
+owner-readable secret files, never command-line arguments:
+
+```bash
+npm run managed:tenant -- inspect --tenant-id TENANT
+npm run managed:tenant -- transition --tenant-id TENANT --status suspended --service-state stopped
+npm run managed:tenant -- export --tenant-id TENANT --output /owner-only/path/tenant-export.json
+npm run managed:tenant -- delete --tenant-id TENANT --confirmation-file /owner-only/path/deletion-confirmation.json --service-state stopped
+```
+
+The deletion confirmation file must name the exact tenant and current local and,
+when configured, shared export hashes. The operator refuses deletion unless
+both stores are `deletion_pending`, the hashes still match, and shared control
+and action state use the same PostgreSQL pool. Successful deletion removes
+tenant-owned managed/shared rows but retains a pseudonymous HMAC-bound receipt.
+The independent anchor intentionally retains value-free monotonic checkpoints;
+the owner must define the legal retention period for those records.
+
 ## Honest external boundary
 
-No payment is collected and no public endpoint or TLS certificate is
-provisioned. The generic alert transport and dedicated checkpoint-anchor
-transport are implemented and locally tested, but no native email/chat provider
-or independently deployed receiver is configured by this
-repository. The billing statement returns `payment_processing: integration_required`;
+No payment is collected. A publicly trusted staging endpoint is deployed at
+`api.akriven.com` for production-readiness verification, but it is not approved
+for customer data, customer action traffic, or an SLA. The generic alert
+transport and dedicated checkpoint-anchor transport are implemented; the
+checkpoint receiver is independently deployed and outage-tested, while no
+owned customer notification receiver or native email/chat provider is
+configured. The billing statement returns `payment_processing: integration_required`;
 alerts persist in the database, optional local JSONL file, and transactional
 webhook outbox. The current intelligence corpus is composed of
 repository fixtures and locally submitted value-free signatures and conformance

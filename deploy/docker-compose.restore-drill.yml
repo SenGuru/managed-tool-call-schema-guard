@@ -1,0 +1,11 @@
+services:
+  schema-guard-postgres-volume-init:
+    restart: 'no'
+
+  schema-guard-postgres:
+    restart: 'no'
+
+  schema-guard-managed:
+    restart: 'no'
+    ports: !override
+      - '127.0.0.1:18788:8788'

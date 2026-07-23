@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+work/
+.codex-work/
+outputs/
+
+# The marketing site is an independent nested project with its own formatter,
+# lint, build, and test gates.
+website/
+
+# Generated deployment evidence must remain byte-for-byte as emitted.
+audit-results/*.cdx.json

@@ -28,7 +28,9 @@ Content-Type: application/json
 ```
 
 3. Review `GET /v1/schema-releases/verify` and the environment-filtered release
-   list.
+   list with a `read:environment` key. A promoter that must perform this review
+   needs both `promote:schema` and `read:environment`; the read routes do not
+   grant promotion authority.
 4. Change the environment to enforcement mode:
 
 ```http

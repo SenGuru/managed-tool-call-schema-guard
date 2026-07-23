@@ -1,0 +1,19 @@
+[Unit]
+Description=Akriven anchor encrypted off-machine backup
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/local/sbin/akriven-backup-anchor
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/run /var/lib/akriven-backup-anchor
+NoNewPrivileges=true
+UMask=0077

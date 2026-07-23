@@ -172,6 +172,7 @@ describe('managed schema releases', () => {
         .listEnvironments(principal)
         .find((environment) => environment.name === 'production')!;
       const validator = service.store.issueApiKey(principal, ['validate']);
+      const environmentReader = service.store.issueApiKey(principal, ['read:environment']);
       await new Promise<void>((resolve) => service.server.listen(0, '127.0.0.1', resolve));
       const address = service.server.address();
       if (!address || typeof address === 'string') throw new Error('missing server address');
@@ -188,6 +189,18 @@ describe('managed schema releases', () => {
             method: 'POST',
             headers: {
               authorization: `Bearer ${validator.api_key}`,
+              'content-type': 'application/json',
+            },
+            body: promotionBody,
+          })
+        ).status,
+      ).toBe(403);
+      expect(
+        (
+          await fetch(`${base}/v1/schema-releases`, {
+            method: 'POST',
+            headers: {
+              authorization: `Bearer ${environmentReader.api_key}`,
               'content-type': 'application/json',
             },
             body: promotionBody,
@@ -215,13 +228,13 @@ describe('managed schema releases', () => {
       expect(
         (
           (await fetch(`${base}/v1/schema-releases?environment=production`, {
-            headers: { authorization: 'Bearer admin-a' },
+            headers: { authorization: `Bearer ${environmentReader.api_key}` },
           }).then((response) => response.json())) as { releases: unknown[] }
         ).releases,
       ).toHaveLength(1);
       expect(
         await fetch(`${base}/v1/schema-releases/verify`, {
-          headers: { authorization: 'Bearer admin-a' },
+          headers: { authorization: `Bearer ${environmentReader.api_key}` },
         }).then((response) => response.json()),
       ).toEqual({ valid: true, checked: 1 });
       const validate = (schema: object, raw_arguments: object) =>

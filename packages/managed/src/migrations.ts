@@ -385,4 +385,24 @@ export const migrations = [
         ON checkpoint_anchor_deliveries(tenant_id, revision DESC);
     `,
   },
+  {
+    version: 15,
+    sql: `
+      CREATE TABLE tenant_lifecycle (
+        tenant_id TEXT PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+        status TEXT NOT NULL
+          CHECK(status IN ('active','suspended','canceled','deletion_pending')),
+        reason_code TEXT,
+        deletion_requested_at TEXT,
+        updated_at TEXT NOT NULL,
+        control_hmac TEXT NOT NULL
+      );
+      CREATE TABLE tenant_deletion_receipts (
+        tenant_ref TEXT PRIMARY KEY,
+        export_sha256 TEXT NOT NULL,
+        deleted_at TEXT NOT NULL,
+        receipt_hmac TEXT NOT NULL
+      );
+    `,
+  },
 ] as const;

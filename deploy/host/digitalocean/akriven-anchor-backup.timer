@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Akriven anchor backup daily
+
+[Timer]
+OnCalendar=*-*-* 02:45:00 UTC
+RandomizedDelaySec=15m
+Persistent=true
+AccuracySec=1m
+Unit=akriven-anchor-backup.service
+
+[Install]
+WantedBy=timers.target

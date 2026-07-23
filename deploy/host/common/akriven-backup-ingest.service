@@ -1,0 +1,12 @@
+[Unit]
+Description=Ingest Akriven SFTP backups into root-owned archive
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/local/sbin/akriven-backup-ingest
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/akriven-backups
+NoNewPrivileges=true

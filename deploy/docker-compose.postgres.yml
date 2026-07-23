@@ -1,0 +1,88 @@
+services:
+  schema-guard-postgres-volume-init:
+    image: schema-guard-postgres:16.14-alpine-hardened
+    user: '0:0'
+    entrypoint: ['sh', '-c']
+    command: ['chown -R 999:999 /var/lib/postgresql/data']
+    network_mode: none
+    volumes:
+      - schema-guard-postgres-data-alpine:/var/lib/postgresql/data
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+
+  schema-guard-postgres:
+    image: schema-guard-postgres:16.14-alpine-hardened
+    restart: unless-stopped
+    user: '999:999'
+    environment:
+      POSTGRES_DB: schema_guard
+      POSTGRES_USER: schema_guard
+      POSTGRES_PASSWORD_FILE: /run/secrets/schema_guard_postgres_password
+      PGDATA: /var/lib/postgresql/data/pgdata
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/run/postgres-tls/server.crt
+      - -c
+      - ssl_key_file=/run/postgres-tls/server.key
+      - -c
+      - ssl_ca_file=/run/postgres-tls/ca.crt
+      - -c
+      - password_encryption=scram-sha-256
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - max_connections=100
+    secrets:
+      - schema_guard_postgres_password
+    volumes:
+      - schema-guard-postgres-data-alpine:/var/lib/postgresql/data
+      - ${SCHEMA_GUARD_POSTGRES_TLS_DIRECTORY}:/run/postgres-tls:ro
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /var/run/postgresql:size=16m,uid=999,gid=999,mode=3775
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 2g
+    shm_size: 256m
+    stop_grace_period: 60s
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U schema_guard -d schema_guard']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
+    depends_on:
+      schema-guard-postgres-volume-init:
+        condition: service_completed_successfully
+
+  schema-guard-managed:
+    environment:
+      NODE_EXTRA_CA_CERTS: /run/secrets/schema_guard_ca_bundle
+    secrets:
+      - schema_guard_ca_bundle
+    depends_on:
+      schema-guard-postgres:
+        condition: service_healthy
+
+volumes:
+  schema-guard-postgres-data-alpine:
+
+secrets:
+  schema_guard_postgres_password:
+    file: ${SCHEMA_GUARD_POSTGRES_PASSWORD_FILE}
+  schema_guard_ca_bundle:
+    file: ${SCHEMA_GUARD_CA_BUNDLE_FILE}

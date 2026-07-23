@@ -1,5 +1,5 @@
 """Thin Python access to the canonical TypeScript Schema Guard engine."""
-from .client import SchemaGuardClient
+from .client import SchemaGuardClient, SchemaGuardServiceError
 from .integrations import (
     SchemaGuardRejectedError,
     google_adk_plugin,
@@ -8,6 +8,7 @@ from .integrations import (
 
 __all__ = [
     "SchemaGuardClient",
+    "SchemaGuardServiceError",
     "SchemaGuardRejectedError",
     "google_adk_plugin",
     "pydantic_ai_capability",

@@ -13,6 +13,15 @@ import type { TransactionalAlertWriter } from './alerts.js';
 import type { SharedObservationContext, TransactionalIntelligenceWriter } from './intelligence.js';
 
 export type SharedPlanId = 'trial' | 'team';
+export type SharedTenantLifecycleStatus = 'active' | 'suspended' | 'canceled' | 'deletion_pending';
+
+export interface SharedTenantLifecycle {
+  status: SharedTenantLifecycleStatus;
+  reason_code: string | null;
+  deletion_requested_at: string | null;
+  updated_at: string;
+}
+
 export type SharedScope =
   | 'validate'
   | 'compile'
@@ -59,6 +68,7 @@ export interface SharedPrincipal {
   monthlyLimit: number;
   retentionDays: number;
   policy: GuardPolicy;
+  lifecycleStatus: SharedTenantLifecycleStatus;
 }
 
 export interface SharedUsage {
@@ -115,6 +125,12 @@ export interface ControlState {
     scopes: SharedScope[],
   ): Promise<{ key_id: string; api_key: string; scopes: SharedScope[] }>;
   revokeApiKey(tenantId: string, currentKeyId: string, keyId: string): Promise<boolean>;
+  tenantLifecycle(tenantId: string): Promise<SharedTenantLifecycle>;
+  updateTenantLifecycle(
+    tenantId: string,
+    status: SharedTenantLifecycleStatus,
+    reasonCode: string | null,
+  ): Promise<SharedTenantLifecycle>;
   updateTenantPolicy(tenantId: string, policy: GuardPolicy): Promise<void>;
   updatePlan(tenantId: string, plan: SharedPlanId): Promise<void>;
   consumeRateLimit(
@@ -163,6 +179,20 @@ type ApiKeyRow = {
   created_at: Date;
   revoked_at: Date | null;
   control_hmac: string;
+};
+type TenantLifecycleRow = {
+  tenant_id: string;
+  status: SharedTenantLifecycleStatus;
+  reason_code: string | null;
+  deletion_requested_at: Date | null;
+  updated_at: Date;
+  control_hmac: string;
+};
+type TenantDeletionReceiptRow = {
+  tenant_ref: string;
+  export_sha256: string;
+  deleted_at: Date;
+  receipt_hmac: string;
 };
 type AuditRow = {
   sequence: string;
@@ -301,6 +331,24 @@ const CONTROL_SCHEMA = `
     ON sg_control_audit_events(tenant_id,sequence DESC);
 `;
 
+const CONTROL_LIFECYCLE_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS sg_tenant_lifecycle (
+    tenant_id TEXT PRIMARY KEY REFERENCES sg_control_tenants(id) ON DELETE CASCADE,
+    status TEXT NOT NULL
+      CHECK(status IN ('active','suspended','canceled','deletion_pending')),
+    reason_code TEXT,
+    deletion_requested_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL,
+    control_hmac TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS sg_tenant_deletion_receipts (
+    tenant_ref TEXT PRIMARY KEY,
+    export_sha256 TEXT NOT NULL,
+    deleted_at TIMESTAMPTZ NOT NULL,
+    receipt_hmac TEXT NOT NULL
+  );
+`;
+
 export class PostgresControlState implements ControlState {
   readonly pool: Pool;
   private readonly ownsPool: boolean;
@@ -367,6 +415,17 @@ export class PostgresControlState implements ControlState {
       revoked_at: row.revoked_at,
     };
   }
+  private tenantLifecycleUnsigned(
+    row: TenantLifecycleRow,
+  ): Omit<TenantLifecycleRow, 'control_hmac'> {
+    return {
+      tenant_id: row.tenant_id,
+      status: row.status,
+      reason_code: row.reason_code,
+      deletion_requested_at: row.deletion_requested_at,
+      updated_at: row.updated_at,
+    };
+  }
 
   private tenantHmac(row: Omit<TenantRow, 'control_hmac'>): string {
     return hmac(this.masterSecret, 'shared-managed-tenant-control-v1', {
@@ -381,6 +440,20 @@ export class PostgresControlState implements ControlState {
       rate_window_started_at: row.rate_window_started_at.toISOString(),
       created_at: row.created_at.toISOString(),
       revoked_at: row.revoked_at?.toISOString() ?? null,
+    });
+  }
+  private tenantLifecycleHmac(row: Omit<TenantLifecycleRow, 'control_hmac'>): string {
+    return hmac(this.masterSecret, 'shared-managed-tenant-lifecycle-control-v1', {
+      ...row,
+      deletion_requested_at: row.deletion_requested_at?.toISOString() ?? null,
+      updated_at: row.updated_at.toISOString(),
+    });
+  }
+  private tenantDeletionReceiptHmac(row: Omit<TenantDeletionReceiptRow, 'receipt_hmac'>): string {
+    return hmac(this.masterSecret, 'shared-managed-tenant-deletion-receipt-v1', {
+      tenant_ref: row.tenant_ref,
+      export_sha256: row.export_sha256,
+      deleted_at: row.deleted_at.toISOString(),
     });
   }
   private auditAnchorHmac(row: Omit<AuditAnchorRow, 'control_hmac'>): string {
@@ -500,6 +573,30 @@ export class PostgresControlState implements ControlState {
     if (!equal(row.control_hmac, this.apiKeyHmac(unsigned)))
       throw new SharedStateIntegrityError('shared API key control integrity failed');
     this.parseScopes(row.scopes_json);
+  }
+  private assertTenantLifecycle(row: TenantLifecycleRow): void {
+    if (
+      !equal(row.control_hmac, this.tenantLifecycleHmac(this.tenantLifecycleUnsigned(row))) ||
+      !['active', 'suspended', 'canceled', 'deletion_pending'].includes(row.status) ||
+      (row.reason_code !== null && !/^[a-z0-9][a-z0-9_.-]{0,63}$/u.test(row.reason_code)) ||
+      (row.status === 'deletion_pending') !== (row.deletion_requested_at !== null)
+    )
+      throw new SharedStateIntegrityError('shared tenant lifecycle integrity failed');
+  }
+  private assertTenantDeletionReceipt(row: TenantDeletionReceiptRow): void {
+    if (
+      !equal(
+        row.receipt_hmac,
+        this.tenantDeletionReceiptHmac({
+          tenant_ref: row.tenant_ref,
+          export_sha256: row.export_sha256,
+          deleted_at: row.deleted_at,
+        }),
+      ) ||
+      !/^hmac-sha256:[0-9a-f]{64}$/u.test(row.tenant_ref) ||
+      !/^sha256:[0-9a-f]{64}$/u.test(row.export_sha256)
+    )
+      throw new SharedStateIntegrityError('shared tenant deletion receipt integrity failed');
   }
   private parsePolicy(value: string): GuardPolicy {
     try {
@@ -629,17 +726,54 @@ export class PostgresControlState implements ControlState {
       );
       await client.query(CONTROL_SCHEMA);
       const checksum = sha256(CONTROL_SCHEMA);
+      const lifecycleChecksum = sha256(CONTROL_LIFECYCLE_SCHEMA);
       const rows = await client.query<{ version: number; checksum: string }>(
         'SELECT version,checksum FROM sg_control_schema_migrations ORDER BY version',
       );
-      if (rows.rows.some((row) => row.version !== 1 || row.checksum !== checksum))
+      const expectedChecksums = new Map([
+        [1, checksum],
+        [2, lifecycleChecksum],
+      ]);
+      if (
+        rows.rows.some(
+          (row) =>
+            !expectedChecksums.has(row.version) ||
+            expectedChecksums.get(row.version) !== row.checksum,
+        )
+      )
         throw new SharedStateIntegrityError('shared control migration history is incompatible');
-      if (rows.rows.length === 0)
+      if (!rows.rows.some((row) => row.version === 1))
         await client.query(
           `INSERT INTO sg_control_schema_migrations(version,migration_name,checksum,applied_at)
            VALUES(1,'initial_managed_control_state',$1,$2)`,
           [checksum, new Date()],
         );
+      await client.query(CONTROL_LIFECYCLE_SCHEMA);
+      if (!rows.rows.some((row) => row.version === 2)) {
+        const timestamp = new Date();
+        const tenants = await client.query<{ id: string }>(
+          'SELECT id FROM sg_control_tenants ORDER BY id FOR UPDATE',
+        );
+        for (const tenant of tenants.rows) {
+          const unsigned: Omit<TenantLifecycleRow, 'control_hmac'> = {
+            tenant_id: tenant.id,
+            status: 'active',
+            reason_code: null,
+            deletion_requested_at: null,
+            updated_at: timestamp,
+          };
+          await client.query(
+            `INSERT INTO sg_tenant_lifecycle(tenant_id,status,reason_code,deletion_requested_at,updated_at,control_hmac)
+             VALUES($1,$2,$3,$4,$5,$6)`,
+            [...Object.values(unsigned), this.tenantLifecycleHmac(unsigned)],
+          );
+        }
+        await client.query(
+          `INSERT INTO sg_control_schema_migrations(version,migration_name,checksum,applied_at)
+           VALUES(2,'tenant_lifecycle',$1,$2)`,
+          [lifecycleChecksum, timestamp],
+        );
+      }
     });
   }
 
@@ -651,11 +785,23 @@ export class PostgresControlState implements ControlState {
       const tenants = await client.query<TenantRow>('SELECT * FROM sg_control_tenants');
       for (const tenant of tenants.rows) {
         this.assertTenant(tenant);
+        const lifecycle = (
+          await client.query<TenantLifecycleRow>(
+            'SELECT * FROM sg_tenant_lifecycle WHERE tenant_id=$1',
+            [tenant.id],
+          )
+        ).rows[0];
+        if (!lifecycle) throw new SharedStateIntegrityError('shared tenant lifecycle is missing');
+        this.assertTenantLifecycle(lifecycle);
         if (!(await this.verifyAuditWithClient(client, tenant.id)).valid)
           throw new SharedStateIntegrityError('shared audit readiness failed');
       }
       const keys = await client.query<ApiKeyRow>('SELECT * FROM sg_control_api_keys');
       for (const key of keys.rows) this.assertApiKey(key);
+      const receipts = await client.query<TenantDeletionReceiptRow>(
+        'SELECT * FROM sg_tenant_deletion_receipts',
+      );
+      for (const receipt of receipts.rows) this.assertTenantDeletionReceipt(receipt);
       await client.query('COMMIT');
       return true;
     } catch {
@@ -727,6 +873,29 @@ export class PostgresControlState implements ControlState {
            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
           [...Object.values(unsigned), this.tenantHmac(unsigned)],
         );
+      }
+      if (!existing) {
+        const lifecycle: Omit<TenantLifecycleRow, 'control_hmac'> = {
+          tenant_id: input.id,
+          status: 'active',
+          reason_code: null,
+          deletion_requested_at: null,
+          updated_at: timestamp,
+        };
+        await client.query(
+          `INSERT INTO sg_tenant_lifecycle(tenant_id,status,reason_code,deletion_requested_at,updated_at,control_hmac)
+           VALUES($1,$2,$3,$4,$5,$6)`,
+          [...Object.values(lifecycle), this.tenantLifecycleHmac(lifecycle)],
+        );
+      } else {
+        const lifecycle = (
+          await client.query<TenantLifecycleRow>(
+            'SELECT * FROM sg_tenant_lifecycle WHERE tenant_id=$1 FOR UPDATE',
+            [input.id],
+          )
+        ).rows[0];
+        if (!lifecycle) throw new SharedStateIntegrityError('shared tenant lifecycle is missing');
+        this.assertTenantLifecycle(lifecycle);
       }
       if (!existing) {
         const manifest: Omit<AuditManifestRow, 'control_hmac'> = {
@@ -810,12 +979,21 @@ export class PostgresControlState implements ControlState {
         tenant_created_at: Date;
         tenant_updated_at: Date;
         tenant_control_hmac: string;
+        lifecycle_status: SharedTenantLifecycleStatus;
+        lifecycle_reason_code: string | null;
+        lifecycle_deletion_requested_at: Date | null;
+        lifecycle_updated_at: Date;
+        lifecycle_control_hmac: string;
       }
     >(
       `SELECT k.*,t.name tenant_name,t.plan,t.monthly_limit,t.retention_days,t.policy_json,t.usage_month,
               t.validation_count,t.repair_count,t.rejection_count,t.drift_count,t.created_at tenant_created_at,
-              t.updated_at tenant_updated_at,t.control_hmac tenant_control_hmac
+              t.updated_at tenant_updated_at,t.control_hmac tenant_control_hmac,
+              l.status lifecycle_status,l.reason_code lifecycle_reason_code,
+              l.deletion_requested_at lifecycle_deletion_requested_at,
+              l.updated_at lifecycle_updated_at,l.control_hmac lifecycle_control_hmac
        FROM sg_control_api_keys k JOIN sg_control_tenants t ON t.id=k.tenant_id
+       JOIN sg_tenant_lifecycle l ON l.tenant_id=t.id
        WHERE k.key_hash=$1 AND k.revoked_at IS NULL`,
       [hashApiKey(this.masterSecret, apiKey)],
     );
@@ -839,6 +1017,15 @@ export class PostgresControlState implements ControlState {
       control_hmac: row.tenant_control_hmac,
     };
     this.assertTenant(tenant);
+    const lifecycle: TenantLifecycleRow = {
+      tenant_id: tenant.id,
+      status: row.lifecycle_status,
+      reason_code: row.lifecycle_reason_code,
+      deletion_requested_at: row.lifecycle_deletion_requested_at,
+      updated_at: row.lifecycle_updated_at,
+      control_hmac: row.lifecycle_control_hmac,
+    };
+    this.assertTenantLifecycle(lifecycle);
     return {
       tenantId: tenant.id,
       tenantName: tenant.name,
@@ -848,6 +1035,7 @@ export class PostgresControlState implements ControlState {
       monthlyLimit: tenant.monthly_limit,
       retentionDays: tenant.retention_days,
       policy: this.parsePolicy(tenant.policy_json),
+      lifecycleStatus: lifecycle.status,
     };
   }
 
@@ -904,6 +1092,73 @@ export class PostgresControlState implements ControlState {
         [updated.revoked_at, this.apiKeyHmac(updated), tenantId, keyId],
       );
       return true;
+    });
+  }
+
+  async tenantLifecycle(tenantId: string): Promise<SharedTenantLifecycle> {
+    const row = (
+      await this.pool.query<TenantLifecycleRow>(
+        'SELECT * FROM sg_tenant_lifecycle WHERE tenant_id=$1',
+        [tenantId],
+      )
+    ).rows[0];
+    if (!row) throw new SharedStateIntegrityError('shared tenant lifecycle is missing');
+    this.assertTenantLifecycle(row);
+    return {
+      status: row.status,
+      reason_code: row.reason_code,
+      deletion_requested_at: row.deletion_requested_at?.toISOString() ?? null,
+      updated_at: row.updated_at.toISOString(),
+    };
+  }
+
+  async updateTenantLifecycle(
+    tenantId: string,
+    status: SharedTenantLifecycleStatus,
+    reasonCode: string | null,
+  ): Promise<SharedTenantLifecycle> {
+    if (
+      !['active', 'suspended', 'canceled', 'deletion_pending'].includes(status) ||
+      (reasonCode !== null && !/^[a-z0-9][a-z0-9_.-]{0,63}$/u.test(reasonCode))
+    )
+      throw new TypeError('shared tenant lifecycle input is invalid');
+    return this.transaction(async (client) => {
+      const existing = (
+        await client.query<TenantLifecycleRow>(
+          'SELECT * FROM sg_tenant_lifecycle WHERE tenant_id=$1 FOR UPDATE',
+          [tenantId],
+        )
+      ).rows[0];
+      if (!existing) throw new SharedStateIntegrityError('shared tenant lifecycle is missing');
+      this.assertTenantLifecycle(existing);
+      const timestamp = new Date();
+      const unsigned: Omit<TenantLifecycleRow, 'control_hmac'> = {
+        tenant_id: tenantId,
+        status,
+        reason_code: reasonCode,
+        deletion_requested_at:
+          status === 'deletion_pending' ? (existing.deletion_requested_at ?? timestamp) : null,
+        updated_at: timestamp,
+      };
+      await client.query(
+        `UPDATE sg_tenant_lifecycle
+         SET status=$1,reason_code=$2,deletion_requested_at=$3,updated_at=$4,control_hmac=$5
+         WHERE tenant_id=$6`,
+        [
+          unsigned.status,
+          unsigned.reason_code,
+          unsigned.deletion_requested_at,
+          unsigned.updated_at,
+          this.tenantLifecycleHmac(unsigned),
+          tenantId,
+        ],
+      );
+      return {
+        status,
+        reason_code: reasonCode,
+        deletion_requested_at: unsigned.deletion_requested_at?.toISOString() ?? null,
+        updated_at: timestamp.toISOString(),
+      };
     });
   }
 

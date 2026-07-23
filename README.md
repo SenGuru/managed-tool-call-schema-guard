@@ -152,9 +152,46 @@ documented in [`docs/CHECKPOINT_ANCHORS.md`](docs/CHECKPOINT_ANCHORS.md).
 
 The bootstrap command prints the API key once; only an HMAC-derived verifier is stored. Open `http://127.0.0.1:8788/dashboard`, or call the managed endpoint with `Authorization: Bearer <key>`.
 
-Managed routes include validation, contract compilation, schema registration/drift, reviewed environment promotion and runtime schema admission, action classification/approval/idempotency, checkpoint-anchor delivery operations, idempotent conformance-summary ingestion, audit history and CSV export, chain verification, tenant and privacy-thresholded network intelligence, usage/billing statements, alerts and durable HTTPS webhook delivery, signed rulesets, API-key lifecycle, organization policy, plan control, and retention purge. See [`docs/MANAGED_LOCAL.md`](docs/MANAGED_LOCAL.md), [`docs/SCHEMA_RELEASES.md`](docs/SCHEMA_RELEASES.md), [`docs/CHECKPOINT_ANCHORS.md`](docs/CHECKPOINT_ANCHORS.md), and [`docs/ALERT_WEBHOOKS.md`](docs/ALERT_WEBHOOKS.md).
+In public mode or with shared PostgreSQL control state, bootstrap is
+operator-offline only: stop the managed service, add `--service-state stopped`,
+then restart and verify `/readyz`. The command refuses an online-style
+public/shared invocation. This is not a substitute for hosted self-serve
+organization provisioning.
 
-This is the local finished-product-spine walkthrough: bootstrap a tenant, protect validation with an API key, register evolving schemas, exercise repair and rejection cases, inspect the signed audit trail and drift alerts, review privacy-thresholded compatibility signals, and export operational evidence. It demonstrates the implemented product workflow end to end on one machine. Payment collection, a configured and deployment-tested notification receiver, public ingress, cloud key management, and multi-region recovery remain integration work and are not simulated as successful.
+Managed routes include validation, contract compilation, schema
+registration/drift, reviewed environment promotion and runtime schema
+admission, action classification/approval/idempotency, checkpoint-anchor
+delivery operations, idempotent conformance-summary ingestion, audit history
+and CSV export, chain verification, tenant and privacy-thresholded network
+intelligence, usage/billing statements, alerts and durable HTTPS webhook
+delivery, signed rulesets, API-key lifecycle, organization policy, plan control,
+tenant lifecycle/complete export/deletion request, and retention purge. See
+[`docs/MANAGED_LOCAL.md`](docs/MANAGED_LOCAL.md),
+[`docs/SCHEMA_RELEASES.md`](docs/SCHEMA_RELEASES.md),
+[`docs/CHECKPOINT_ANCHORS.md`](docs/CHECKPOINT_ANCHORS.md), and
+[`docs/ALERT_WEBHOOKS.md`](docs/ALERT_WEBHOOKS.md).
+
+The CLI can inspect the daily managed read surfaces without placing a bearer key
+in the process list. Materialize a scoped key as an owner-only secret file, then
+select a resource:
+
+```bash
+npm run schemaguard -- managed \
+  --base-url https://api.example.com \
+  --api-key-file /run/secrets/schema_guard_reader_key \
+  --resource usage
+```
+
+Supported resources are `usage`, `audits`, `audit-verification`, `alerts`,
+`environments`, `intelligence`, `billing-statement`, `schema-releases`,
+`schema-release-verification`, `control-plane-integrity`, `tenant-lifecycle`,
+and `tenant-export`. `managed-request-deletion` requires an exact tenant ID.
+The TypeScript SDK exposes the same daily read workflow plus schema
+registration, API-key issue/revoke, action controls, releases, webhook
+operations, lifecycle/export, and deletion request. The Python client accepts
+`api_key=` and exposes the same lifecycle/export/deletion workflow.
+
+This is the local finished-product-spine walkthrough: bootstrap a tenant, protect validation with an API key, register evolving schemas, exercise repair and rejection cases, inspect the signed audit trail and drift alerts, review privacy-thresholded compatibility signals, and export operational evidence. It demonstrates the implemented product workflow end to end on one machine. A public staging ingress is now under production-readiness verification, but payment collection, hosted identity, a configured and deployment-tested customer notification receiver, cloud key management, and multi-region recovery remain integration work and are not simulated as successful.
 
 Protocol JSON Schemas live in [`protocol/v1`](protocol/v1). See
 [`docs/CONTRACT_COMPILER.md`](docs/CONTRACT_COMPILER.md),
@@ -178,6 +215,21 @@ cp deploy/env.production.example .env.production
 docker compose --env-file .env.production -f deploy/docker-compose.production.yml up --build
 ```
 
+For direct public TLS termination on the reviewed host, layer the pinned,
+non-root Caddy edge profile on top after DNS is correct and the owner has
+approved the public transition:
+
+```bash
+docker compose --env-file .env.production \
+  -f deploy/docker-compose.production.yml \
+  -f deploy/docker-compose.edge.yml up --build
+```
+
+The independent anchor has a matching `docker-compose.anchor-edge.yml` overlay.
+Do not run the main and anchor overlays on the same host or under the same
+backup/administrative failure domain. The base profiles retain loopback-only
+ports for local diagnostics; they are not public listeners.
+
 Run the severe release gate before any public deployment:
 
 ```bash
@@ -188,10 +240,12 @@ The severe gate includes self-contained managed backup/restore verification and
 a 2,000-request managed HTTP load/correctness threshold. Operator procedures are
 in [`docs/OPERATIONS_RUNBOOK.md`](docs/OPERATIONS_RUNBOOK.md).
 
-See [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md). Public mode
-does not fake missing business infrastructure: payment settlement, hosted signup,
-a configured/tested alert receiver, backup automation, and real provider-version
-probe fleet operation still require explicit production configuration.
+See [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md) and the
+[2026-07-23 production-readiness handoff](docs/PRODUCTION_READINESS_HANDOFF_2026-07-23.md).
+Public mode does not fake missing business infrastructure: payment settlement,
+hosted human identity, an owned external paging receiver, KMS custody, and live
+provider-version probe operation still require explicit production
+configuration.
 
 Run the licensed public-data replay independently:
 
@@ -218,8 +272,8 @@ ToolBench, StableToolBench, ToolAlpaca, Seal-Tools, and API-Bank. Their native
 artifacts cover result trees paired with advertised tool schemas, instruction
 traces, OpenAPI contracts with golden actions, explicit tool/call JSONL, and API
 class contracts paired with dialogue calls. The audit currently replays 7,699
-recorded calls; 7,564 conform to their benchmark-provided contracts, while 135
-source-contract conflicts remain visible. It then applies 30,155 deterministic
+recorded calls; 7,575 conform to their benchmark-provided contracts, while 124
+source-contract conflicts remain visible. It then applies 30,203 deterministic
 encoding, malformed-input, injection, required-field, and safe-coercion checks,
 all of which match. Downloaded benchmark code and dependencies are never
 executed. Together with BFCL above, this is coverage across six purpose-built
@@ -332,8 +386,9 @@ customer production corpus; current compatibility signals come from checked-in
 fixtures and locally generated privacy-safe signatures. Drift classification is
 structural, not learned from observed runtime outcomes. The managed control plane
 is still partly local: hosted human identity/organization membership,
-payment-provider settlement, TLS/public ingress, receiver-specific email/Slack
-delivery, cloud KMS and key rotation, removal of the remaining single-instance
+payment-provider settlement, owned external paging and certificate-renewal
+monitoring, receiver-specific email/Slack delivery, cloud KMS and key rotation,
+removal of the remaining single-instance
 projection boundaries, and multi-region availability still require explicitly
 chosen external infrastructure. They are labeled `integration_required`, not
 mocked as complete. The public-server decision and required evidence are tracked

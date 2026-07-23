@@ -2,6 +2,7 @@ import { chmod, mkdtemp, stat, writeFile } from 'node:fs/promises';
 import { request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Script } from 'node:vm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { validateToolCall, verifyRepairReceipt } from '../packages/core/src/index.js';
 import { createManagedServer, validateManagedConfig } from '../packages/managed/src/server.js';
@@ -580,9 +581,48 @@ describe('managed local control plane', () => {
     const dashboardBody = await dashboard.text();
     expect(dashboardBody).toContain('src="/dashboard/app.js"');
     expect(dashboardBody).toContain('href="/dashboard/app.css"');
+    expect(dashboardBody).toContain('Tenant lifecycle');
+    expect(dashboardBody).toContain('Download tenant export');
+    expect(dashboardBody).toContain('Managed API workbench');
+    expect(dashboardBody).toContain('Control-plane integrity');
+    expect(dashboardBody).toContain('I reviewed this exact request and authorize this mutation.');
     const dashboardScript = await fetch(`${base}/dashboard/app.js`);
     expect(dashboardScript.status).toBe(200);
-    expect(await dashboardScript.text()).toContain("clearPanels();q('status').className=''");
+    const dashboardJavaScript = await dashboardScript.text();
+    expect(() => new Script(dashboardJavaScript)).not.toThrow();
+    expect(dashboardJavaScript).toContain("clearPanels();q('status').className=''");
+    expect(dashboardJavaScript).toContain("get('/v1/admin/tenant/lifecycle')");
+    expect(dashboardJavaScript).toContain("get('/v1/admin/tenant/export')");
+    expect(dashboardJavaScript).toContain("get('/v1/admin/control-plane-integrity')");
+    expect(dashboardJavaScript).toContain("get('/v1/actions/reconciliation/verify')");
+    expect(dashboardJavaScript).toContain("get('/v1/alert-webhooks/deliveries?limit=100')");
+    expect(dashboardJavaScript).toContain("getOptional('/v1/rulesets/latest')");
+    expect(dashboardJavaScript).toContain(
+      "throw new Error('Confirm this mutation before executing')",
+    );
+    expect(dashboardJavaScript).toContain(
+      "throw new Error('Replace every JSON placeholder before execution')",
+    );
+    for (const endpoint of [
+      '/v1/validate',
+      '/v1/contracts/compile',
+      '/v1/schemas',
+      '/v1/schema-releases',
+      '/v1/admin/environments',
+      '/v1/admin/actions/descriptors',
+      '/v1/actions/challenges',
+      '/v1/actions/evaluate',
+      '/v1/actions/idempotency/complete',
+      '/v1/actions/idempotency/checkpoint/compare',
+      '/v1/actions/reconciliation/{RESERVATION_ID}',
+      '/v1/conformance-runs',
+      '/v1/alert-webhooks',
+      '/v1/admin/rulesets',
+      '/v1/admin/api-keys',
+      '/v1/admin/plan',
+      '/v1/admin/retention/purge',
+    ])
+      expect(dashboardJavaScript, endpoint).toContain(endpoint);
   });
 
   it('does not let validate-only keys read operational or tenant configuration data', async () => {

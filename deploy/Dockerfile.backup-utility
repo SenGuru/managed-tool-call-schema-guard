@@ -1,0 +1,6 @@
+FROM busybox:1.37.0-musl@sha256:222ad6d973c0d198014546a65cd02c5fdedcc172123c5b4c2bf0af636550bd94
+
+# This image is used only as a network-isolated, capability-free archive
+# process against read-only Docker volumes. It intentionally has no service
+# entrypoint, package manager, or writable filesystem requirement.
+ENTRYPOINT ["tar"]

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "generated_by": "scripts/real-repo-corpus-audit.mjs",
-  "generated_at": "2026-07-19T13:24:51.194Z",
+  "generated_at": "2026-07-22T05:13:43.096Z",
   "repos": [
     {
       "id": "mcp-python-sdk",
@@ -12,19 +12,19 @@
     {
       "id": "openai-agents-python",
       "url": "https://github.com/openai/openai-agents-python.git",
-      "head": "173eca4991091a1996cb1c8a0f86ef938a39eb68",
+      "head": "5921667f570aa73a9f1d18b9a4ba0cb6c9549669",
       "signal_count_sampled": 200
     },
     {
       "id": "pydantic-ai",
       "url": "https://github.com/pydantic/pydantic-ai.git",
-      "head": "9688a9cca2fcf81451cdac35e701250dbdfec75e",
+      "head": "24d105d21f779c783c2cd9c60c58b71ceaf125c7",
       "signal_count_sampled": 200
     },
     {
       "id": "google-adk-python",
       "url": "https://github.com/google/adk-python.git",
-      "head": "be5828f317c7430411df29974cd9ccfa875e90de",
+      "head": "c4270203c657d4abb14188b90ed692465f1f36c9",
       "signal_count_sampled": 200
     },
     {
@@ -36,19 +36,19 @@
     {
       "id": "github-mcp-server",
       "url": "https://github.com/github/github-mcp-server.git",
-      "head": "1338dbed4a044ee26422d4212bac3a8037fdb7ff",
+      "head": "9d130049e9074772c2afbbd5e904725d240443ad",
       "signal_count_sampled": 123
     },
     {
       "id": "microsoft-mcp",
       "url": "https://github.com/microsoft/mcp.git",
-      "head": "ec1027d6bb8c8e270a409383b394db52dedc4706",
+      "head": "080990c1dca7fdab7b38cf3ece69a65836aa5d73",
       "signal_count_sampled": 200
     },
     {
       "id": "awslabs-mcp",
       "url": "https://github.com/awslabs/mcp.git",
-      "head": "5806ec09c070d5b8172a007f893a00ed2df41d75",
+      "head": "8a4c4f1345213af7dc211cd7d8c457bf819c1afb",
       "signal_count_sampled": 200
     },
     {
@@ -60,7 +60,7 @@
     {
       "id": "mongodb-mcp-server",
       "url": "https://github.com/mongodb-js/mongodb-mcp-server.git",
-      "head": "6ff848526dc4bb2f12db168a9d7312c302c25eed",
+      "head": "42170de8a82f3aa8a95dbd6ebc5eec3d9d166ca0",
       "signal_count_sampled": 200
     },
     {
@@ -72,7 +72,7 @@
     {
       "id": "browserbase-mcp-server",
       "url": "https://github.com/browserbase/mcp-server-browserbase.git",
-      "head": "1e196b3d3c4dc70944e0d19038dd9eb3608b207a",
+      "head": "3e6f53461949037d5e65dd425da3ceb1263f11d6",
       "signal_count_sampled": 114
     },
     {
@@ -90,19 +90,19 @@
     {
       "id": "openai-agents-js",
       "url": "https://github.com/openai/openai-agents-js.git",
-      "head": "710cccfd8fd26b395f8e3470419852d76de80967",
+      "head": "b04baf06313564e40c1879c13d4ee960f02b6167",
       "signal_count_sampled": 200
     },
     {
       "id": "openai-node",
       "url": "https://github.com/openai/openai-node.git",
-      "head": "2706888499a777b47d851aeb479f846f80932765",
+      "head": "39a15b412fc129df15339ebd6e3e6547854aa81f",
       "signal_count_sampled": 200
     },
     {
       "id": "vercel-ai",
       "url": "https://github.com/vercel/ai.git",
-      "head": "6cd7c74acf0d7ec84dd58a841fc0e20970d6f2e8",
+      "head": "66b71512135a0246a9306e97c8847a5d0bcc57ae",
       "signal_count_sampled": 200
     },
     {
@@ -114,13 +114,13 @@
     {
       "id": "semantic-kernel",
       "url": "https://github.com/microsoft/semantic-kernel.git",
-      "head": "c781da134e38acbee57616efc8662d2cfd8130d5",
+      "head": "e15ae168f6d8d67ee95bd6e89d9b67ff9dfc1a4a",
       "signal_count_sampled": 159
     },
     {
       "id": "genai-toolbox",
       "url": "https://github.com/googleapis/genai-toolbox.git",
-      "head": "944f6ce97bc77a92a052de92b88f0fc09ac7578c",
+      "head": "178577d6487449c8e21f95067569025484389d7e",
       "signal_count_sampled": 200
     }
   ],
@@ -373,7 +373,7 @@
       "source_file": "tests/models/test_model_request_parameters.py",
       "adapter": "pydantic_ai",
       "tool_name": "final_result",
-      "source_fingerprint": "sha256:f472718ec6e2fd8836244f69a1bdf7753bebf83bdf6c926a495eacb17886e9f1",
+      "source_fingerprint": "sha256:456ded5367ccb5af6e197cdd996f485a928b59355e219dabe335f541870a8cf0",
       "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
       "probe_decision": "valid",
       "warnings": []
@@ -384,7 +384,7 @@
       "source_file": "tests/models/test_model_request_parameters.py",
       "adapter": "pydantic_ai",
       "tool_name": "final_result",
-      "source_fingerprint": "sha256:f472718ec6e2fd8836244f69a1bdf7753bebf83bdf6c926a495eacb17886e9f1",
+      "source_fingerprint": "sha256:456ded5367ccb5af6e197cdd996f485a928b59355e219dabe335f541870a8cf0",
       "schema_hash": "sha256:efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
       "probe_decision": "valid",
       "warnings": []
@@ -417,7 +417,7 @@
       "source_file": "tests/test_logfire.py",
       "adapter": "pydantic_ai",
       "tool_name": "final_result",
-      "source_fingerprint": "sha256:07886b2451d8ad6a2183797bf8ad74b96f56cd46dd36a7d7a7e44c32895b3f24",
+      "source_fingerprint": "sha256:9f87d03a72db12160aa5c056ee89e47242b19575a5200f4aa978561e198393cf",
       "schema_hash": "sha256:a6a818f81548e36b64c1a2de4e50463977f771130d59c1f8ee7b6864649d6e2e",
       "probe_decision": "valid",
       "warnings": []
@@ -439,7 +439,7 @@
       "source_file": "tests/test_logfire.py",
       "adapter": "pydantic_ai",
       "tool_name": "final_result",
-      "source_fingerprint": "sha256:07886b2451d8ad6a2183797bf8ad74b96f56cd46dd36a7d7a7e44c32895b3f24",
+      "source_fingerprint": "sha256:9f87d03a72db12160aa5c056ee89e47242b19575a5200f4aa978561e198393cf",
       "schema_hash": "sha256:a6a818f81548e36b64c1a2de4e50463977f771130d59c1f8ee7b6864649d6e2e",
       "probe_decision": "valid",
       "warnings": []
@@ -461,7 +461,7 @@
       "source_file": "tests/test_tools.py",
       "adapter": "pydantic_ai",
       "tool_name": "google_style_docstring",
-      "source_fingerprint": "sha256:9193e60104201db0453d81839cb8024b948dbda2f507d34ef248bc28cc574cb7",
+      "source_fingerprint": "sha256:3b2e16505da811d93c2c0de2c8f7248d6a393e2445ac0c548529be8e7654bef5",
       "schema_hash": "sha256:a4cf8bb785b8385d2811c1ad85aac04b0150be785b23802b1b48d8d2d9c3e909",
       "probe_decision": "valid",
       "warnings": []
@@ -472,7 +472,7 @@
       "source_file": "tests/test_tools.py",
       "adapter": "pydantic_ai",
       "tool_name": "sphinx_style_docstring",
-      "source_fingerprint": "sha256:d863391d1147fe8a17cd1acc01dc838216cf0365a94371e7b47fefb60d9fc444",
+      "source_fingerprint": "sha256:009e784f79bd9b6f44be0d885bba33e2294c27ccd896d2c73a714cf418c3efca",
       "schema_hash": "sha256:bfb40b5a6cbb8561bb2fa205aa9ff4303a8dbdd43138c04bb76665478fa70746",
       "probe_decision": "valid",
       "warnings": []
@@ -483,7 +483,7 @@
       "source_file": "tests/test_tools.py",
       "adapter": "pydantic_ai",
       "tool_name": "numpy_style_docstring",
-      "source_fingerprint": "sha256:933456b5076d897a845ff27a640aef527c4829bdabbb8c78d04f461a16a3d8f8",
+      "source_fingerprint": "sha256:9c6ca7c4c0d1a7799693b67c8dc14ebfdfd806ad2121f9527f3caa02a68d4032",
       "schema_hash": "sha256:a4cf8bb785b8385d2811c1ad85aac04b0150be785b23802b1b48d8d2d9c3e909",
       "probe_decision": "valid",
       "warnings": []
@@ -494,7 +494,7 @@
       "source_file": "tests/test_tools.py",
       "adapter": "pydantic_ai",
       "tool_name": "unknown_docstring",
-      "source_fingerprint": "sha256:00b8f78d86ac5d5b55c0e6c2ab9e1f33319466d164ca3e99eddb51abeceb95e5",
+      "source_fingerprint": "sha256:216de8c6743d022bbdccf9cb9d68517e8bff7411261e8cd3555a2b058b3760b3",
       "schema_hash": "sha256:aa3c55afaa05079cb85b1e9c6c0cbcf3d93ddd098d1493b8838c4635c12c8787",
       "probe_decision": "valid",
       "warnings": []
@@ -505,7 +505,7 @@
       "source_file": "tests/test_tools.py",
       "adapter": "pydantic_ai",
       "tool_name": "google_style_docstring_no_body",
-      "source_fingerprint": "sha256:03d707554d4389c62cf762dfc78e5f5ae96cbe2a496557aa7c89d5a757fb4411",
+      "source_fingerprint": "sha256:9956183efa454590790e6038ca4b05cc8535e61f3a07f5669b5201c3a303b270",
       "schema_hash": "sha256:2cfec66a77a64c992e15d6a793d4028a343582bd76781b331b4be02beb4c7da7",
       "probe_decision": "valid",
       "warnings": []
@@ -969,7 +969,7 @@
       "tool_name": "tool1",
       "source_fingerprint": "sha256:6e377f9a00b56ce80ca6be1db152d89decab4eb6b3c7f5f1d7641949e07010e8",
       "schema_hash": "sha256:17309a1902f90252461db9af82afdc400d7dea9d2c4cb274a7b2434f539c0512",
-      "probe_decision": "rejected",
+      "probe_decision": "valid",
       "warnings": []
     },
     {
@@ -980,7 +980,7 @@
       "tool_name": "tool1",
       "source_fingerprint": "sha256:6e377f9a00b56ce80ca6be1db152d89decab4eb6b3c7f5f1d7641949e07010e8",
       "schema_hash": "sha256:17309a1902f90252461db9af82afdc400d7dea9d2c4cb274a7b2434f539c0512",
-      "probe_decision": "rejected",
+      "probe_decision": "valid",
       "warnings": []
     },
     {
@@ -991,7 +991,7 @@
       "tool_name": "rollDie",
       "source_fingerprint": "sha256:8769789018d2c3b52fb2919e3ce544f3b5fb76dc981f2ff0b9080a3c7749fd3e",
       "schema_hash": "sha256:2466ae4ab4edda9e28e85393e71085539f84af86f4bb03a871654f287aeae491",
-      "probe_decision": "rejected",
+      "probe_decision": "valid",
       "warnings": []
     },
     {
@@ -1002,7 +1002,7 @@
       "tool_name": "testTool",
       "source_fingerprint": "sha256:c4634ac6bd82857772b5bc56ddee240e3f13c646bc9c76b229b509aa1a24dafe",
       "schema_hash": "sha256:17309a1902f90252461db9af82afdc400d7dea9d2c4cb274a7b2434f539c0512",
-      "probe_decision": "rejected",
+      "probe_decision": "valid",
       "warnings": []
     },
     {
@@ -1035,7 +1035,7 @@
       "tool_name": "tool1",
       "source_fingerprint": "sha256:003d41641b0c1cc22130349527e8ae9a42bea081b0c426b9a15ff147201b322f",
       "schema_hash": "sha256:a075116639cb635ca8f1aa9e8d72d7dbf79410905888f1847aabe8fbda0f2498",
-      "probe_decision": "rejected",
+      "probe_decision": "valid",
       "warnings": []
     },
     {
@@ -1057,7 +1057,7 @@
       "tool_name": "test-tool",
       "source_fingerprint": "sha256:260d9c14b67e60dee19864a6a44fd03993d71a706c940e525bbddac183d49af1",
       "schema_hash": "sha256:17309a1902f90252461db9af82afdc400d7dea9d2c4cb274a7b2434f539c0512",
-      "probe_decision": "rejected",
+      "probe_decision": "valid",
       "warnings": []
     },
     {
@@ -1167,7 +1167,7 @@
       "tool_name": "test-tool",
       "source_fingerprint": "sha256:291ca4e12d0f753020472a51b91add19b46abaeed2aceaa8447dab6ed24d400b",
       "schema_hash": "sha256:17309a1902f90252461db9af82afdc400d7dea9d2c4cb274a7b2434f539c0512",
-      "probe_decision": "rejected",
+      "probe_decision": "valid",
       "warnings": []
     },
     {

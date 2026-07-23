@@ -1,6 +1,6 @@
 # Enterprise launch gates
 
-Status date: 2026-07-21
+Status date: 2026-07-23
 
 ## Current decision
 
@@ -17,8 +17,8 @@ recovery, or an operated security program.
 - Schema registration, reviewed promotion, enforced admission, exact validation,
   allowlisted repair, ambiguous-input rejection, contract compilation, policy,
   rulesets, conformance ingestion, intelligence, audit verification, retention,
-  API-key issue/revocation, and action controls execute through production
-  containers.
+  API-key issue/revocation, tenant lifecycle/export/deletion locking, and action
+  controls execute through production containers.
 - A high-risk action is not returned as allowed until a separately running
   checkpoint receiver acknowledges the exact signed checkpoint through trusted
   HTTPS.
@@ -32,9 +32,9 @@ recovery, or an operated security program.
   correlation IDs, and privacy-normalized structured access logs.
 - The production images are pinned distroless Node 22 images. The current Trivy
   gate reports zero HIGH/CRITICAL vulnerabilities and zero embedded secrets.
-- The complete credentialed PostgreSQL test suite passes 184 tests. Coverage
-  gates currently pass at 79.34% statements, 73.07% branches, 78.99% functions,
-  and 81.38% lines. Production-container E2E coverage is additional behavioral
+- The complete credentialed PostgreSQL test suite passes 196 tests. Coverage
+  gates currently pass at 79.54% statements, 73.58% branches, 80.91% functions,
+  and 81.48% lines. Production-container E2E coverage is additional behavioral
   evidence and is not included in those source-instrumentation percentages.
 - Runtime integration gates execute MCP SDK, OpenAI Agents, PydanticAI, and
   Google ADK adapters. Repaired integer arguments reach real framework tool
@@ -43,20 +43,20 @@ recovery, or an operated security program.
 
 ## Blocking gates before any public server
 
-| Gate                                   | Current evidence                                                                                                         | Required completion evidence                                                                                                                                                                                                   |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Human identity and organization access | API keys and scopes exist; hosted users do not                                                                           | OIDC-based signup/login, verified email, secure sessions, MFA policy, organization membership, role separation, invitation/recovery flows, CSRF/session tests, and enterprise SSO design                                       |
-| Billing and entitlement authority      | Usage statements exist; payment processing is explicitly `integration_required`                                          | Hosted checkout, customer portal, raw-body webhook signature verification, event replay/idempotency, subscription-state reconciliation, refunds/cancellations, tax decision, and E2E test-mode settlement                      |
-| Multi-instance availability            | Shared PostgreSQL state exists, but `SCHEMA_GUARD_INSTANCE_COUNT>1` deliberately fails                                   | Remove remaining SQLite/local projection boundaries, separate migrations from app startup, run two or more instances, test concurrent traffic, rolling restart, instance loss, database failover, and no split-brain admission |
-| Key custody and rotation               | Secrets can be injected from read-only files                                                                             | Cloud KMS or equivalent envelope encryption, versioned key identifiers, staged rotation, rollback/recovery procedure, and rotation drills without losing tenant integrity                                                      |
-| Backup and disaster recovery           | Self-contained SQLite restore drill and process/database restart tests pass                                              | Automated encrypted off-machine PostgreSQL and anchor backups, point-in-time recovery, independent failure domains, measured RPO/RTO, destructive restore drill, and checkpoint comparison before action traffic resumes       |
-| Production observability               | Structured request logs, health/readiness, delivery state exist                                                          | Metrics for latency/errors/quotas/outbox age/dead letters, dashboards, SLOs, paging routes, synthetic probes, log retention/redaction review, and exercised alerts                                                             |
-| Internet edge                          | Public-mode configuration fails closed                                                                                   | Reviewed DNS/TLS, reverse proxy/WAF limits, trusted-proxy tests, DDoS/rate strategy, body/header limits at the edge, certificate renewal, and external uptime checks                                                           |
-| Security assurance                     | Static lint/security rules, dependency audit, image scan, workflow audit, threat model, adversarial/property tests exist | Independent penetration test, OWASP ASVS verification record, dependency/license review, secret scan in protected CI, incident-response exercise, vulnerability disclosure process, and remediation SLA                        |
-| Provider fleet evidence                | Deterministic fixtures and framework runtimes pass                                                                       | Protected live OpenAI/Anthropic/Gemini probes with pinned model versions, scheduled execution, retained reports, drift alerts, and reviewed failures; no skipped provider is a passing result                                  |
-| Release supply chain                   | Dependencies/images/actions are pinned and release audit is fail-closed                                                  | Registry publishing decision, SBOM and provenance/attestation for the shipped digest, protected environment approval, rollback test, immutable release record, and verified consumer installation                              |
-| Legal and support operations           | Documentation/runbooks exist                                                                                             | Terms, privacy notice, DPA position, subprocessors, retention/deletion policy, security contact, support channel, severity definitions, escalation ownership, and status communication                                         |
-| Market evidence                        | Benchmarks and local failure interception exist                                                                          | Design partners using real workflows, measured intercepted failures and debugging time, willingness-to-pay evidence, retention/usage evidence, and no representation of benchmark success as customer validation               |
+| Gate                                   | Current evidence                                                                                                                                                                                                                  | Required completion evidence                                                                                                                                                                                                   |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Human identity and organization access | API keys and scopes exist; hosted users do not                                                                                                                                                                                    | OIDC-based signup/login, verified email, secure sessions, MFA policy, organization membership, role separation, invitation/recovery flows, CSRF/session tests, and enterprise SSO design                                       |
+| Billing and entitlement authority      | Usage statements exist; payment processing is explicitly `integration_required`                                                                                                                                                   | Hosted checkout, customer portal, raw-body webhook signature verification, event replay/idempotency, subscription-state reconciliation, refunds/cancellations, tax decision, and E2E test-mode settlement                      |
+| Multi-instance availability            | Shared PostgreSQL state exists, but `SCHEMA_GUARD_INSTANCE_COUNT>1` deliberately fails                                                                                                                                            | Remove remaining SQLite/local projection boundaries, separate migrations from app startup, run two or more instances, test concurrent traffic, rolling restart, instance loss, database failover, and no split-brain admission |
+| Key custody and rotation               | Secrets can be injected from read-only files                                                                                                                                                                                      | Cloud KMS or equivalent envelope encryption, versioned key identifiers, staged rotation, rollback/recovery procedure, and rotation drills without losing tenant integrity                                                      |
+| Backup and disaster recovery           | Fresh rotated-recipient backups decrypted/restored; checkpoints/chains and four restored deletion receipts matched; a pre-r3 encrypted ciphertext was verified off-machine; owner accepted daily RPO and attested escrow complete | Prove clean-machine escrow retrieval, add operated failure paging and periodic drills, and use WAL/PITR before promising a tighter RPO                                                                                         |
+| Production observability               | Structured request logs, health/readiness, delivery state exist                                                                                                                                                                   | Metrics for latency/errors/quotas/outbox age/dead letters, dashboards, SLOs, paging routes, synthetic probes, log retention/redaction review, and exercised alerts                                                             |
+| Internet edge                          | `api.akriven.com` has reviewed DNS/TLS, hardened proxy, trusted-proxy/CORS/body-limit tests, restricted ports, and real public E2E                                                                                                | Observe certificate renewal, add independent uptime/paging, approve DDoS/rate strategy, and retain ongoing edge evidence                                                                                                       |
+| Security assurance                     | Static lint/security rules, dependency audit, image scan, workflow audit, threat model, adversarial/property tests exist                                                                                                          | Independent penetration test, OWASP ASVS verification record, dependency/license review, secret scan in protected CI, incident-response exercise, vulnerability disclosure process, and remediation SLA                        |
+| Provider fleet evidence                | Deterministic fixtures and framework runtimes pass                                                                                                                                                                                | Protected live OpenAI/Anthropic/Gemini probes with pinned model versions, scheduled execution, retained reports, drift alerts, and reviewed failures; no skipped provider is a passing result                                  |
+| Release supply chain                   | Dependencies/images/actions are pinned and release audit is fail-closed                                                                                                                                                           | Registry publishing decision, SBOM and provenance/attestation for the shipped digest, protected environment approval, rollback test, immutable release record, and verified consumer installation                              |
+| Legal and support operations           | Sites version 14 publicly serves reviewed terms/privacy/support/security pages and retains explicit pre-launch/no-checkout boundaries                                                                                             | Legal review, DPA/subprocessor position, retention/deletion policy, security-contact ownership, support ownership, severity definitions, escalation, and status communication                                                  |
+| Market evidence                        | Benchmarks and local failure interception exist                                                                                                                                                                                   | Design partners using real workflows, measured intercepted failures and debugging time, willingness-to-pay evidence, retention/usage evidence, and no representation of benchmark success as customer validation               |
 
 ## Required certification sequence
 
@@ -84,6 +84,10 @@ recovery, or an operated security program.
 SCHEMA_GUARD_TEST_POSTGRES_URL=postgresql://... npm run test:coverage
 npm run audit:framework-integrations
 npm run audit:container-e2e
+SCHEMA_GUARD_PUBLIC_E2E_BASE_URL=https://... \
+  SCHEMA_GUARD_PUBLIC_E2E_API_KEY_FILE=/owner-only/path \
+  SCHEMA_GUARD_PUBLIC_E2E_TENANT_ID=audit-... \
+  npm run audit:public-managed
 npm run audit:images
 npm run audit:extreme
 npm run audit:release-candidate -- --output release-candidate-report.json

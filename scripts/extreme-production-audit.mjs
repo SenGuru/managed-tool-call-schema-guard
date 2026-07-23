@@ -3,6 +3,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { redactEvidence } from './evidence-redaction.mjs';
 
 const root = process.cwd();
 const started = Date.now();
@@ -18,8 +19,8 @@ function run(name, command, args, options = {}) {
   });
   evidence[name] = {
     status: result.status,
-    stdout_tail: result.stdout.slice(-4000),
-    stderr_tail: result.stderr.slice(-4000),
+    stdout_tail: redactEvidence(result.stdout.slice(-4000)),
+    stderr_tail: redactEvidence(result.stderr.slice(-4000)),
   };
   if (result.status !== 0) failures.push(`${name} exited ${result.status}`);
   return result;
@@ -137,7 +138,7 @@ try {
   assert((statSync(openAuditFile).mode & 0o077) === 0, 'open API audit file must be owner-only');
 } finally {
   await openApi.stop();
-  evidence.open_api_output = openApi.output().slice(-4000);
+  evidence.open_api_output = redactEvidence(openApi.output().slice(-4000));
 }
 
 const managedDb = join(temp, 'managed.db');
@@ -271,7 +272,7 @@ try {
   assert((statSync(managedDb).mode & 0o077) === 0, 'managed database must be owner-only');
 } finally {
   await managed.stop();
-  evidence.managed_output = managed.output().slice(-4000);
+  evidence.managed_output = redactEvidence(managed.output().slice(-4000));
 }
 
 const report = {

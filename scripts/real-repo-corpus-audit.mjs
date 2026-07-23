@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { lstatSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, extname, join } from 'node:path';
+import { format } from 'prettier';
 import { normalizeTool, validateToolCall } from '../packages/core/dist/index.js';
 
 const manifest = JSON.parse(readFileSync('real-repo-corpus/manifest.json', 'utf8'));
@@ -269,27 +270,21 @@ for (const repo of manifest.repos) {
 }
 
 const out = join(root, 'real-repo-corpus-audit.json');
-writeFileSync(out, `${JSON.stringify(report, null, 2)}\n`);
+writeFileSync(out, await format(JSON.stringify(report), { parser: 'json' }));
 if (fixturesOut) {
-  writeFileSync(
-    fixturesOut,
-    `${JSON.stringify(
-      {
-        version: 1,
-        generated_by: 'scripts/real-repo-corpus-audit.mjs',
-        generated_at: new Date().toISOString(),
-        repos: report.repos.map(({ id, url, head, signal_count_sampled }) => ({
-          id,
-          url,
-          head,
-          signal_count_sampled,
-        })),
-        fixtures: report.extracted_fixtures,
-      },
-      null,
-      2,
-    )}\n`,
-  );
+  const fixtures = {
+    version: 1,
+    generated_by: 'scripts/real-repo-corpus-audit.mjs',
+    generated_at: new Date().toISOString(),
+    repos: report.repos.map(({ id, url, head, signal_count_sampled }) => ({
+      id,
+      url,
+      head,
+      signal_count_sampled,
+    })),
+    fixtures: report.extracted_fixtures,
+  };
+  writeFileSync(fixturesOut, await format(JSON.stringify(fixtures), { parser: 'json' }));
 }
 console.log(
   JSON.stringify(

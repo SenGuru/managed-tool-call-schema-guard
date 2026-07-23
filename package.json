@@ -13,7 +13,7 @@
     "format:check": "prettier --check .",
     "prelint": "npm run build",
     "lint": "eslint .",
-    "check:scripts": "node --check examples/agent-loop/mcp-guard-server.mjs && node --check examples/agent-loop/run-live.mjs && node --check examples/agent-loop/verify-results.mjs && node --check scripts/container-e2e-audit.mjs && node --check scripts/container-vulnerability-audit.mjs && node --check scripts/extreme-production-audit.mjs && node --check scripts/five-repo-native-fixture-audit.mjs && node --check scripts/framework-integration-audit.mjs && node --check scripts/live-provider-probe.mjs && node --check scripts/managed-load-audit.mjs && node --check scripts/managed-recovery-drill.mjs && node --check scripts/multi-benchmark-replay-audit.mjs && node --check scripts/real-data-replay-audit.mjs && node --check scripts/real-repo-corpus-audit.mjs && node --check scripts/release-candidate-audit.mjs",
+    "check:scripts": "node --check examples/agent-loop/mcp-guard-server.mjs && node --check examples/agent-loop/run-live.mjs && node --check examples/agent-loop/verify-results.mjs && node --check scripts/container-e2e-audit.mjs && node --check scripts/container-vulnerability-audit.mjs && node --check scripts/evidence-redaction.mjs && node --check scripts/extreme-production-audit.mjs && node --check scripts/five-repo-native-fixture-audit.mjs && node --check scripts/framework-integration-audit.mjs && node --check scripts/live-provider-probe.mjs && node --check scripts/managed-load-audit.mjs && node --check scripts/managed-recovery-drill.mjs && node --check scripts/multi-benchmark-replay-audit.mjs && node --check scripts/public-anchor-outage-audit.mjs && node --check scripts/public-managed-e2e.mjs && node --check scripts/real-data-replay-audit.mjs && node --check scripts/real-repo-corpus-audit.mjs && node --check scripts/release-candidate-audit.mjs",
     "check:packages": "tsx scripts/check-packages.ts",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
@@ -23,6 +23,8 @@
     "audit:recovery": "npm run build --silent && node scripts/managed-recovery-drill.mjs",
     "audit:managed-load": "npm run build --silent && node scripts/managed-load-audit.mjs",
     "audit:container-e2e": "node scripts/container-e2e-audit.mjs",
+    "audit:public-anchor-outage": "node scripts/public-anchor-outage-audit.mjs",
+    "audit:public-managed": "node scripts/public-managed-e2e.mjs",
     "audit:images": "node scripts/container-vulnerability-audit.mjs",
     "audit:extreme": "node scripts/extreme-production-audit.mjs",
     "audit:release-candidate": "node scripts/release-candidate-audit.mjs",
@@ -42,6 +44,7 @@
     "managed": "npm run build --silent && tsx packages/managed/src/server.ts",
     "anchor-receiver": "npm run build --silent && tsx packages/anchor-receiver/src/server.ts",
     "managed:bootstrap": "npm run build --silent && tsx packages/managed/src/bootstrap.ts",
+    "managed:tenant": "npm run build --silent && tsx packages/managed/src/tenant-operator.ts",
     "agent-test:live": "npm run build --silent && node examples/agent-loop/run-live.mjs",
     "agent-test:verify": "node examples/agent-loop/verify-results.mjs"
   },
@@ -70,5 +73,8 @@
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1"
+  },
+  "overrides": {
+    "@hono/node-server": "2.0.11"
   }
 }

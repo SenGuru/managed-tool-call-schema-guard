@@ -1,0 +1,18 @@
+[Unit]
+Description=Akriven cross-domain readiness, backup and TLS monitor
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/local/sbin/akriven-monitor
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+StateDirectory=akriven-monitor
+StateDirectoryMode=0700
+ReadWritePaths=/var/lib/akriven-monitor
+NoNewPrivileges=true
+UMask=0077

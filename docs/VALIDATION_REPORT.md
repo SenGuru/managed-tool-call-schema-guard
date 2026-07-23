@@ -138,36 +138,35 @@ Date: 2026-07-20
   native schema/call pairing: ToolBench result trees and `available_tools`,
   StableToolBench instruction schemas and answer traces, ToolAlpaca OpenAPI
   documents and golden actions, Seal-Tools tool/call JSONL, and API-Bank class
-  contracts and dialogue calls. Across 7,699 recorded calls, 7,564 conformed to
-  their source contracts and 135 were retained as explicit source-contract
-  conflicts. The conforming calls produced 30,155 JSON-encoding, malformed-JSON,
+  contracts and dialogue calls. Across 7,699 recorded calls, 7,575 conformed to
+  their source contracts and 124 were retained as explicit source-contract
+  conflicts. The conforming calls produced 30,203 JSON-encoding, malformed-JSON,
   closed-schema injection, missing-required, and typed safe-coercion checks with
-  30,155 matches and zero mismatches. ToolBench's non-standard `optional` and
+  30,203 matches and zero mismatches. ToolBench's non-standard `optional` and
   `example_value` annotations were normalized away; its types, required fields,
   enums, descriptions, and argument values were not weakened. Only benchmark
   data and license files were read; downloaded code and dependencies were never
   executed. Combined with BFCL, validation now spans six benchmark repositories.
   Durable report: `audit-results/multi-benchmark-replay.json`.
 - The same replay includes three explicit product-value tests. Schema Guard
-  intercepted 135/7,699 recorded source-contract failures (1.75%): 92 argument
-  schema failures, 32 malformed argument-JSON failures, and 11 invalid or unsafe
-  schema failures. A permissive parse-plus-JSON-Schema baseline agreed on 124;
-  Schema Guard alone rejected the other 11 schema-safety cases. In 1,110
+  intercepted 124/7,699 recorded source-contract failures (1.61%): 92 argument
+  schema failures and 32 malformed argument-JSON failures. A permissive
+  parse-plus-JSON-Schema baseline agreed on all 124. In 1,117
   controlled unambiguous scalar-stringification cases derived from valid calls,
-  the plain validator rejected all 1,110 while Schema Guard safely repaired all
-  1,110. Across 21,616 rejected source or derived incidents, all Schema Guard
+  the plain validator rejected all 1,117 while Schema Guard safely repaired all
+  1,117. Across 21,635 rejected source or derived incidents, all Schema Guard
   responses contained a stable reason code, repair hint, and audit ID; the plain
-  baseline supplied a machine-readable field-level schema issue in 14,009 cases
-  (64.81%) and supplied neither remediation hints nor audit correlation. The last
+  baseline supplied a machine-readable field-level schema issue in 14,028 cases
+  (64.84%) and supplied neither remediation hints nor audit correlation. The last
   measurement is a diagnostic-completeness proxy, not elapsed human debugging
   time. Method and limitations: `docs/PRODUCT_VALUE_TEST.md`.
 - The repository-native fixture audit (`npm run audit:five-repos`) passed against
   five separate official repositories at recorded commits: MCP Python SDK
   `3a6f2996cdd8358957479791e8b26198c07d6a75`, OpenAI Agents Python
-  `173eca4991091a1996cb1c8a0f86ef938a39eb68`, PydanticAI
-  `9688a9cca2fcf81451cdac35e701250dbdfec75e`, Google ADK Python
-  `be5828f317c7430411df29974cd9ccfa875e90de`, and OpenAI Agents JS
-  `710cccfd8fd26b395f8e3470419852d76de80967`. The harness verified source-file
+  `5921667f570aa73a9f1d18b9a4ba0cb6c9549669`, PydanticAI
+  `24d105d21f779c783c2cd9c60c58b71ceaf125c7`, Google ADK Python
+  `c4270203c657d4abb14188b90ed692465f1f36c9`, and OpenAI Agents JS
+  `b04baf06313564e40c1879c13d4ee960f02b6167`. The harness verified source-file
   hashes and exact committed anchors for schemas and actual tool-call arguments,
   then ran 20 source cases and 35 derived malformed, missing-required,
   JSON-encoding, and secret-field cases. All 55/55 matched, with at least one

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 256" role="img" aria-labelledby="title desc">
+  <title id="title">Akriven</title>
+  <desc id="desc">Akriven logo with contract checkpoint mark and wordmark.</desc>
+  <g transform="translate(8 8) scale(.9375)">
+    <path fill="#11131A" d="M24 20h158l50 50v166H24z"/>
+    <path fill="#F5F4EE" fill-rule="evenodd" d="M107 58h42l50 142h-37l-11-34h-48l-11 34H56zm5 79h30l-15-47z"/>
+    <path fill="#F5F4EE" d="M24 139h180v27H24z"/>
+    <path fill="#DDFE52" d="M204 139h28v27h-28z"/>
+  </g>
+  <text x="282" y="174" fill="#11131A" font-family="Inter, Helvetica Neue, Arial, sans-serif" font-size="136" font-weight="650" letter-spacing="-5">Akriven</text>
+</svg>

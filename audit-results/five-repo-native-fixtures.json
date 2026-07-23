@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-07-19T14:21:28.295Z",
+  "generated_at": "2026-07-22T05:06:42.103Z",
   "policy": "shallow clone and static source reading only; repository code and dependencies were not executed",
   "repositories": [
     {
@@ -23,7 +23,7 @@
     {
       "id": "openai-agents-python",
       "url": "https://github.com/openai/openai-agents-python.git",
-      "commit": "173eca4991091a1996cb1c8a0f86ef938a39eb68",
+      "commit": "5921667f570aa73a9f1d18b9a4ba0cb6c9549669",
       "evidence": [
         {
           "file": "tests/test_function_schema.py",
@@ -40,11 +40,11 @@
     {
       "id": "pydantic-ai",
       "url": "https://github.com/pydantic/pydantic-ai.git",
-      "commit": "9688a9cca2fcf81451cdac35e701250dbdfec75e",
+      "commit": "24d105d21f779c783c2cd9c60c58b71ceaf125c7",
       "evidence": [
         {
           "file": "tests/test_tools.py",
-          "source_sha256": "9f4ecb8f693d368bdfe8e01072f50532ca2bda7f7743b7367b66a9d824c6c8f0",
+          "source_sha256": "d723b1af1b9242929b69d0697049d578b09418cc66293259170d98c0eab69b40",
           "anchors_verified": 4
         }
       ],
@@ -57,7 +57,7 @@
     {
       "id": "google-adk-python",
       "url": "https://github.com/google/adk-python.git",
-      "commit": "be5828f317c7430411df29974cd9ccfa875e90de",
+      "commit": "c4270203c657d4abb14188b90ed692465f1f36c9",
       "evidence": [
         {
           "file": "tests/integration/fixture/home_automation_agent/test_files/dependent_tool_calls.test.json",
@@ -79,7 +79,7 @@
     {
       "id": "openai-agents-js",
       "url": "https://github.com/openai/openai-agents-js.git",
-      "commit": "710cccfd8fd26b395f8e3470419852d76de80967",
+      "commit": "b04baf06313564e40c1879c13d4ee960f02b6167",
       "evidence": [
         {
           "file": "packages/agents-core/test/toolCustomData.test.ts",

@@ -11,6 +11,8 @@ import {
   PostgresSchemaState,
   PostgresIntelligenceState,
   createSharedStatePool,
+  deleteSharedTenantData,
+  exportSharedTenantData,
   SharedQuotaExceededError,
   SharedRateLimitExceededError,
   SharedStateIntegrityError,
@@ -59,7 +61,7 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
     await firstAlerts.migrate();
     await firstIntelligence.migrate();
     await first.pool.query(
-      'TRUNCATE sg_tenant_rulesets,sg_conformance_runs,sg_failure_observations,sg_intelligence_manifests,sg_alert_deliveries,sg_alerts,sg_alert_webhooks,sg_alert_manifests,sg_schema_releases,sg_tool_schemas,sg_tool_schema_manifests,sg_schema_environments,sg_schema_release_manifests,sg_control_audit_events,sg_control_audit_anchors,sg_control_audit_manifests,sg_control_api_keys,sg_control_tenants,sg_action_approvals,sg_action_descriptors,sg_accepted_action_decisions,sg_checkpoint_anchor_deliveries,sg_action_reconciliations,sg_action_reconciliation_manifests,sg_action_reservations,sg_action_manifests RESTART IDENTITY',
+      'TRUNCATE sg_tenant_deletion_receipts,sg_tenant_lifecycle,sg_tenant_rulesets,sg_conformance_runs,sg_failure_observations,sg_intelligence_manifests,sg_alert_deliveries,sg_alerts,sg_alert_webhooks,sg_alert_manifests,sg_schema_releases,sg_tool_schemas,sg_tool_schema_manifests,sg_schema_environments,sg_schema_release_manifests,sg_control_audit_events,sg_control_audit_anchors,sg_control_audit_manifests,sg_control_api_keys,sg_control_tenants,sg_action_approvals,sg_action_descriptors,sg_accepted_action_decisions,sg_checkpoint_anchor_deliveries,sg_action_reconciliations,sg_action_reconciliation_manifests,sg_action_reservations,sg_action_manifests RESTART IDENTITY',
     );
   });
 
@@ -94,7 +96,21 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
     await expect(secondControl.authenticate('control-admin')).resolves.toMatchObject({
       tenantId: 'control-tenant',
       plan: 'trial',
+      lifecycleStatus: 'active',
     });
+    await firstControl.updateTenantLifecycle(
+      'control-tenant',
+      'suspended',
+      'operator_security_review',
+    );
+    await expect(secondControl.tenantLifecycle('control-tenant')).resolves.toMatchObject({
+      status: 'suspended',
+      reason_code: 'operator_security_review',
+    });
+    await expect(secondControl.authenticate('control-admin')).resolves.toMatchObject({
+      lifecycleStatus: 'suspended',
+    });
+    await secondControl.updateTenantLifecycle('control-tenant', 'active', 'operator_restored');
     const issued = await firstControl.issueApiKey('control-tenant', ['validate']);
     await expect(secondControl.authenticate(issued.api_key)).resolves.toMatchObject({
       keyId: issued.key_id,
@@ -795,6 +811,33 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
         headers,
       });
       expect(await checkpoint.json()).toMatchObject({ revision: 2, row_count: 1 });
+      const lifecycle = await fetch(`${services[0]!.base}/v1/admin/tenant/lifecycle`, { headers });
+      expect(await lifecycle.json()).toMatchObject({ lifecycle: { status: 'active' } });
+      const exported = await fetch(`${services[1]!.base}/v1/admin/tenant/export`, {
+        headers,
+      });
+      expect(exported.status).toBe(200);
+      expect(await exported.json()).toMatchObject({
+        export_version: 1,
+        tenant_id: 'tenant-http',
+        source: 'shared_postgresql',
+      });
+      await firstControl.updateTenantLifecycle(
+        'tenant-http',
+        'suspended',
+        'operator_security_review',
+      );
+      const locked = await fetch(`${services[1]!.base}/v1/usage`, { headers });
+      expect(locked.status).toBe(423);
+      expect(await locked.json()).toMatchObject({ error: 'tenant_suspended' });
+      expect(
+        (
+          await fetch(`${services[1]!.base}/v1/admin/tenant/export`, {
+            headers,
+          })
+        ).status,
+      ).toBe(200);
+      await secondControl.updateTenantLifecycle('tenant-http', 'active', 'operator_restored');
     } finally {
       await Promise.all(services.map(({ service }) => service.close()));
     }
@@ -1173,6 +1216,61 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
       );
       await Promise.all([acceptedAction.close(), acceptedControl.close()]);
     }
+  }, 30_000);
+
+  it('exports and deletes a pending shared tenant while retaining a signed value-free receipt', async () => {
+    await firstControl.bootstrapTenant({
+      id: 'lifecycle-delete-tenant',
+      name: 'Lifecycle Delete Tenant',
+      plan: 'team',
+      apiKey: 'lifecycle-delete-admin',
+    });
+    await firstSchema.bootstrapTenant('lifecycle-delete-tenant');
+    await firstAlerts.bootstrapTenant('lifecycle-delete-tenant');
+    await firstIntelligence.bootstrapTenant('lifecycle-delete-tenant');
+    await firstControl.updateTenantLifecycle(
+      'lifecycle-delete-tenant',
+      'deletion_pending',
+      'customer_requested',
+    );
+    const exported = await exportSharedTenantData(firstPool, firstPool, 'lifecycle-delete-tenant');
+    expect(exported.content_sha256).toMatch(/^sha256:[0-9a-f]{64}$/u);
+    expect(JSON.stringify(exported)).not.toContain('lifecycle-delete-admin');
+    expect(JSON.stringify(exported)).not.toContain('control_hmac');
+    expect(JSON.stringify(exported)).not.toContain('key_hash');
+    const receipt = await deleteSharedTenantData(
+      firstPool,
+      firstPool,
+      'lifecycle-delete-tenant',
+      String(exported.content_sha256),
+      secret,
+    );
+    expect(receipt.tenant_ref).toMatch(/^hmac-sha256:[0-9a-f]{64}$/u);
+    expect(receipt.receipt_hmac).toMatch(/^hmac-sha256:[0-9a-f]{64}$/u);
+    await expect(secondControl.authenticate('lifecycle-delete-admin')).resolves.toBeUndefined();
+    expect(
+      (
+        await firstPool.query<{ count: string }>(
+          `SELECT (
+             (SELECT COUNT(*) FROM sg_control_tenants WHERE id=$1) +
+             (SELECT COUNT(*) FROM sg_action_manifests WHERE tenant_id=$1) +
+             (SELECT COUNT(*) FROM sg_action_reservations WHERE tenant_id=$1)
+           )::text count`,
+          ['lifecycle-delete-tenant'],
+        )
+      ).rows[0]?.count,
+    ).toBe('0');
+    await expect(firstControl.ready()).resolves.toBe(true);
+    await firstPool.query(
+      "UPDATE sg_tenant_deletion_receipts SET export_sha256='sha256:forged' WHERE tenant_ref=$1",
+      [receipt.tenant_ref],
+    );
+    await expect(secondControl.ready()).resolves.toBe(false);
+    await firstPool.query(
+      'UPDATE sg_tenant_deletion_receipts SET export_sha256=$1,receipt_hmac=$2 WHERE tenant_ref=$3',
+      [receipt.export_sha256, receipt.receipt_hmac, receipt.tenant_ref],
+    );
+    await expect(secondControl.ready()).resolves.toBe(true);
   }, 30_000);
 
   it('serializes migrations and rejects migration-history substitution', async () => {

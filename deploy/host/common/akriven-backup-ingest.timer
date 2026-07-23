@@ -1,0 +1,12 @@
+[Unit]
+Description=Ingest completed Akriven SFTP backups
+
+[Timer]
+OnBootSec=1m
+OnUnitActiveSec=2m
+Persistent=true
+AccuracySec=15s
+Unit=akriven-backup-ingest.service
+
+[Install]
+WantedBy=timers.target

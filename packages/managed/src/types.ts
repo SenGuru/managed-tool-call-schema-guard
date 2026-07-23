@@ -1,6 +1,15 @@
 import type { GuardPolicy } from '@schema-guard/core';
 
 export type PlanId = 'trial' | 'team';
+export type TenantLifecycleStatus = 'active' | 'suspended' | 'canceled' | 'deletion_pending';
+
+export interface TenantLifecycle {
+  status: TenantLifecycleStatus;
+  reason_code: string | null;
+  deletion_requested_at: string | null;
+  updated_at: string;
+}
+
 export type Scope =
   | 'validate'
   | 'compile'
@@ -46,6 +55,7 @@ export interface Principal {
   monthlyLimit: number;
   retentionDays: number;
   policy: GuardPolicy;
+  lifecycleStatus: TenantLifecycleStatus;
 }
 
 export interface ManagedConfig {

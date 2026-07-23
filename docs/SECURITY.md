@@ -56,10 +56,11 @@ redirects. This reduces SSRF and DNS-rebinding exposure but does not replace
 deployment egress controls. IPv6-only webhook destinations are currently
 unsupported.
 
-Tenant policy/plan, API-key scopes and revocation state, environment policy and
-schema-enforcement mode, action risk/side-effect descriptors, approval state,
-idempotency reservations, and webhook configuration carry master-secret HMACs
-over their security-relevant columns. Queued alert and checkpoint-anchor
+Tenant lifecycle, policy/plan, API-key scopes and revocation state, environment
+policy and schema-enforcement mode, action risk/side-effect descriptors,
+approval state, idempotency reservations, deletion receipts, and webhook
+configuration carry master-secret HMACs over their security-relevant columns.
+Queued alert and checkpoint-anchor
 payloads carry immutable payload HMACs before delivery signing. Successful
 checkpoint receiver acknowledgements carry a separate HMAC over the delivery,
 tenant, revision, checkpoint hash, timestamp, and HTTP status, so changing only
@@ -83,7 +84,8 @@ internally valid snapshot without an external reference. The scoped checkpoint
 API provides a value-free revision/hash, and the optional dedicated outbox
 automatically sends each revision to a separately configured HTTPS receiver.
 Public mode requires receiver configuration. The repository does not deploy or
-operate that independent receiver. The managed HTTP action route does not return
+operate that independent receiver automatically; the staging drill deployed it
+to a separately administered host. The managed HTTP action route does not return
 an idempotent reservation as `allowed` until the exact current checkpoint is
 acknowledged; failure remains pending and fails closed. Later completion and
 reconciliation revisions use the background outbox. A multi-instance service still requires shared
@@ -96,6 +98,23 @@ running build. The bounded probe deliberately does not rescan unbounded approval
 idempotency, or delivery history on every health request. It does not replace
 the deep verification endpoint, external integrity anchoring, periodic restore
 drills, or end-to-end dependency monitoring.
+
+Suspended, canceled, and deletion-pending tenants are denied ordinary managed
+routes after authentication; only lifecycle inspection, complete export, and
+the idempotent deletion-request route remain available. Exports verify
+tenant-scoped integrity before reading and exclude API-key verifier material,
+control HMACs, sealed webhook credentials, and raw argument values. Irreversible
+deletion is deliberately absent from the online API. The offline operator
+requires all service instances stopped, `deletion_pending` in every configured
+store, exact current export hashes, and an owner-readable confirmation file.
+Deletion retains a pseudonymous HMAC-bound receipt. Independent anchor rows are
+value-free and intentionally outside the tenant database failure/deletion
+domain; their legal retention window is an owner policy decision.
+
+In shared mode, the online deletion request synchronizes the signed local
+projection and shared lifecycle. It rolls local state back if the shared update
+fails. Production-container and separate-host r3 drills inspect both stores
+before the offline exact-export-hash deletion is allowed.
 
 Environment releases bind the tenant, tool-name HMAC, environment, exact
 registry row, schema hash, adapter, version, compatibility classification,

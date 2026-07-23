@@ -1,0 +1,9 @@
+FROM postgres:16.14-alpine3.23@sha256:42b8b8b29c8a4e933d88943e5b03001a78794905cf786e6e7634e9f2abd5a0d3
+
+# Preserve the deployment's established UID/GID 999 volume ownership while
+# reducing the runtime package surface. The service always runs directly as
+# postgres, so root-transition helpers are unnecessary.
+RUN sed -i 's/^postgres:x:70:70:/postgres:x:999:999:/' /etc/passwd \
+    && sed -i 's/^postgres:x:70:/postgres:x:999:/' /etc/group \
+    && chown -R 999:999 /var/lib/postgresql /var/run/postgresql \
+    && rm -f /usr/local/bin/gosu /sbin/su-exec

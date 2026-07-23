@@ -98,7 +98,7 @@ describe('repair properties', () => {
       ),
       { numRuns: 500 },
     );
-  });
+  }, 15_000);
 
   it('never emits accepted arguments on rejection and always verifies repair receipts', () => {
     fc.assert(

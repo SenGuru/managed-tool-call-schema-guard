@@ -1,0 +1,19 @@
+[Unit]
+Description=Akriven main encrypted off-machine backup
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/local/sbin/akriven-backup-main
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/run /var/lib/akriven-backup-main
+NoNewPrivileges=true
+UMask=0077

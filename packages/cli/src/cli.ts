@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { appendFile, readFile, writeFile } from 'node:fs/promises';
+import { appendFile, readFile, stat, writeFile } from 'node:fs/promises';
 import {
   compileToolContract,
   createReplayFixture,
@@ -31,6 +31,90 @@ function required(found: Map<string, string>, key: string): string {
   const value = found.get(key);
   if (!value) throw new Error(`missing --${key}`);
   return value;
+}
+async function apiKeyFile(path: string): Promise<string> {
+  const metadata = await stat(path);
+  if (!metadata.isFile()) throw new Error('--api-key-file must reference a regular file');
+  if (process.platform !== 'win32' && (metadata.mode & 0o077) !== 0)
+    throw new Error('--api-key-file must not be accessible by group or other users');
+  const apiKey = (await readFile(path, 'utf8')).trim();
+  if (!apiKey) throw new Error('--api-key-file is empty');
+  return apiKey;
+}
+function managedResourcePath(resource: string, found: Map<string, string>): string {
+  const limit = found.get('limit');
+  if (limit !== undefined && (!/^[1-9][0-9]{0,2}$/u.test(limit) || Number(limit) > 1000))
+    throw new Error('--limit must be an integer between 1 and 1000');
+  const limited = (path: string): string => `${path}${limit ? `?limit=${limit}` : ''}`;
+  if (resource === 'usage') return '/v1/usage';
+  if (resource === 'audits') return limited('/v1/audits');
+  if (resource === 'audit-verification') return '/v1/audits/verify';
+  if (resource === 'alerts') return '/v1/alerts';
+  if (resource === 'environments') return '/v1/environments';
+  if (resource === 'intelligence') return '/v1/intelligence';
+  if (resource === 'billing-statement') return '/v1/billing/statement';
+  if (resource === 'schema-releases') {
+    const query = new URLSearchParams();
+    if (found.has('environment')) query.set('environment', required(found, 'environment'));
+    if (limit) query.set('limit', limit);
+    return `/v1/schema-releases${query.size ? `?${query}` : ''}`;
+  }
+  if (resource === 'schema-release-verification') return '/v1/schema-releases/verify';
+  if (resource === 'control-plane-integrity') return '/v1/admin/control-plane-integrity';
+  if (resource === 'tenant-lifecycle') return '/v1/admin/tenant/lifecycle';
+  if (resource === 'tenant-export') return '/v1/admin/tenant/export';
+  throw new Error(
+    '--resource must be usage, audits, audit-verification, alerts, environments, intelligence, billing-statement, schema-releases, schema-release-verification, control-plane-integrity, tenant-lifecycle, or tenant-export',
+  );
+}
+async function managedRequest(
+  found: Map<string, string>,
+  path: string,
+  method = 'GET',
+  body?: unknown,
+): Promise<unknown> {
+  const base = new URL(required(found, 'base-url'));
+  const loopback = ['127.0.0.1', '::1', 'localhost'].includes(base.hostname);
+  if (base.protocol !== 'https:' && !(base.protocol === 'http:' && loopback))
+    throw new Error('--base-url must use HTTPS, except for an explicit loopback host');
+  if (base.username || base.password || base.search || base.hash)
+    throw new Error('--base-url must not contain credentials, a query, or a fragment');
+  const timeoutText = found.get('timeout-ms') ?? '5000';
+  if (!/^[1-9][0-9]*$/u.test(timeoutText) || Number(timeoutText) > 60_000)
+    throw new Error('--timeout-ms must be an integer between 1 and 60000');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Number(timeoutText));
+  try {
+    const response = await fetch(new URL(path, `${base.href}/`), {
+      headers: {
+        accept: 'application/json',
+        authorization: `Bearer ${await apiKeyFile(required(found, 'api-key-file'))}`,
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+      },
+      method,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      signal: controller.signal,
+    });
+    const payload = (await response.json().catch(() => undefined)) as unknown;
+    if (!response.ok) {
+      const record =
+        payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+          ? (payload as Record<string, unknown>)
+          : {};
+      throw new Error(
+        `managed request failed with ${response.status}${
+          typeof record.error === 'string' ? ` (${record.error})` : ''
+        }`,
+      );
+    }
+    if (payload === undefined) throw new Error('managed service returned invalid JSON');
+    return payload;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function readManagedResource(found: Map<string, string>): Promise<unknown> {
+  return managedRequest(found, managedResourcePath(required(found, 'resource'), found));
 }
 
 async function main(): Promise<void> {
@@ -139,8 +223,24 @@ async function main(): Promise<void> {
     process.exitCode = report.passed ? 0 : 1;
     return;
   }
+  if (command === 'managed') {
+    console.log(JSON.stringify(await readManagedResource(found), null, 2));
+    return;
+  }
+  if (command === 'managed-request-deletion') {
+    console.log(
+      JSON.stringify(
+        await managedRequest(found, '/v1/admin/tenant/deletion-request', 'POST', {
+          confirm_tenant_id: required(found, 'confirm-tenant-id'),
+        }),
+        null,
+        2,
+      ),
+    );
+    return;
+  }
   throw new Error(
-    'usage: schemaguard validate --schema FILE --args FILE [--tool NAME] [--policy FILE] [--audit FILE]\n       schemaguard normalize --adapter NAME --input FILE\n       schemaguard drift --before FILE --after FILE\n       schemaguard compile --target openai|anthropic|google_gemini|mcp --schema FILE [--tool NAME] [--description TEXT] [--openai-strict-policy reject|normalize]\n       schemaguard fixture --schema FILE --args FILE --out FILE [--tool NAME] [--policy FILE]\n       schemaguard replay --fixture FILE',
+    'usage: schemaguard validate --schema FILE --args FILE [--tool NAME] [--policy FILE] [--audit FILE]\n       schemaguard normalize --adapter NAME --input FILE\n       schemaguard drift --before FILE --after FILE\n       schemaguard compile --target openai|anthropic|google_gemini|mcp --schema FILE [--tool NAME] [--description TEXT] [--openai-strict-policy reject|normalize]\n       schemaguard fixture --schema FILE --args FILE --out FILE [--tool NAME] [--policy FILE]\n       schemaguard replay --fixture FILE\n       schemaguard managed --base-url URL --api-key-file FILE --resource NAME [--limit N] [--environment NAME] [--timeout-ms N]\n       schemaguard managed-request-deletion --base-url URL --api-key-file FILE --confirm-tenant-id ID [--timeout-ms N]',
   );
 }
 main().catch((error: unknown) => {

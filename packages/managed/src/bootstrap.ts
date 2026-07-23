@@ -27,6 +27,13 @@ const tenantName = option('tenant-name') ?? 'Local demo';
 const plan = (option('plan') ?? 'trial') as PlanId;
 if (plan !== 'trial' && plan !== 'team') throw new Error('--plan must be trial or team');
 const sharedControlDatabaseUrl = environmentValue('SCHEMA_GUARD_SHARED_CONTROL_DATABASE_URL');
+if (
+  (process.env.SCHEMA_GUARD_PUBLIC_MODE === 'true' || sharedControlDatabaseUrl) &&
+  option('service-state') !== 'stopped'
+)
+  throw new Error(
+    '--service-state stopped is required for public/shared tenant bootstrap; restart the managed service after onboarding',
+  );
 if (sharedControlDatabaseUrl) {
   const pool = createSharedStatePool(sharedControlDatabaseUrl);
   const control = new PostgresControlState(sharedControlDatabaseUrl, masterSecret, pool);

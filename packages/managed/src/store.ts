@@ -61,6 +61,8 @@ import {
   type SchemaEnforcementMode,
   type Scope,
   type SignedRuleSet,
+  type TenantLifecycle,
+  type TenantLifecycleStatus,
 } from './types.js';
 
 type Row = Record<string, unknown>;
@@ -70,6 +72,37 @@ const parse = (value: unknown): unknown => JSON.parse(typeof value === 'string' 
 const text = (value: unknown, fallback = ''): string =>
   typeof value === 'string' ? value : fallback;
 const EMPTY_IDEMPOTENCY_ACCUMULATOR = `xor256:${'0'.repeat(64)}`;
+const TENANT_EXPORT_TABLES = [
+  'action_approvals',
+  'action_descriptors',
+  'action_idempotency',
+  'action_idempotency_manifests',
+  'action_reconciliations',
+  'alert_deliveries',
+  'alert_webhooks',
+  'alerts',
+  'api_keys',
+  'audit_chain_anchors',
+  'audit_events',
+  'checkpoint_anchor_deliveries',
+  'compatibility_signatures',
+  'conformance_runs',
+  'environments',
+  'failure_clusters',
+  'schema_releases',
+  'tenant_lifecycle',
+  'tenant_rulesets',
+  'tool_schemas',
+  'usage_monthly',
+] as const;
+const TENANT_EXPORT_SECRET_COLUMNS = new Set([
+  'acknowledgement_hmac',
+  'control_hmac',
+  'encrypted_endpoint',
+  'encrypted_signing_secret',
+  'key_hash',
+  'payload_hmac',
+]);
 
 function xorIdempotencyAccumulators(left: string, right: string): string {
   if (!/^xor256:[0-9a-f]{64}$/u.test(left) || !/^xor256:[0-9a-f]{64}$/u.test(right))
@@ -155,6 +188,27 @@ function privacySafeAlertDetail(kind: string, detail: unknown): Record<string, u
   return safe;
 }
 
+function tenantExportRow(row: Row): Row {
+  const safe: Row = {};
+  for (const [key, value] of Object.entries(row)) {
+    if (TENANT_EXPORT_SECRET_COLUMNS.has(key)) continue;
+    if (key.endsWith('_json') && typeof value === 'string') {
+      try {
+        safe[key.slice(0, -'_json'.length)] = JSON.parse(value) as unknown;
+        continue;
+      } catch {
+        throw new ManagedError(
+          503,
+          'tenant_export_integrity_invalid',
+          `tenant export encountered malformed ${key}`,
+        );
+      }
+    }
+    safe[key] = value;
+  }
+  return safe;
+}
+
 export interface ObservationContext {
   adapter?: AdapterName;
   provider?: string;
@@ -236,6 +290,10 @@ export class ManagedStore {
         `managed control-plane integrity failed for ${controlIntegrity.first_invalid_table ?? 'unknown'} record`,
       );
     }
+    if (!this.inspectTenantDeletionReceipts()) {
+      this.db.close();
+      throw new TypeError('managed tenant deletion receipt integrity failed');
+    }
     const actionManifestIntegrity = this.inspectActionIdempotencyManifests();
     if (!actionManifestIntegrity.valid) {
       this.db.close();
@@ -265,6 +323,7 @@ export class ManagedStore {
         foreignKeys === 1 &&
         query?.ready === 1 &&
         this.inspectControlPlaneIntegrity(undefined, false).valid &&
+        this.inspectTenantDeletionReceipts() &&
         this.inspectCheckpointAnchorCoverage().valid &&
         this.checkpointAnchorOperational()
       );
@@ -295,6 +354,7 @@ export class ManagedStore {
           if (migration.version === 5) this.backfillAuditAnchorTrust();
           if (migration.version === 12) this.backfillControlPlaneIntegrity();
           if (migration.version === 13) this.backfillActionIdempotencyManifests();
+          if (migration.version === 15) this.backfillTenantLifecycle();
           this.db.pragma(`user_version = ${migration.version}`);
         })();
         current = migration.version;
@@ -343,6 +403,54 @@ export class ManagedStore {
       policy_json: row.policy_json,
       created_at: row.created_at,
     });
+  }
+  private tenantLifecycleControlHmac(row: Row): string {
+    return hmac(this.config.masterSecret, 'managed-tenant-lifecycle-control-v1', {
+      tenant_id: row.tenant_id,
+      status: row.status,
+      reason_code: row.reason_code ?? null,
+      deletion_requested_at: row.deletion_requested_at ?? null,
+      updated_at: row.updated_at,
+    });
+  }
+  private tenantDeletionReceiptHmac(row: Row): string {
+    return hmac(this.config.masterSecret, 'managed-tenant-deletion-receipt-v1', {
+      tenant_ref: row.tenant_ref,
+      export_sha256: row.export_sha256,
+      deleted_at: row.deleted_at,
+    });
+  }
+  private inspectTenantDeletionReceipts(): boolean {
+    for (const row of this.db
+      .prepare('SELECT * FROM tenant_deletion_receipts')
+      .iterate() as Iterable<Row>)
+      if (!constantTimeEqual(text(row.receipt_hmac), this.tenantDeletionReceiptHmac(row)))
+        return false;
+    return true;
+  }
+  private backfillTenantLifecycle(): void {
+    const timestamp = now();
+    const insert = this.db.prepare(
+      `INSERT INTO tenant_lifecycle(tenant_id,status,reason_code,deletion_requested_at,updated_at,control_hmac)
+       VALUES(?,?,?,?,?,?)`,
+    );
+    for (const tenant of this.db.prepare('SELECT id FROM tenants ORDER BY id').all() as Row[]) {
+      const row: Row = {
+        tenant_id: tenant.id,
+        status: 'active',
+        reason_code: null,
+        deletion_requested_at: null,
+        updated_at: timestamp,
+      };
+      insert.run(
+        row.tenant_id,
+        row.status,
+        row.reason_code,
+        row.deletion_requested_at,
+        row.updated_at,
+        this.tenantLifecycleControlHmac(row),
+      );
+    }
   }
   private apiKeyControlHmac(row: Row): string {
     return hmac(this.config.masterSecret, 'managed-api-key-control-v1', {
@@ -798,6 +906,13 @@ export class ManagedStore {
         signature: 'control_hmac',
       },
       {
+        table: 'tenant_lifecycle',
+        tenantColumn: 'tenant_id',
+        digest: (row: Row) => this.tenantLifecycleControlHmac(row),
+        id: 'tenant_id',
+        signature: 'control_hmac',
+      },
+      {
         table: 'action_idempotency_manifests',
         tenantColumn: 'tenant_id',
         digest: (row: Row) => this.actionIdempotencyManifestHmac(row),
@@ -1077,6 +1192,26 @@ export class ManagedStore {
           tenantRow.policy_json,
           this.tenantControlHmac(tenantRow),
         );
+      const lifecycleRow: Row = {
+        tenant_id: input.id,
+        status: 'active',
+        reason_code: null,
+        deletion_requested_at: null,
+        updated_at: tenantCreatedAt,
+      };
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO tenant_lifecycle(tenant_id,status,reason_code,deletion_requested_at,updated_at,control_hmac)
+           VALUES(?,?,?,?,?,?)`,
+        )
+        .run(
+          lifecycleRow.tenant_id,
+          lifecycleRow.status,
+          lifecycleRow.reason_code,
+          lifecycleRow.deletion_requested_at,
+          lifecycleRow.updated_at,
+          this.tenantLifecycleControlHmac(lifecycleRow),
+        );
       const manifest: Row = {
         tenant_id: input.id,
         revision: 0,
@@ -1160,7 +1295,7 @@ export class ManagedStore {
     const keyHash = hashApiKey(this.config.masterSecret, apiKey);
     const row = this.db
       .prepare(
-        `SELECT k.id key_id,k.tenant_id key_tenant_id,k.key_hash,k.prefix,k.scopes_json,k.created_at key_created_at,k.revoked_at,k.control_hmac key_control_hmac,t.id tenant_id,t.name tenant_name,t.plan,t.monthly_limit,t.retention_days,t.policy_json,t.created_at tenant_created_at,t.control_hmac tenant_control_hmac FROM api_keys k JOIN tenants t ON t.id=k.tenant_id WHERE k.key_hash=? AND k.revoked_at IS NULL`,
+        `SELECT k.id key_id,k.tenant_id key_tenant_id,k.key_hash,k.prefix,k.scopes_json,k.created_at key_created_at,k.revoked_at,k.control_hmac key_control_hmac,t.id tenant_id,t.name tenant_name,t.plan,t.monthly_limit,t.retention_days,t.policy_json,t.created_at tenant_created_at,t.control_hmac tenant_control_hmac,l.status lifecycle_status,l.reason_code lifecycle_reason_code,l.deletion_requested_at lifecycle_deletion_requested_at,l.updated_at lifecycle_updated_at,l.control_hmac lifecycle_control_hmac FROM api_keys k JOIN tenants t ON t.id=k.tenant_id JOIN tenant_lifecycle l ON l.tenant_id=t.id WHERE k.key_hash=? AND k.revoked_at IS NULL`,
       )
       .get(keyHash) as Row | undefined;
     if (!row) return undefined;
@@ -1184,9 +1319,21 @@ export class ManagedStore {
       created_at: row.tenant_created_at,
       control_hmac: row.tenant_control_hmac,
     };
+    const lifecycleRow: Row = {
+      tenant_id: row.tenant_id,
+      status: row.lifecycle_status,
+      reason_code: row.lifecycle_reason_code,
+      deletion_requested_at: row.lifecycle_deletion_requested_at,
+      updated_at: row.lifecycle_updated_at,
+      control_hmac: row.lifecycle_control_hmac,
+    };
     if (
       !constantTimeEqual(text(keyRow.control_hmac), this.apiKeyControlHmac(keyRow)) ||
-      !constantTimeEqual(text(tenantRow.control_hmac), this.tenantControlHmac(tenantRow))
+      !constantTimeEqual(text(tenantRow.control_hmac), this.tenantControlHmac(tenantRow)) ||
+      !constantTimeEqual(
+        text(lifecycleRow.control_hmac),
+        this.tenantLifecycleControlHmac(lifecycleRow),
+      )
     )
       return undefined;
     try {
@@ -1203,6 +1350,7 @@ export class ManagedStore {
         monthlyLimit: Number(row.monthly_limit),
         retentionDays: Number(row.retention_days),
         policy,
+        lifecycleStatus: String(row.lifecycle_status) as TenantLifecycleStatus,
       };
     } catch {
       return undefined;
@@ -1266,6 +1414,233 @@ export class ManagedStore {
           .run(revokedAt, this.apiKeyControlHmac(updated), principal.tenantId, keyId).changes === 1
       );
     })();
+  }
+  tenantLifecycle(principal: Principal): TenantLifecycle {
+    this.requireScope(principal, 'admin');
+    const row = this.db
+      .prepare('SELECT * FROM tenant_lifecycle WHERE tenant_id=?')
+      .get(principal.tenantId) as Row | undefined;
+    if (!row)
+      throw new ManagedError(503, 'tenant_lifecycle_unavailable', 'tenant lifecycle is missing');
+    this.assertControlHmac(row, this.tenantLifecycleControlHmac(row), 'tenant lifecycle');
+    return {
+      status: text(row.status) as TenantLifecycleStatus,
+      reason_code: typeof row.reason_code === 'string' ? row.reason_code : null,
+      deletion_requested_at:
+        typeof row.deletion_requested_at === 'string' ? row.deletion_requested_at : null,
+      updated_at: text(row.updated_at),
+    };
+  }
+  updateTenantLifecycle(
+    principal: Principal,
+    status: TenantLifecycleStatus,
+    reasonCode: string | null,
+  ): TenantLifecycle {
+    this.requireScope(principal, 'admin');
+    if (
+      !['active', 'suspended', 'canceled', 'deletion_pending'].includes(status) ||
+      (reasonCode !== null && !/^[a-z0-9][a-z0-9_.-]{0,63}$/u.test(reasonCode))
+    )
+      throw new ManagedError(
+        400,
+        'invalid_tenant_lifecycle',
+        'tenant lifecycle status or reason code is invalid',
+      );
+    return this.db.transaction(() => {
+      const existing = this.db
+        .prepare('SELECT * FROM tenant_lifecycle WHERE tenant_id=?')
+        .get(principal.tenantId) as Row | undefined;
+      if (!existing)
+        throw new ManagedError(503, 'tenant_lifecycle_unavailable', 'tenant lifecycle is missing');
+      this.assertControlHmac(
+        existing,
+        this.tenantLifecycleControlHmac(existing),
+        'tenant lifecycle',
+      );
+      const timestamp = now();
+      const updated: Row = {
+        ...existing,
+        status,
+        reason_code: reasonCode,
+        deletion_requested_at:
+          status === 'deletion_pending' ? (existing.deletion_requested_at ?? timestamp) : null,
+        updated_at: timestamp,
+      };
+      this.db
+        .prepare(
+          `UPDATE tenant_lifecycle
+           SET status=?,reason_code=?,deletion_requested_at=?,updated_at=?,control_hmac=?
+           WHERE tenant_id=?`,
+        )
+        .run(
+          updated.status,
+          updated.reason_code,
+          updated.deletion_requested_at,
+          updated.updated_at,
+          this.tenantLifecycleControlHmac(updated),
+          principal.tenantId,
+        );
+      return {
+        status,
+        reason_code: reasonCode,
+        deletion_requested_at:
+          typeof updated.deletion_requested_at === 'string' ? updated.deletion_requested_at : null,
+        updated_at: timestamp,
+      };
+    })();
+  }
+  exportTenantData(principal: Principal): Row {
+    this.requireScope(principal, 'admin');
+    const controlIntegrity = this.verifyControlPlaneIntegrity(principal);
+    const auditIntegrity = this.verifyAuditChain(principal);
+    const schemaReleaseIntegrity = this.verifySchemaReleaseHistory(principal);
+    const reconciliationIntegrity = this.verifyActionReconciliationHistory(principal);
+    if (
+      !controlIntegrity.valid ||
+      !auditIntegrity.valid ||
+      !schemaReleaseIntegrity.valid ||
+      !reconciliationIntegrity.valid
+    )
+      throw new ManagedError(
+        503,
+        'tenant_export_integrity_invalid',
+        'tenant export was refused because retained evidence failed integrity verification',
+      );
+    const tenant = this.db.prepare('SELECT * FROM tenants WHERE id=?').get(principal.tenantId) as
+      Row | undefined;
+    if (!tenant) throw new ManagedError(404, 'tenant_not_found', 'tenant does not exist');
+    const tables: Record<string, Row[]> = {};
+    for (const table of TENANT_EXPORT_TABLES)
+      tables[table] = (
+        this.db
+          .prepare(`SELECT * FROM ${table} WHERE tenant_id=? ORDER BY rowid`)
+          .all(principal.tenantId) as Row[]
+      ).map(tenantExportRow);
+    const content = {
+      tenant: tenantExportRow(tenant),
+      tables,
+    };
+    const contentHash = sha256(content);
+    return {
+      export_version: 1,
+      generated_at: now(),
+      tenant_id: principal.tenantId,
+      content_sha256: contentHash,
+      integrity: {
+        control_plane: controlIntegrity,
+        audit_chain: auditIntegrity,
+        schema_release_chain: schemaReleaseIntegrity,
+        action_reconciliation_chain: reconciliationIntegrity,
+      },
+      ...content,
+    };
+  }
+  private operatorPrincipal(tenantId: string): Principal {
+    if (!/^[A-Za-z0-9_-]{1,64}$/u.test(tenantId))
+      throw new ManagedError(400, 'invalid_tenant', 'tenant ID is invalid');
+    const tenant = this.db.prepare('SELECT * FROM tenants WHERE id=?').get(tenantId) as
+      Row | undefined;
+    const lifecycle = this.db
+      .prepare('SELECT * FROM tenant_lifecycle WHERE tenant_id=?')
+      .get(tenantId) as Row | undefined;
+    if (!tenant || !lifecycle)
+      throw new ManagedError(404, 'tenant_not_found', 'tenant does not exist');
+    this.assertControlHmac(tenant, this.tenantControlHmac(tenant), 'tenant');
+    this.assertControlHmac(
+      lifecycle,
+      this.tenantLifecycleControlHmac(lifecycle),
+      'tenant lifecycle',
+    );
+    const policy = parse(tenant.policy_json) as GuardPolicy;
+    if (policyValidationError(policy))
+      throw new ManagedError(
+        503,
+        'control_plane_integrity_invalid',
+        'tenant policy integrity verification failed',
+      );
+    return {
+      tenantId,
+      tenantName: text(tenant.name),
+      keyId: 'operator',
+      scopes: ['admin'],
+      plan: text(tenant.plan) as PlanId,
+      monthlyLimit: Number(tenant.monthly_limit),
+      retentionDays: Number(tenant.retention_days),
+      policy,
+      lifecycleStatus: text(lifecycle.status) as TenantLifecycleStatus,
+    };
+  }
+  operatorTenantLifecycle(tenantId: string): TenantLifecycle {
+    return this.tenantLifecycle(this.operatorPrincipal(tenantId));
+  }
+  operatorUpdateTenantLifecycle(
+    tenantId: string,
+    status: TenantLifecycleStatus,
+    reasonCode: string | null,
+  ): TenantLifecycle {
+    return this.updateTenantLifecycle(this.operatorPrincipal(tenantId), status, reasonCode);
+  }
+  operatorExportTenantData(tenantId: string): Row {
+    return this.exportTenantData(this.operatorPrincipal(tenantId));
+  }
+  operatorDeleteTenant(
+    tenantId: string,
+    expectedExportSha256: string,
+  ): {
+    tenant_ref: string;
+    export_sha256: string;
+    deleted_at: string;
+    receipt_hmac: string;
+  } {
+    if (!/^sha256:[0-9a-f]{64}$/u.test(expectedExportSha256))
+      throw new ManagedError(
+        400,
+        'invalid_export_hash',
+        'expected export hash must be a sha256 digest',
+      );
+    return this.db
+      .transaction(() => {
+        const principal = this.operatorPrincipal(tenantId);
+        const lifecycle = this.tenantLifecycle(principal);
+        if (lifecycle.status !== 'deletion_pending')
+          throw new ManagedError(
+            409,
+            'tenant_deletion_not_pending',
+            'tenant must be deletion_pending before deletion',
+          );
+        const exported = this.exportTenantData(principal);
+        if (exported.content_sha256 !== expectedExportSha256)
+          throw new ManagedError(
+            409,
+            'tenant_export_changed',
+            'tenant data changed after export; create and review a new export',
+          );
+        const row: Row = {
+          tenant_ref: hmac(
+            this.config.masterSecret,
+            'managed-tenant-deletion-reference-v1',
+            tenantId,
+          ),
+          export_sha256: expectedExportSha256,
+          deleted_at: now(),
+        };
+        if (this.db.prepare('DELETE FROM tenants WHERE id=?').run(tenantId).changes !== 1)
+          throw new ManagedError(404, 'tenant_not_found', 'tenant does not exist');
+        const receiptHmac = this.tenantDeletionReceiptHmac(row);
+        this.db
+          .prepare(
+            `INSERT INTO tenant_deletion_receipts(tenant_ref,export_sha256,deleted_at,receipt_hmac)
+             VALUES(?,?,?,?)`,
+          )
+          .run(row.tenant_ref, row.export_sha256, row.deleted_at, receiptHmac);
+        return {
+          tenant_ref: text(row.tenant_ref),
+          export_sha256: expectedExportSha256,
+          deleted_at: text(row.deleted_at),
+          receipt_hmac: receiptHmac,
+        };
+      })
+      .immediate();
   }
   updateTenantPolicy(principal: Principal, policy: GuardPolicy): void {
     this.requireScope(principal, 'admin');
@@ -2969,7 +3344,7 @@ export class ManagedStore {
     environment?: string,
     limit = 100,
   ): Array<ManagedSchemaRelease & { integrity_valid: boolean }> {
-    this.requireScope(principal, 'promote:schema');
+    this.requireScope(principal, 'read:environment');
     const bounded = Number.isInteger(limit) ? Math.min(Math.max(limit, 1), 500) : 100;
     const rows = (
       environment
@@ -3006,7 +3381,7 @@ export class ManagedStore {
     checked: number;
     first_invalid_release_id?: string;
   } {
-    this.requireScope(principal, 'promote:schema');
+    this.requireScope(principal, 'read:environment');
     const rows = this.db
       .prepare(
         `SELECT r.*,s.tenant_id source_tenant_id,s.tool_name_hash source_tool_name_hash,s.schema_hash source_schema_hash,s.adapter source_adapter,s.version source_version,s.schema_json source_schema_json FROM schema_releases r LEFT JOIN tool_schemas s ON s.id=r.schema_row_id WHERE r.tenant_id=? ORDER BY r.sequence ASC`,

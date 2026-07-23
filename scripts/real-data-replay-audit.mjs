@@ -515,18 +515,26 @@ for (const category of CATEGORIES) {
           'decision',
           'engine_version',
           'policy_hash',
+          'reason_code',
+          'repair_receipt_hashes',
           'protocol_version',
           'repair_rule_ids',
           'ruleset_version',
           'schema_hash',
           'timestamp',
           'tool_name_hash',
+          'validated_arguments_hash',
         ];
         const deterministicPrivacyMatched =
           acceptedSignature(repeated) === baselineSignature &&
           repeated.audit.arguments_hash === baseline.decision.audit.arguments_hash &&
           repeated.audit.schema_hash === baseline.decision.audit.schema_hash &&
           repeated.audit.tool_name_hash === baseline.decision.audit.tool_name_hash &&
+          repeated.audit.validated_arguments_hash ===
+            baseline.decision.audit.validated_arguments_hash &&
+          repeated.audit.reason_code === baseline.decision.audit.reason_code &&
+          sha256(repeated.audit.repair_receipt_hashes) ===
+            sha256(baseline.decision.audit.repair_receipt_hashes) &&
           auditKeys.every((key) => allowedAuditKeys.includes(key));
         report.suites.deterministic_privacy_envelope.run += 1;
         report.suites.deterministic_privacy_envelope[

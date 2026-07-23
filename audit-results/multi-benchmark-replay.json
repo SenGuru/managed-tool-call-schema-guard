@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-07-19T14:53:48.049Z",
+  "generated_at": "2026-07-22T05:05:59.411Z",
   "policy": "benchmark data and license files only; downloaded benchmark code and dependencies were not executed",
   "benchmarks": [
     {
@@ -36,10 +36,10 @@
       "license": "Apache-2.0",
       "license_sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
       "recorded_calls": 201,
-      "conforming_calls": 149,
-      "schema_conflicts": 52,
-      "mutations": 597,
-      "mutations_matched": 597,
+      "conforming_calls": 160,
+      "schema_conflicts": 41,
+      "mutations": 645,
+      "mutations_matched": 645,
       "mutations_mismatched": 0
     },
     {
@@ -72,42 +72,41 @@
   "totals": {
     "repositories": 5,
     "recorded_calls": 7699,
-    "conforming_calls": 7564,
-    "schema_conflicts": 135,
-    "mutations": 30155,
-    "mutations_matched": 30155,
+    "conforming_calls": 7575,
+    "schema_conflicts": 124,
+    "mutations": 30203,
+    "mutations_matched": 30203,
     "mutations_mismatched": 0
   },
   "value_tests": {
     "observed_failure_interception": {
       "recorded_calls": 7699,
-      "intercepted_source_contract_failures": 135,
+      "intercepted_source_contract_failures": 124,
       "plain_validator_agreement": 124,
       "rejection_reasons": {
         "SCHEMA_VALIDATION_FAILED": 92,
-        "ARGUMENTS_JSON_INVALID": 32,
-        "SCHEMA_INVALID": 11
+        "ARGUMENTS_JSON_INVALID": 32
       },
-      "interception_rate": 0.01753474477204832
+      "interception_rate": 0.01610598779062216
     },
     "repair_advantage": {
-      "safe_scalar_stringification_cases": 1110,
-      "plain_validator_rejected_guard_repaired": 1110,
+      "safe_scalar_stringification_cases": 1117,
+      "plain_validator_rejected_guard_repaired": 1117,
       "repair_rules": {
-        "coerce.string_to_integer": 768,
+        "coerce.string_to_integer": 775,
         "coerce.string_to_boolean": 1,
         "coerce.string_to_number": 341
       },
       "recovery_rate": 1
     },
     "diagnostic_workflow_proxy": {
-      "cases": 21616,
-      "guard_one_response_triage_ready": 21616,
-      "basic_has_machine_readable_field_issue": 14009,
+      "cases": 21635,
+      "guard_one_response_triage_ready": 21635,
+      "basic_has_machine_readable_field_issue": 14028,
       "required_guard_fields": ["reason_code", "repair_hint", "audit_id"],
       "limitation": "This measures structured diagnostic completeness, not elapsed human debugging time.",
       "guard_triage_ready_rate": 1,
-      "basic_field_issue_rate": 0.6480847520355293
+      "basic_field_issue_rate": 0.6483938063323319
     }
   },
   "failures": [],

@@ -36,6 +36,25 @@ row. Every request locks that row before incrementing; a deleted row revokes
 authority, counter/window substitution fails integrity, and independent
 instances cannot each grant a separate local allowance.
 
+The same control authority stores an HMAC-bound tenant lifecycle. Non-active
+status is returned with authentication so the HTTP boundary can fail closed
+without falling back to the local SQLite projection. Repeatable-read full tenant
+export spans control, schema, alert, intelligence, and action tables while
+excluding key verifiers, HMAC columns, and sealed credentials. Offline shared
+deletion requires a stopped service, `deletion_pending`, an exact current export
+hash, and one PostgreSQL pool for control and action state. It deletes
+tenant-owned rows in a serializable transaction and retains a pseudonymous
+HMAC-bound receipt. The operator refuses the currently unsupported case where
+control and action state use different pools rather than claiming atomic
+deletion across databases.
+
+The online deletion-request route keeps the single-instance SQLite projection
+synchronized with shared PostgreSQL. It changes local state first and restores
+the previous signed local lifecycle if the shared transaction fails. This
+rollback path and the successful synchronized path are deterministic tests; the
+exact r3 public API and browser drills also inspected both stores before
+offline deletion.
+
 `PostgresAlertState` provides shared alert history and generic HTTPS webhook
 delivery. Each tenant has an authenticated count/tip manifest; alert records are
 HMAC chained and bind the expected number of delivery rows. Webhook endpoints
@@ -130,10 +149,10 @@ versions from different pools, checks evidence privacy, detects release deletion
 collapses 16 concurrent exact registrations to one authenticated schema row,
 rejects a same-version adapter conflict, detects rate-counter substitution, and
 rejects a substituted migration checksum. It runs only when
-`SCHEMA_GUARD_TEST_POSTGRES_URL` is present. The normal local suite marks it
-skipped because this machine has no PostgreSQL/Docker runtime; the CI
-`postgres-shared-state` job provisions PostgreSQL 16 and is required to execute
-it. A separate always-on in-memory contract test covers the HTTP adapter,
+`SCHEMA_GUARD_TEST_POSTGRES_URL` is present. The uncredentialed local suite marks
+it skipped; the CI `postgres-shared-state` job provisions PostgreSQL 16 and is
+required to execute it. This audit also executed the complete credentialed
+suite against PostgreSQL 16. A separate always-on in-memory contract test covers the HTTP adapter,
 readiness, duplicate mapping, transitions, backend selection, checkpoint
 comparison, reconciliation routes, cross-instance accepted-decision/descriptor
 handoff, and fail-closed initialization without pretending to be a PostgreSQL

@@ -14,6 +14,8 @@ import type {
   SharedPrincipal,
   SharedScope,
   SharedTenantBootstrap,
+  SharedTenantLifecycle,
+  SharedTenantLifecycleStatus,
   SharedUsage,
 } from '../packages/shared-state/src/index.js';
 import { SharedQuotaExceededError } from '../packages/shared-state/src/index.js';
@@ -33,6 +35,7 @@ class MemoryControlState implements ControlState {
   readonly rateWindows = new Map<string, { started: number; count: number }>();
   sequence = 0;
   available = true;
+  failLifecycleUpdate = false;
 
   migrate(): Promise<void> {
     return Promise.resolve();
@@ -48,6 +51,7 @@ class MemoryControlState implements ControlState {
       monthlyLimit: 2,
       retentionDays: input.retentionDays ?? 30,
       policy: structuredClone(input.policy ?? {}),
+      lifecycleStatus: 'active',
       usage: {
         tenant_id: input.id,
         month: new Date().toISOString().slice(0, 7),
@@ -82,6 +86,7 @@ class MemoryControlState implements ControlState {
             monthlyLimit: tenant.monthlyLimit,
             retentionDays: tenant.retentionDays,
             policy: structuredClone(tenant.policy),
+            lifecycleStatus: tenant.lifecycleStatus,
           }
         : undefined,
     );
@@ -104,6 +109,31 @@ class MemoryControlState implements ControlState {
     if (!key || key.tenantId !== tenantId || key.revoked) return Promise.resolve(false);
     key.revoked = true;
     return Promise.resolve(true);
+  }
+  tenantLifecycle(tenantId: string): Promise<SharedTenantLifecycle> {
+    const tenant = this.tenants.get(tenantId)!;
+    return Promise.resolve({
+      status: tenant.lifecycleStatus,
+      reason_code: null,
+      deletion_requested_at:
+        tenant.lifecycleStatus === 'deletion_pending' ? new Date(0).toISOString() : null,
+      updated_at: new Date(0).toISOString(),
+    });
+  }
+  updateTenantLifecycle(
+    tenantId: string,
+    status: SharedTenantLifecycleStatus,
+    reasonCode: string | null,
+  ): Promise<SharedTenantLifecycle> {
+    if (this.failLifecycleUpdate)
+      return Promise.reject(new Error('simulated shared lifecycle update failure'));
+    this.tenants.get(tenantId)!.lifecycleStatus = status;
+    return Promise.resolve({
+      status,
+      reason_code: reasonCode,
+      deletion_requested_at: status === 'deletion_pending' ? new Date(0).toISOString() : null,
+      updated_at: new Date(0).toISOString(),
+    });
   }
   updateTenantPolicy(tenantId: string, policy: GuardPolicy): Promise<void> {
     this.tenants.get(tenantId)!.policy = structuredClone(policy);
@@ -328,12 +358,42 @@ describe('managed shared control state', () => {
       expect(verification.status).toBe(200);
       expect(await verification.json()).toEqual({ valid: true, checked: 2 });
 
+      const secondIssuedResponse = await fetch(`${services[0]!.base}/v1/admin/api-keys`, {
+        method: 'POST',
+        headers: adminHeaders,
+        body: JSON.stringify({ scopes: ['validate'] }),
+      });
+      expect(secondIssuedResponse.status).toBe(201);
+      const secondIssued = (await secondIssuedResponse.json()) as {
+        key_id: string;
+        api_key: string;
+      };
+      expect(
+        (
+          await fetch(
+            `${services[1]!.base}/v1/admin/api-keys/${encodeURIComponent(secondIssued.key_id)}`,
+            {
+              method: 'DELETE',
+              headers: { authorization: `Bearer ${issued.api_key}` },
+            },
+          )
+        ).status,
+      ).toBe(403);
+
       const revoked = await fetch(
         `${services[1]!.base}/v1/admin/api-keys/${encodeURIComponent(issued.key_id)}`,
         { method: 'DELETE', headers: adminHeaders },
       );
       expect(revoked.status).toBe(200);
       expect(await revoked.json()).toEqual({ revoked: true });
+      expect(
+        (
+          await fetch(
+            `${services[1]!.base}/v1/admin/api-keys/${encodeURIComponent(secondIssued.key_id)}`,
+            { method: 'DELETE', headers: adminHeaders },
+          )
+        ).status,
+      ).toBe(200);
       expect(
         (
           await fetch(`${services[0]!.base}/v1/validate`, {
@@ -354,6 +414,103 @@ describe('managed shared control state', () => {
       ).resolves.toEqual([503, 503]);
     } finally {
       await Promise.all(services.map(({ service }) => service.close()));
+    }
+  });
+
+  it('keeps the local lifecycle projection synchronized with a shared deletion request', async () => {
+    const state = new MemoryControlState();
+    await state.bootstrapTenant({
+      id: 'deletion-tenant',
+      name: 'Deletion Tenant',
+      plan: 'trial',
+      apiKey: 'shared-deletion-admin',
+      scopes: ['admin'],
+    });
+    const service = createManagedServer(
+      { databasePath: await database(), masterSecret: secret },
+      { controlState: state },
+    );
+    service.store.bootstrapTenant({
+      id: 'deletion-tenant',
+      name: 'Deletion Tenant',
+      plan: 'trial',
+      apiKey: 'local-deletion-admin',
+    });
+    await new Promise<void>((resolve) => service.server.listen(0, '127.0.0.1', resolve));
+    const address = service.server.address();
+    if (!address || typeof address === 'string') throw new Error('missing server address');
+    const base = `http://127.0.0.1:${address.port}`;
+    const requestDeletion = () =>
+      fetch(`${base}/v1/admin/tenant/deletion-request`, {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer shared-deletion-admin',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ confirm_tenant_id: 'deletion-tenant' }),
+      });
+    try {
+      const requested = await requestDeletion();
+      expect(requested.status).toBe(202);
+      expect(await state.tenantLifecycle('deletion-tenant')).toMatchObject({
+        status: 'deletion_pending',
+      });
+      expect(service.store.operatorTenantLifecycle('deletion-tenant')).toMatchObject({
+        status: 'deletion_pending',
+        reason_code: 'customer_requested',
+      });
+      expect((await requestDeletion()).status).toBe(202);
+      expect(service.store.operatorTenantLifecycle('deletion-tenant').status).toBe(
+        'deletion_pending',
+      );
+    } finally {
+      await service.close();
+    }
+  });
+
+  it('rolls back the local lifecycle projection when the shared deletion update fails', async () => {
+    const state = new MemoryControlState();
+    await state.bootstrapTenant({
+      id: 'rollback-tenant',
+      name: 'Rollback Tenant',
+      plan: 'trial',
+      apiKey: 'shared-rollback-admin',
+      scopes: ['admin'],
+    });
+    const service = createManagedServer(
+      { databasePath: await database(), masterSecret: secret },
+      { controlState: state },
+    );
+    service.store.bootstrapTenant({
+      id: 'rollback-tenant',
+      name: 'Rollback Tenant',
+      plan: 'trial',
+      apiKey: 'local-rollback-admin',
+    });
+    await new Promise<void>((resolve) => service.server.listen(0, '127.0.0.1', resolve));
+    const address = service.server.address();
+    if (!address || typeof address === 'string') throw new Error('missing server address');
+    state.failLifecycleUpdate = true;
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:${address.port}/v1/admin/tenant/deletion-request`,
+        {
+          method: 'POST',
+          headers: {
+            authorization: 'Bearer shared-rollback-admin',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({ confirm_tenant_id: 'rollback-tenant' }),
+        },
+      );
+      expect(response.status).toBe(503);
+      expect(await state.tenantLifecycle('rollback-tenant')).toMatchObject({ status: 'active' });
+      expect(service.store.operatorTenantLifecycle('rollback-tenant')).toMatchObject({
+        status: 'active',
+        reason_code: null,
+      });
+    } finally {
+      await service.close();
     }
   });
 

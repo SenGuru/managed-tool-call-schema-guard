@@ -399,4 +399,169 @@ describe('SchemaGuardClient remote boundary', () => {
     });
     expect(calls).toEqual([{ method: 'GET', body: undefined }]);
   });
+
+  it('exposes the daily managed read workflow and API-key lifecycle', async () => {
+    const calls: Array<{ url: string; method: string; body: BodyInit | null | undefined }> = [];
+    const client = new SchemaGuardClient({
+      baseUrl: 'https://guard.example',
+      apiKey: 'operator-key',
+      fetch: vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        calls.push({ url, method: init?.method ?? 'GET', body: init?.body });
+        if (url.endsWith('/v1/usage'))
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                plan: 'team',
+                monthly_limit: 100_000,
+                usage: {
+                  tenant_id: 'tenant',
+                  month: '2026-07',
+                  validation_count: 4,
+                  repair_count: 1,
+                  rejection_count: 1,
+                  drift_count: 0,
+                },
+                payment_processing: 'not_configured_local_mode',
+              }),
+            ),
+          );
+        if (url.includes('/v1/audits?'))
+          return Promise.resolve(new Response(JSON.stringify({ audits: [] })));
+        if (url.endsWith('/v1/audits/verify'))
+          return Promise.resolve(new Response(JSON.stringify({ valid: true, checked: 0 })));
+        if (url.endsWith('/v1/alerts'))
+          return Promise.resolve(new Response(JSON.stringify({ alerts: [] })));
+        if (url.endsWith('/v1/environments'))
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                environments: [
+                  {
+                    id: 'env_1',
+                    name: 'production',
+                    policy: {},
+                    schema_enforcement: 'observe',
+                    created_at: '2026-07-20T00:00:00.000Z',
+                    updated_at: '2026-07-20T00:00:00.000Z',
+                  },
+                ],
+              }),
+            ),
+          );
+        if (url.endsWith('/v1/intelligence'))
+          return Promise.resolve(
+            new Response(JSON.stringify({ failure_clusters: [], recommendations: [] })),
+          );
+        if (url.endsWith('/v1/billing/statement'))
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                period: '2026-07',
+                payment_processing: 'integration_required',
+              }),
+            ),
+          );
+        if (url.endsWith('/v1/admin/tenant/lifecycle'))
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                lifecycle: {
+                  status: 'active',
+                  reason_code: null,
+                  deletion_requested_at: null,
+                  updated_at: '2026-07-23T00:00:00.000Z',
+                },
+              }),
+            ),
+          );
+        if (url.endsWith('/v1/admin/tenant/export'))
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                export_version: 1,
+                generated_at: '2026-07-23T00:00:00.000Z',
+                tenant_id: 'tenant-a',
+                content_sha256: `sha256:${'a'.repeat(64)}`,
+                tenant: {},
+                tables: {},
+              }),
+            ),
+          );
+        if (url.endsWith('/v1/admin/tenant/deletion-request'))
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                lifecycle: {
+                  status: 'deletion_pending',
+                  reason_code: 'customer_requested',
+                  deletion_requested_at: '2026-07-23T00:00:00.000Z',
+                  updated_at: '2026-07-23T00:00:00.000Z',
+                },
+                execution: 'operator_confirmation_required',
+              }),
+              { status: 202 },
+            ),
+          );
+        if (url.endsWith('/v1/schemas'))
+          return Promise.resolve(
+            new Response(JSON.stringify({ schema_hash: `sha256:${'a'.repeat(64)}`, drift: null }), {
+              status: 201,
+            }),
+          );
+        if (url.endsWith('/v1/admin/api-keys') && init?.method === 'POST')
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                key_id: 'key_1',
+                api_key: 'one-time-key',
+                scopes: ['read:usage'],
+              }),
+              { status: 201 },
+            ),
+          );
+        if (url.endsWith('/v1/admin/api-keys/key_1') && init?.method === 'DELETE')
+          return Promise.resolve(new Response(JSON.stringify({ revoked: true })));
+        return Promise.resolve(new Response('{}', { status: 404 }));
+      }) as typeof fetch,
+    });
+
+    await expect(client.getManagedUsage()).resolves.toMatchObject({ plan: 'team' });
+    await expect(client.listManagedAudits(25)).resolves.toEqual([]);
+    await expect(client.verifyManagedAudits()).resolves.toEqual({ valid: true, checked: 0 });
+    await expect(client.listManagedAlerts()).resolves.toEqual([]);
+    await expect(client.listManagedEnvironments()).resolves.toHaveLength(1);
+    await expect(client.getManagedIntelligence()).resolves.toMatchObject({
+      failure_clusters: [],
+    });
+    await expect(client.getManagedBillingStatement()).resolves.toMatchObject({
+      payment_processing: 'integration_required',
+    });
+    await expect(client.getManagedTenantLifecycle()).resolves.toMatchObject({
+      status: 'active',
+    });
+    await expect(client.exportManagedTenantData()).resolves.toMatchObject({
+      tenant_id: 'tenant-a',
+    });
+    await expect(client.requestManagedTenantDeletion('tenant-a')).resolves.toMatchObject({
+      status: 'deletion_pending',
+    });
+    await expect(
+      client.registerManagedSchema({
+        tool_name: 'search',
+        adapter: 'mcp',
+        version: '1',
+        schema: { type: 'object' },
+      }),
+    ).resolves.toMatchObject({ drift: null });
+    const issued = await client.issueManagedApiKey(['read:usage']);
+    expect(issued).toMatchObject({ key_id: 'key_1', scopes: ['read:usage'] });
+    await expect(client.revokeManagedApiKey(issued.key_id)).resolves.toBeUndefined();
+
+    expect(
+      calls.filter((call) => call.method === 'GET').every((call) => call.body === undefined),
+    ).toBe(true);
+    expect(calls.some((call) => call.url.endsWith('/v1/audits?limit=25'))).toBe(true);
+  });
 });

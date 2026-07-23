@@ -1,0 +1,35 @@
+services:
+  schema-guard-edge:
+    image: schema-guard-caddy-edge:2.11.4-go1.26.5-r2
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.caddy-edge
+    restart: unless-stopped
+    user: '65532:65532'
+    environment:
+      SCHEMA_GUARD_ACME_EMAIL: ${SCHEMA_GUARD_ACME_EMAIL}
+      SCHEMA_GUARD_APP_HOST: ${SCHEMA_GUARD_APP_HOST}
+    ports:
+      - '80:8080'
+      - '443:8443'
+      - '443:8443/udp'
+    volumes:
+      - ./Caddyfile.main:/etc/caddy/Caddyfile:ro
+      - schema-guard-caddy-data:/data
+      - schema-guard-caddy-config:/config
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: 256m
+    depends_on:
+      schema-guard-managed:
+        condition: service_healthy
+
+volumes:
+  schema-guard-caddy-data:
+  schema-guard-caddy-config:

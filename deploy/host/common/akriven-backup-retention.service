@@ -1,0 +1,12 @@
+[Unit]
+Description=Remove expired encrypted off-machine Akriven backups
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/local/sbin/akriven-backup-retention /var/lib/akriven-backups/archive 14
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/akriven-backups/archive
+NoNewPrivileges=true

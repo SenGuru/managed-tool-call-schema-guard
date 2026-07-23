@@ -23,6 +23,7 @@ import {
   PostgresAlertState,
   PostgresIntelligenceState,
   createSharedStatePool,
+  exportSharedTenantData,
   SharedQuotaExceededError,
   SharedRateLimitExceededError,
   SharedStateIntegrityError,
@@ -787,6 +788,25 @@ export function createManagedServer(
         if (error instanceof ManagedError) throw error;
         throw sharedControlStateUnavailable(error);
       }
+      const lifecycleRoute =
+        (request.method === 'GET' && url.pathname === '/v1/admin/tenant/lifecycle') ||
+        (request.method === 'GET' && url.pathname === '/v1/admin/tenant/export') ||
+        (request.method === 'POST' && url.pathname === '/v1/admin/tenant/deletion-request');
+      if (principal.lifecycleStatus !== 'active' && !lifecycleRoute) {
+        const messages = {
+          suspended:
+            'tenant access is suspended; only lifecycle and export operations remain available',
+          canceled:
+            'tenant access is canceled; only lifecycle and export operations remain available',
+          deletion_pending:
+            'tenant deletion is pending; only lifecycle and export operations remain available',
+        } as const;
+        throw new ManagedError(
+          423,
+          `tenant_${principal.lifecycleStatus}`,
+          messages[principal.lifecycleStatus],
+        );
+      }
       if (controlState) {
         try {
           await controlState.consumeRateLimit(
@@ -798,6 +818,119 @@ export function createManagedServer(
           throw sharedControlStateUnavailable(error);
         }
       } else limiter.consume(principal);
+      if (request.method === 'GET' && url.pathname === '/v1/admin/tenant/lifecycle') {
+        store.requireScope(principal, 'admin');
+        try {
+          sendJson(response, 200, {
+            lifecycle: controlState
+              ? await controlState.tenantLifecycle(principal.tenantId)
+              : store.tenantLifecycle(principal),
+          });
+        } catch (error) {
+          if (error instanceof ManagedError) throw error;
+          throw sharedControlStateUnavailable(error);
+        }
+        return;
+      }
+      if (request.method === 'GET' && url.pathname === '/v1/admin/tenant/export') {
+        store.requireScope(principal, 'admin');
+        try {
+          let exported: Record<string, unknown>;
+          if (controlState) {
+            if (!sharedControlPool || !sharedActionPool)
+              throw new ManagedError(
+                503,
+                'tenant_export_unavailable',
+                'shared tenant export requires the configured control and action database pools',
+              );
+            const states = [controlState, actionState, schemaState, alertState, intelligenceState];
+            if (
+              (
+                await Promise.all(
+                  states.filter((state) => state !== undefined).map(async (state) => state.ready()),
+                )
+              ).some((ready) => !ready)
+            )
+              throw new ManagedError(
+                503,
+                'tenant_export_integrity_invalid',
+                'tenant export was refused because shared state readiness failed',
+              );
+            exported = (await exportSharedTenantData(
+              sharedControlPool,
+              sharedActionPool,
+              principal.tenantId,
+            )) as Record<string, unknown>;
+          } else exported = store.exportTenantData(principal);
+          sendJson(response, 200, exported, {
+            'content-disposition': `attachment; filename="akriven-tenant-export-${principal.tenantId}.json"`,
+          });
+        } catch (error) {
+          if (error instanceof ManagedError) throw error;
+          throw controlState
+            ? sharedControlStateUnavailable(error)
+            : new ManagedError(503, 'tenant_export_unavailable', 'tenant export failed closed');
+        }
+        return;
+      }
+      if (request.method === 'POST' && url.pathname === '/v1/admin/tenant/deletion-request') {
+        store.requireScope(principal, 'admin');
+        const input = asRecord(await guardedBody());
+        if (input.confirm_tenant_id !== principal.tenantId)
+          throw new ManagedError(
+            400,
+            'tenant_confirmation_required',
+            'confirm_tenant_id must exactly match the authenticated tenant',
+          );
+        try {
+          let lifecycle;
+          if (controlState) {
+            const currentShared = await controlState.tenantLifecycle(principal.tenantId);
+            const currentLocal = store.operatorTenantLifecycle(principal.tenantId);
+            let localChanged = false;
+            if (currentLocal.status !== 'deletion_pending') {
+              store.operatorUpdateTenantLifecycle(
+                principal.tenantId,
+                'deletion_pending',
+                'customer_requested',
+              );
+              localChanged = true;
+            }
+            try {
+              lifecycle =
+                currentShared.status === 'deletion_pending'
+                  ? currentShared
+                  : await controlState.updateTenantLifecycle(
+                      principal.tenantId,
+                      'deletion_pending',
+                      'customer_requested',
+                    );
+            } catch (error) {
+              if (localChanged)
+                store.operatorUpdateTenantLifecycle(
+                  principal.tenantId,
+                  currentLocal.status,
+                  currentLocal.reason_code,
+                );
+              throw error;
+            }
+          } else {
+            const current = store.tenantLifecycle(principal);
+            lifecycle =
+              current.status === 'deletion_pending'
+                ? current
+                : store.updateTenantLifecycle(principal, 'deletion_pending', 'customer_requested');
+          }
+          sendJson(response, 202, {
+            lifecycle,
+            execution: 'operator_confirmation_required',
+          });
+        } catch (error) {
+          if (error instanceof ManagedError) throw error;
+          throw sharedControlStateUnavailable(error);
+        }
+        return;
+      }
       if (request.method === 'POST' && url.pathname === '/v1/validate') {
         store.requireScope(principal, 'validate');
         const input = asRecord(await guardedBody());
@@ -1687,7 +1820,7 @@ export function createManagedServer(
         return;
       }
       if (request.method === 'GET' && url.pathname === '/v1/schema-releases/verify') {
-        store.requireScope(principal, 'promote:schema');
+        store.requireScope(principal, 'read:environment');
         try {
           sendJson(
             response,
@@ -1703,7 +1836,7 @@ export function createManagedServer(
         return;
       }
       if (request.method === 'GET' && url.pathname === '/v1/schema-releases') {
-        store.requireScope(principal, 'promote:schema');
+        store.requireScope(principal, 'read:environment');
         const environment = url.searchParams.get('environment') ?? undefined;
         try {
           sendJson(response, 200, {
@@ -2188,6 +2321,7 @@ export function createManagedServer(
         return;
       }
       if (request.method === 'DELETE' && url.pathname.startsWith('/v1/admin/api-keys/')) {
+        store.requireScope(principal, 'admin');
         const keyId = decodeURIComponent(url.pathname.slice('/v1/admin/api-keys/'.length));
         if (keyId === principal.keyId)
           throw new ManagedError(

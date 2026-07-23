@@ -24,6 +24,14 @@ independent checkpoint-anchor URL/signing-secret pair.
   filesystem, writable data tmpfs, database-aware readiness, HSTS, and health
   checks.
 - Local tenant bootstrap flow with one-time API-key display.
+- Public/shared tenant bootstrap is explicitly offline-only:
+  `--service-state stopped` is required, followed by a managed-service restart
+  and readiness check. The staging drill measured 3 seconds. Online self-serve
+  provisioning remains blocked on a hosted identity/organization control plane.
+- HMAC-bound tenant lifecycle state with fail-closed suspension, cancellation
+  and deletion-pending gates; complete tenant export; exact-confirmation
+  deletion requests; and an offline operator-only deletion workflow that
+  verifies current export hashes and retains a pseudonymous signed receipt.
 - Optional PostgreSQL tenant/API-key authority with HMAC-bound policy, plan, and
   current-month counters; authentication, revocation, and quota checks fail
   closed and are consistent across independent service instances.
@@ -90,6 +98,12 @@ SCHEMA_GUARD_SHARED_ACTION_DATABASE_URL_FILE=/run/secrets/schema_guard_action_da
 SCHEMA_GUARD_SHARED_CONTROL_DATABASE_URL_FILE=/run/secrets/schema_guard_control_database_url
 ```
 
+Docker Compose file-backed secrets preserve the source file's ownership and
+mode. For these non-root images, create production secret files as root, set
+their owner to UID/GID 65532, set mode `0400`, and keep their parent directory
+root-owned at mode `0700`. A root-owned mode-`0600` source is intentionally
+unreadable to the container and makes startup fail closed.
+
 The Compose file also sets:
 
 ```bash
@@ -112,6 +126,87 @@ SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_MAX_ATTEMPTS=8
 The container listens on loopback only. Put Cloudflare and a reviewed reverse
 proxy in front of it for TLS, request logging controls, compression policy, and
 public routing.
+
+The repository also includes optional pinned Caddy overlays for a direct-host
+edge: `deploy/docker-compose.edge.yml` for the managed service and
+`deploy/docker-compose.anchor-edge.yml` for the independent receiver. Each runs
+as UID/GID 65532 with a read-only root filesystem, drops all capabilities,
+persists only ACME state, caps request bodies at the application limit, and
+forwards over the private Compose network. The pinned, scratch-based edge image
+builds Caddy 2.11.4 with the patched Go 1.26.5 toolchain; it contains neither a
+shell nor Caddy's unnecessary low-port file capability, so
+`no-new-privileges` remains enforceable while Caddy listens on internal ports
+8080/8443. The image contains pre-owned empty `/data` and `/config` directories,
+so new Docker volumes initialize for UID/GID 65532 without a privileged helper
+or second runtime image. Validate the merged configuration before deployment. Do not start
+either overlay until the corresponding DNS name resolves to the exact reviewed
+host and opening ports 80/443 is approved.
+
+### Observed separate-host staging drill (2026-07-22)
+
+The DreamHost managed/PostgreSQL host and DigitalOcean checkpoint host were
+hardened and exercised as separate failure domains. The managed service remains
+loopback-only. Its independent anchor path uses TLS at a staging-only public DNS
+name whose TCP 443 firewall rule admits only the DreamHost public address; the
+receiver itself remains loopback-only behind the edge. A private WireGuard path
+also exists for administration, but is intentionally not used as the application
+URL because the product's SSRF guard correctly rejects private destinations.
+
+Observed action traffic proved independent exact-revision acknowledgement,
+fail-closed HTTP 503 during an anchor-edge outage, dead-letter/redrive behavior,
+and 9-second delivery recovery. Scheduled encrypted cross-host backup, ingest
+and retention timers now run for both failure domains and were also triggered
+manually. Clean restores verified SQLite/PostgreSQL integrity and exact audit,
+control and anchor checkpoints. The latest measured PostgreSQL restore took
+1 second; the anchor backup drill caused 7 seconds of downtime; migration to the
+current hardened PostgreSQL image had a 90-second maintenance RTO. The current
+schedule defines a daily RPO; WAL/PITR is not configured. The owner accepted
+that daily RPO for the first cohort on 2026-07-23.
+
+The 2026-07-23 lifecycle audit discovered that the original Age recovery
+identity was no longer available, so older ciphertexts are retained but not
+claimed as recoverable. Both jobs were rotated to a new owner-only recovery
+identity outside the repository. Fresh cross-host backups then passed
+ciphertext-hash comparison, decryption, and bundle manifests. A clean restore
+verified managed SQLite v15/26 tables/four deletion receipts, anchor SQLite
+three tables, PostgreSQL 34 public tables/shared-control v2/four receipts, the
+exact saved action checkpoint, managed readiness, control integrity, and the
+active owner lifecycle. Plaintext and all disposable restore resources were
+removed. The owner reported that the recovery identity was copied into
+off-workstation escrow on 2026-07-23. A clean-machine retrieval/decryption drill
+has not been observed, so escrow availability remains owner-attested.
+
+The exact r3 managed image
+`sha256:57ce369135602f5831663c43f305d4eb19e3906de123e36b8cc176cbda0c84ee`
+is now deployed. It fixes a production-observed shared deletion-request defect:
+r2 updated PostgreSQL but left the local SQLite projection active. r3
+synchronizes both signed lifecycle stores and rolls local state back if the
+shared transaction fails. The corrected image passed 198/198 credentialed
+tests, the production-container audit, a 61-request public TLS workflow,
+separate-host anchor failure/recovery, and the in-app-browser lifecycle. Offline
+inspection proved both projections `deletion_pending` before exact-hash
+deletion. No disposable `audit-*` tenant remains; both stores retain seven
+signed deletion receipts.
+
+This is staging evidence only. It does not prove PITR, observed certificate
+renewal, owned external monitoring/paging, customer usage, or a customer-facing
+support operation. Those launch-checklist items remain open.
+
+The owner identified `akriven.com` as the GoDaddy-registered product domain and
+explicitly approved the managed API cutover. The existing apex/`www` records
+were left untouched. An A record for `api.akriven.com` was created with value
+`208.113.209.209` and TTL 600 seconds, then confirmed directly against both
+authoritative nameservers and the Google and Cloudflare public resolvers.
+
+The reviewed edge is now active at `https://api.akriven.com`. Let’s Encrypt
+issued a publicly trusted certificate valid through 2026-10-20. External tests
+proved HTTP-to-HTTPS redirect, HTTP/2 readiness, HSTS and the reviewed security
+headers, unauthenticated HTTP 401, authenticated 1.1 MB rejection with HTTP 413,
+and an authenticated `valid_with_repair` request with an audit ID. Hostile-origin
+simple and preflight requests received no CORS allow-origin header. External
+port probes found only 22/80/443 open; PostgreSQL, managed loopback, anchor and
+Portainer ports were closed. Public audit/control integrity remained valid and
+checkpoint revision 5 was retained.
 
 The machine-readable launch position and the evidence still required before a
 public server are tracked in [ENTERPRISE_LAUNCH_GATES.md](ENTERPRISE_LAUNCH_GATES.md).

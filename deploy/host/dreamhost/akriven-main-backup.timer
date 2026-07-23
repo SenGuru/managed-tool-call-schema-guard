@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Akriven main backup daily
+
+[Timer]
+OnCalendar=*-*-* 02:15:00 UTC
+RandomizedDelaySec=15m
+Persistent=true
+AccuracySec=1m
+Unit=akriven-main-backup.service
+
+[Install]
+WantedBy=timers.target

@@ -22,6 +22,39 @@ with the same master secret and run the recovery drill before returning traffic.
 Trust fields are backfilled only by their exact schema migration; ordinary
 restart deliberately cannot bless an altered record.
 
+## Tenant onboarding in the single-instance profile
+
+Local development may bootstrap before starting the service. Public mode and
+shared PostgreSQL control state are offline-operator workflows: stop the managed
+service, run `managed:bootstrap` with `--service-state stopped`, restart the
+service, and require `/readyz` plus tenant lifecycle/control-integrity checks
+before returning traffic. The command rejects a public/shared invocation
+without the stopped-service assertion.
+
+Do not run bootstrap inside an active production container. It writes the
+single-node SQLite projection out of process; the running store correctly
+becomes unready until restart. The staging drill observed this fail-closed state
+and then measured a 3-second controlled stop/bootstrap/restart. A self-serve
+service must replace this maintenance workflow with one transactional hosted
+organization-provisioning control plane.
+
+## Release rollback and schema compatibility
+
+Capture an encrypted off-machine backup immediately before migration. Verify
+both the candidate image ID and every migration history table after startup.
+An image-only rollback is valid only when the previous binary has been proven
+against the post-migration schema and lifecycle state.
+
+The 2026-07-23 staging deployment deliberately tested the pre-lifecycle image
+after SQLite v15/shared-control v2 were applied. That binary failed readiness:
+its exact-version/checksum guards correctly reject the newer migration. It is
+therefore **not** a valid image-only rollback target. Once lifecycle data or
+deletion receipts exist, do not drop or rewrite those records to make an old
+binary start. Use a forward-fix image that understands the current schema, or
+restore the complete pre-migration SQLite/PostgreSQL backup into new volumes and
+compare the independent checkpoint before action traffic. A destructive live
+restore requires an exact target check and owner approval.
+
 ## Idempotency checkpoint anchoring
 
 Configure the dedicated anchor outbox as described in
@@ -50,6 +83,25 @@ The managed HTTP action route waits for receiver acknowledgement before
 returning `allowed`. An acknowledgement failure returns `503` and intentionally
 leaves the reservation pending; verify downstream non-execution and reconcile it
 instead of retrying automatically.
+
+For a dedicated disposable `audit-*` tenant, the separate-host drill is:
+
+```bash
+SCHEMA_GUARD_PUBLIC_E2E_BASE_URL=https://api.example.com \
+SCHEMA_GUARD_PUBLIC_E2E_API_KEY_FILE=/owner-only/audit.key \
+SCHEMA_GUARD_PUBLIC_E2E_TENANT_ID=audit-release-candidate \
+SCHEMA_GUARD_ANCHOR_SSH_TARGET=anchor-host-alias \
+SCHEMA_GUARD_ANCHOR_EDGE_CONTAINER=exact-anchor-edge-container \
+SCHEMA_GUARD_DEPLOYED_REVISION=managed-release-digest \
+npm run audit:public-anchor-outage
+```
+
+The script validates every identifier, stops only the named anchor edge,
+requires public action admission to return an anchor-acknowledgement 503,
+restarts the edge in a `finally` path, waits for outbox recovery, proves the
+reservation remains duplicate-blocked, releases it explicitly, and verifies
+reconciliation and control integrity. Do not run it against customer action
+traffic or without an independently verified recovery path.
 
 ## Uncertain action reconciliation
 
@@ -146,6 +198,14 @@ Run the production drill during a documented
 write-quiescence window so the source-count comparison describes one stable
 recovery point. Copy the verified backup off-machine through the chosen
 encrypted storage system; that transfer is external integration work.
+
+The recovery identity must exist in at least one owner-controlled failure domain
+separate from both servers and must be escrowed before a backup is called
+recoverable. Verify a fresh ciphertext by comparing its recorded hash,
+decrypting it, checking `SHA256SUMS`, and restoring into clean volumes. Merely
+retaining an Age ciphertext and public recipient is not recovery evidence.
+Never print or place the private recovery identity in the repository, command
+arguments, logs, or chat.
 
 Before replacing a production database, stop writers, preserve the failed
 volume, run this drill against the candidate backup, restore into a new path,

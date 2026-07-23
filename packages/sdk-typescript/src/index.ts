@@ -159,6 +159,78 @@ export interface ManagedSchemaRelease {
   drift?: DriftReport | null;
 }
 
+export interface ManagedSchemaRegistration {
+  schema_hash: string;
+  drift: DriftReport | null;
+}
+
+export interface ManagedUsage {
+  tenant_id: string;
+  month: string;
+  validation_count: number;
+  repair_count: number;
+  rejection_count: number;
+  drift_count: number;
+}
+
+export interface ManagedUsageStatement {
+  plan: 'trial' | 'team';
+  monthly_limit: number;
+  usage: ManagedUsage;
+  payment_processing: string;
+}
+
+export interface ManagedAuditRecord {
+  [key: string]: unknown;
+  sequence: number;
+  audit_id: string;
+  occurred_at: string;
+  decision: GuardDecision['decision'];
+  reason_code: string | null;
+  repair_rules: string[];
+}
+
+export interface ManagedAlert {
+  id: number;
+  alert_id: string;
+  kind: string;
+  severity: string;
+  detail: Record<string, unknown>;
+  created_at: string;
+  acknowledged_at: null;
+}
+
+export interface ManagedEnvironment {
+  id: string;
+  name: string;
+  policy: GuardPolicy;
+  schema_enforcement: 'observe' | 'enforce';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IssuedManagedApiKey {
+  key_id: string;
+  api_key: string;
+  scopes: string[];
+}
+
+export interface ManagedTenantLifecycle {
+  status: 'active' | 'suspended' | 'canceled' | 'deletion_pending';
+  reason_code: string | null;
+  deletion_requested_at: string | null;
+  updated_at: string;
+}
+
+export interface ManagedTenantExport {
+  export_version: number;
+  generated_at: string;
+  tenant_id: string;
+  content_sha256: string;
+  tenant: Record<string, unknown>;
+  tables: Record<string, Array<Record<string, unknown>>>;
+}
+
 export class SchemaGuardClient {
   private readonly timeoutMs: number;
 
@@ -701,6 +773,31 @@ export class SchemaGuardClient {
       );
     return payload as ManagedSchemaRelease;
   }
+  async registerManagedSchema(
+    input: {
+      tool_name: string;
+      adapter: 'json_schema' | 'mcp' | 'openai_agents' | 'pydantic_ai' | 'google_adk';
+      version: string;
+      schema: JsonObject | boolean;
+    },
+    callOptions: SchemaGuardValidateOptions = {},
+  ): Promise<ManagedSchemaRegistration> {
+    const { payload, status } = await this.post('/v1/schemas', input, callOptions);
+    if (
+      payload === null ||
+      typeof payload !== 'object' ||
+      Array.isArray(payload) ||
+      !/^sha256:[0-9a-f]{64}$/u.test(String((payload as Record<string, unknown>).schema_hash)) ||
+      ((payload as Record<string, unknown>).drift !== null &&
+        typeof (payload as Record<string, unknown>).drift !== 'object')
+    )
+      throw new SchemaGuardServiceError(
+        'Schema Guard service returned an invalid schema registration',
+        status,
+        'invalid_service_response',
+      );
+    return payload as ManagedSchemaRegistration;
+  }
   async listManagedSchemaReleases(
     options: { environment?: string; limit?: number } = {},
     callOptions: SchemaGuardValidateOptions = {},
@@ -764,6 +861,278 @@ export class SchemaGuardClient {
       callOptions,
       'PUT',
     );
+  }
+  async getManagedUsage(
+    callOptions: SchemaGuardValidateOptions = {},
+  ): Promise<ManagedUsageStatement> {
+    const { payload, status } = await this.post('/v1/usage', undefined, callOptions, 'GET');
+    const record = payload as Record<string, unknown> | null;
+    if (
+      record === null ||
+      typeof record !== 'object' ||
+      Array.isArray(record) ||
+      !['trial', 'team'].includes(String(record.plan)) ||
+      !Number.isInteger(record.monthly_limit) ||
+      record.usage === null ||
+      typeof record.usage !== 'object' ||
+      Array.isArray(record.usage)
+    )
+      throw new SchemaGuardServiceError(
+        'Schema Guard service returned an invalid usage statement',
+        status,
+        'invalid_service_response',
+      );
+    return record as unknown as ManagedUsageStatement;
+  }
+  async getManagedTenantLifecycle(
+    callOptions: SchemaGuardValidateOptions = {},
+  ): Promise<ManagedTenantLifecycle> {
+    const { payload, status } = await this.post(
+      '/v1/admin/tenant/lifecycle',
+      undefined,
+      callOptions,
+      'GET',
+    );
+    const lifecycle =
+      payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+        ? (payload as Record<string, unknown>).lifecycle
+        : undefined;
+    if (
+      lifecycle === null ||
+      typeof lifecycle !== 'object' ||
+      Array.isArray(lifecycle) ||
+      !['active', 'suspended', 'canceled', 'deletion_pending'].includes(
+        String((lifecycle as Record<string, unknown>).status),
+      ) ||
+      typeof (lifecycle as Record<string, unknown>).updated_at !== 'string'
+    )
+      throw new SchemaGuardServiceError(
+        'Schema Guard service returned an invalid tenant lifecycle',
+        status,
+        'invalid_service_response',
+      );
+    return lifecycle as ManagedTenantLifecycle;
+  }
+  async exportManagedTenantData(
+    callOptions: SchemaGuardValidateOptions = {},
+  ): Promise<ManagedTenantExport> {
+    const { payload, status } = await this.post(
+      '/v1/admin/tenant/export',
+      undefined,
+      callOptions,
+      'GET',
+    );
+    const record = payload as Record<string, unknown> | null;
+    if (
+      record === null ||
+      typeof record !== 'object' ||
+      Array.isArray(record) ||
+      !Number.isInteger(record.export_version) ||
+      typeof record.generated_at !== 'string' ||
+      typeof record.tenant_id !== 'string' ||
+      !/^sha256:[0-9a-f]{64}$/u.test(String(record.content_sha256)) ||
+      record.tenant === null ||
+      typeof record.tenant !== 'object' ||
+      Array.isArray(record.tenant) ||
+      record.tables === null ||
+      typeof record.tables !== 'object' ||
+      Array.isArray(record.tables)
+    )
+      throw new SchemaGuardServiceError(
+        'Schema Guard service returned an invalid tenant export',
+        status,
+        'invalid_service_response',
+      );
+    return record as unknown as ManagedTenantExport;
+  }
+  async requestManagedTenantDeletion(
+    confirmTenantId: string,
+    callOptions: SchemaGuardValidateOptions = {},
+  ): Promise<ManagedTenantLifecycle> {
+    const { payload, status } = await this.post(
+      '/v1/admin/tenant/deletion-request',
+      { confirm_tenant_id: confirmTenantId },
+      callOptions,
+    );
+    const lifecycle =
+      payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+        ? (payload as Record<string, unknown>).lifecycle
+        : undefined;
+    if (
+      lifecycle === null ||
+      typeof lifecycle !== 'object' ||
+      Array.isArray(lifecycle) ||
+      (lifecycle as Record<string, unknown>).status !== 'deletion_pending'
+    )
+      throw new SchemaGuardServiceError(
+        'Schema Guard service returned an invalid deletion request result',
+        status,
+        'invalid_service_response',
+      );
+    return lifecycle as ManagedTenantLifecycle;
+  }
+  async listManagedAudits(
+    limit = 100,
+    callOptions: SchemaGuardValidateOptions = {},
+  ): Promise<ManagedAuditRecord[]> {
+    const { payload, status } = await this.post(
+      `/v1/audits?limit=${encodeURIComponent(limit)}`,
+      undefined,
+      callOptions,
+      'GET',
+    );
+    const audits =
+      payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+        ? (payload as Record<string, unknown>).audits
+        : undefined;
+    if (!Array.isArray(audits))
+      throw new SchemaGuardServiceError(
+        'Schema Guard service returned an invalid audit list',
+        status,
+        'invalid_service_response',
+      );
+    return audits as ManagedAuditRecord[];
+  }
+  async verifyManagedAudits(callOptions: SchemaGuardValidateOptions = {}): Promise<{
+    valid: boolean;
+    checked: number;
+    first_invalid_sequence?: number;
+    anchor_invalid?: boolean;
+    manifest_invalid?: boolean;
+  }> {
+    const { payload, status } = await this.post('/v1/audits/verify', undefined, callOptions, 'GET');
+    if (
+      payload === null ||
+      typeof payload !== 'object' ||
+      Array.isArray(payload) ||
+      typeof (payload as Record<string, unknown>).valid !== 'boolean' ||
+      !Number.isInteger((payload as Record<string, unknown>).checked)
+    )
+      throw new SchemaGuardServiceError(
+        'Schema Guard service returned an invalid audit verification result',
+        status,
+        'invalid_service_response',
+      );
+    return payload as {
+      valid: boolean;
+      checked: number;
+      first_invalid_sequence?: number;
+      anchor_invalid?: boolean;
+      manifest_invalid?: boolean;
+    };
+  }
+  async listManagedAlerts(callOptions: SchemaGuardValidateOptions = {}): Promise<ManagedAlert[]> {
+    const { payload, status } = await this.post('/v1/alerts', undefined, callOptions, 'GET');
+    const alerts =
+      payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+        ? (payload as Record<string, unknown>).alerts
+        : undefined;
+    if (!Array.isArray(alerts))
+      throw new SchemaGuardServiceError(
+        'Schema Guard service returned an invalid alert list',
+        status,
+        'invalid_service_response',
+      );
+    return alerts as ManagedAlert[];
+  }
+  async listManagedEnvironments(
+    callOptions: SchemaGuardValidateOptions = {},
+  ): Promise<ManagedEnvironment[]> {
+    const { payload, status } = await this.post('/v1/environments', undefined, callOptions, 'GET');
+    const environments =
+      payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+        ? (payload as Record<string, unknown>).environments
+        : undefined;
+    if (!Array.isArray(environments))
+      throw new SchemaGuardServiceError(
+        'Schema Guard service returned an invalid environment list',
+        status,
+        'invalid_service_response',
+      );
+    return environments as ManagedEnvironment[];
+  }
+  async getManagedIntelligence(
+    callOptions: SchemaGuardValidateOptions = {},
+  ): Promise<Record<string, unknown>> {
+    const { payload, status } = await this.post('/v1/intelligence', undefined, callOptions, 'GET');
+    if (
+      payload === null ||
+      typeof payload !== 'object' ||
+      Array.isArray(payload) ||
+      !Array.isArray((payload as Record<string, unknown>).failure_clusters) ||
+      !Array.isArray((payload as Record<string, unknown>).recommendations)
+    )
+      throw new SchemaGuardServiceError(
+        'Schema Guard service returned an invalid intelligence result',
+        status,
+        'invalid_service_response',
+      );
+    return payload as Record<string, unknown>;
+  }
+  async getManagedBillingStatement(
+    callOptions: SchemaGuardValidateOptions = {},
+  ): Promise<Record<string, unknown>> {
+    const { payload, status } = await this.post(
+      '/v1/billing/statement',
+      undefined,
+      callOptions,
+      'GET',
+    );
+    if (
+      payload === null ||
+      typeof payload !== 'object' ||
+      Array.isArray(payload) ||
+      typeof (payload as Record<string, unknown>).period !== 'string' ||
+      typeof (payload as Record<string, unknown>).payment_processing !== 'string'
+    )
+      throw new SchemaGuardServiceError(
+        'Schema Guard service returned an invalid billing statement',
+        status,
+        'invalid_service_response',
+      );
+    return payload as Record<string, unknown>;
+  }
+  async issueManagedApiKey(
+    scopes: string[],
+    callOptions: SchemaGuardValidateOptions = {},
+  ): Promise<IssuedManagedApiKey> {
+    const { payload, status } = await this.post('/v1/admin/api-keys', { scopes }, callOptions);
+    if (
+      payload === null ||
+      typeof payload !== 'object' ||
+      Array.isArray(payload) ||
+      typeof (payload as Record<string, unknown>).key_id !== 'string' ||
+      typeof (payload as Record<string, unknown>).api_key !== 'string' ||
+      !Array.isArray((payload as Record<string, unknown>).scopes)
+    )
+      throw new SchemaGuardServiceError(
+        'Schema Guard service returned an invalid issued API key',
+        status,
+        'invalid_service_response',
+      );
+    return payload as IssuedManagedApiKey;
+  }
+  async revokeManagedApiKey(
+    keyId: string,
+    callOptions: SchemaGuardValidateOptions = {},
+  ): Promise<void> {
+    const { payload, status } = await this.post(
+      `/v1/admin/api-keys/${encodeURIComponent(keyId)}`,
+      undefined,
+      callOptions,
+      'DELETE',
+    );
+    if (
+      payload === null ||
+      typeof payload !== 'object' ||
+      Array.isArray(payload) ||
+      (payload as Record<string, unknown>).revoked !== true
+    )
+      throw new SchemaGuardServiceError(
+        'Schema Guard service returned an invalid API-key revocation result',
+        status,
+        'invalid_service_response',
+      );
   }
   async verifyManagedControlPlaneIntegrity(callOptions: SchemaGuardValidateOptions = {}): Promise<{
     valid: boolean;
