@@ -225,7 +225,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .scope-picker label{display:flex;align-items:flex-start;gap:8px;padding:10px;background:var(--white);font-size:11px}.scope-picker input{margin-top:2px;accent-color:var(--ink)}
 .usage-hero{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid var(--line);background:var(--white)}
 .usage-hero>div{min-width:0;padding:18px;border-right:1px solid var(--line)}.usage-hero>div:last-child{border-right:0}
-.usage-hero span,.usage-hero strong,.usage-hero small{display:block}.usage-hero span{color:var(--muted);font:10px var(--mono);text-transform:uppercase}.usage-hero strong{margin-top:6px;font-size:20px}.usage-hero small{margin-top:2px}
+.usage-hero span,.usage-hero strong,.usage-hero small{display:block}.usage-hero span{color:var(--muted);font:10px var(--mono);text-transform:uppercase}.usage-hero strong{margin-top:6px;overflow-wrap:anywhere;font-size:20px}.usage-hero small{margin-top:2px}
 .definition-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0;margin:0;border:1px solid var(--line)}
 .definition-grid>div{display:grid;grid-template-columns:minmax(120px,.7fr) minmax(0,1.3fr);gap:12px;padding:11px 12px;border-bottom:1px solid var(--line)}.definition-grid>div:nth-last-child(-n+2){border-bottom:0}
 .definition-grid dt{color:var(--muted);font-size:11px}.definition-grid dd{margin:0;text-align:right;font-weight:620;overflow-wrap:anywhere}

@@ -1,5 +1,13 @@
 # Provider-independent private-beta traceability — 2026-07-24
 
+> Exact-source verification update: the complete 2026-07-25 browser, route,
+> credentialed PostgreSQL, container, security, load, recovery, framework and
+> corpus evidence is recorded in
+> [`EXHAUSTIVE_FEATURE_VERIFICATION_2026-07-25.md`](EXHAUSTIVE_FEATURE_VERIFICATION_2026-07-25.md).
+> That report supersedes test counts and exact-source observations below while
+> preserving this document's requirements matrix and external-blocker
+> classifications.
+
 ## Verdict scope
 
 This document is the release gate for the source on

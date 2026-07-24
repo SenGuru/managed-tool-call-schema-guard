@@ -436,7 +436,7 @@ function renderEvidence(data){
     ['Audit chain',Boolean(data.chain.valid)],
     ['Release chain',Boolean(data.releaseChain.valid)],
     ['Reconciliation',Boolean(data.reconciliationChain.valid)],
-    ['Ruleset',data.ruleset.status==='not_configured'||Boolean(data.ruleset.valid??data.ruleset.signature_valid)]
+    ['Ruleset',data.ruleset.status!=='not_configured'&&Boolean(data.ruleset.valid??data.ruleset.signature_valid??(data.ruleset.signature&&data.ruleset.public_key))]
   ];
   for(const [label,valid] of entries){const card=document.createElement('div');const title=document.createElement('span');title.textContent=label;const result=tag(valid?'Verified':'Attention',valid?'good':'bad');card.append(title,result);integrity.append(card)}
   const audits=data.audits.audits||[];
@@ -563,9 +563,14 @@ q('load').onclick=async()=>{
   const options={signal:controller.signal};
   const loadGet=path=>get(path,options,key);
   const loadGetOptional=path=>getOptional(path,options,key);
+  const loadReadiness=async()=>{
+    const result=await requestRaw('/readyz',options,key);
+    if(result.ok||result.status===503)return result.body;
+    throw new Error(result.body?.message||result.body?.error||('HTTP '+result.status));
+  };
   clearPanels();q('status').className='';q('status').textContent='Loading…';resetDerivedViews();workspace.dataset.connected='false';setCredentialMode('editing');text('connection-label','Connecting');
   try{
-    const [serviceHealth,serviceReadiness,lifecycle]=await Promise.all([loadGet('/healthz'),loadGet('/readyz'),loadGet('/v1/admin/tenant/lifecycle')]);
+    const [serviceHealth,serviceReadiness,lifecycle]=await Promise.all([loadGet('/healthz'),loadReadiness(),loadGet('/v1/admin/tenant/lifecycle')]);
     if(generation!==loadGeneration)return;
     q('lifecycle').textContent=JSON.stringify(lifecycle,null,2);
     text('tenant-name',lifecycle.tenant_name||lifecycle.tenant_id||'Tenant');
@@ -655,7 +660,17 @@ bindForm('validate-form','validate-status',async()=>{
   node.hidden=false;const outcome=document.createElement('strong');outcome.textContent=value(result,'decision','outcome');const reason=document.createElement('span');reason.textContent='Reason: '+value(result,'reason_code','reason');const audit=document.createElement('code');audit.textContent='Audit '+value(result,'audit_id');node.append(outcome,reason,audit);
   q('challenge-decision').value=JSON.stringify(result,null,2);q('action-decision').value=JSON.stringify(result,null,2);return 'Decision recorded';
 });
-bindForm('compile-form','compile-status',async()=>{const result=await request('/v1/contracts/compile',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({target:q('compile-target').value,tool_name:q('compile-tool').value,tool_schema:parseJson('compile-schema')})});showJson('compile-result',result);return 'Contract compiled'});
+bindForm('compile-form','compile-status',async()=>{
+  const node=q('compile-result');node.hidden=true;node.replaceChildren();
+  const response=await requestRaw('/v1/contracts/compile',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({target:q('compile-target').value,tool_name:q('compile-tool').value,tool_schema:parseJson('compile-schema')})});
+  const result=response.body;
+  if(response.status===422&&result?.status==='unsupported'){
+    showJson('compile-result',result);
+    throw new Error('Contract unsupported — review the blocker issues');
+  }
+  if(!response.ok)throw new Error(result?.message||result?.error||('HTTP '+response.status));
+  showJson('compile-result',result);return 'Contract compiled';
+});
 bindForm('schema-register-form','schema-register-status',async()=>{await request('/v1/schemas',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({tool_name:q('schema-tool').value,adapter:q('schema-adapter').value,version:q('schema-version').value,schema:parseJson('schema-body')})});await refreshSchemas();return 'Schema version registered'});
 bindForm('schema-release-form','schema-release-status',async()=>{
   const environment=q('release-environment');await request('/v1/schema-releases',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({environment:environment.selectedOptions[0]?.dataset.name||environment.value,tool_name:q('release-tool').value,adapter:q('release-adapter').value,version:q('release-version').value,expected_schema_hash:q('release-hash').value})});await refreshSchemas();return 'Schema release promoted';

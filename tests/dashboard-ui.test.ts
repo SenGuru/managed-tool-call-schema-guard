@@ -42,7 +42,7 @@ const operationalResponses: Record<string, unknown> = {
   '/v1/actions/reconciliation/verify': { valid: true },
   '/v1/billing/statement': { payment_processing: 'integration_required' },
   '/v1/admin/control-plane-integrity': { valid: true },
-  '/v1/rulesets/latest': {},
+  '/v1/rulesets/latest': { signature: 'test-signature', public_key: 'test-public-key' },
   '/v1/admin/api-keys': { api_keys: [] },
   '/v1/plans': {
     plans: [
@@ -159,6 +159,57 @@ describe('managed dashboard interactions', () => {
     document.getElementById('operation-load')!.click();
     expect(window.location.pathname).toBe('/dashboard/workbench');
     expect(document.querySelector<HTMLSelectElement>('#operation')!.value).toBe('reconcile');
+  });
+
+  it('keeps recovery controls available when readiness is fail-closed', async () => {
+    const window = dashboard('/dashboard/actions');
+    const document = window.document;
+    window.fetch = (input) => {
+      const path = typeof input === 'string' ? input : input.url;
+      const body =
+        path === '/readyz'
+          ? { status: 'not_ready', checks: { checkpoint_anchor: false } }
+          : path === '/v1/admin/tenant/lifecycle'
+            ? {
+                tenant_id: 'degraded-tenant',
+                tenant_name: 'Degraded tenant',
+                lifecycle: { status: 'active' },
+              }
+            : path === '/v1/actions/idempotency/anchors/deliveries?limit=100'
+              ? {
+                  deliveries: [
+                    {
+                      delivery_id: 'anchor-dead',
+                      revision: 4,
+                      status: 'dead',
+                      attempt_count: 5,
+                      updated_at: '2026-07-25T00:00:00.000Z',
+                    },
+                  ],
+                }
+              : operationalResponses[path];
+      return Promise.resolve(
+        new window.Response(JSON.stringify(body), {
+          status: path === '/readyz' ? 503 : 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+    };
+
+    (document.getElementById('key') as HTMLInputElement).value = 'test-only-key';
+    document.getElementById('load')!.click();
+    await new Promise((resolve) => window.setTimeout(resolve, 30));
+
+    expect(document.getElementById('workspace')!.dataset.connected).toBe('true');
+    expect(document.getElementById('status')!.textContent).toBe('Workspace loaded');
+    expect(document.getElementById('readiness-list')!.textContent).toContain(
+      'Managed service readiness',
+    );
+    expect(document.getElementById('anchor-delivery-rows')!.textContent).toContain('dead');
+    expect(document.querySelector('#anchor-delivery-rows button')!.textContent).toBe('Redrive');
+    expect(document.getElementById('integrity-components')!.textContent).toContain(
+      'RulesetVerified',
+    );
   });
 
   it('moves focus into the mobile drawer, traps it, and restores the opener on escape', async () => {
@@ -341,6 +392,24 @@ describe('managed dashboard interactions', () => {
           ),
         );
       }
+      if (path === '/v1/contracts/compile' && init?.method === 'POST')
+        return Promise.resolve(
+          new window.Response(
+            JSON.stringify({
+              target: 'google_gemini',
+              status: 'unsupported',
+              declaration: null,
+              issues: [
+                {
+                  code: 'GOOGLE_KEYWORD_UNSUPPORTED',
+                  severity: 'blocker',
+                  message: 'additionalProperties is not supported in the provider declaration',
+                },
+              ],
+            }),
+            { status: 422, headers: { 'content-type': 'application/json' } },
+          ),
+        );
       const body =
         path === '/v1/usage'
           ? {
@@ -383,6 +452,17 @@ describe('managed dashboard interactions', () => {
     expect(document.getElementById('validate-result')!.textContent).toContain('rejected');
     expect(document.getElementById('validate-result')!.textContent).toContain(
       'SCHEMA_VALIDATION_FAILED',
+    );
+
+    document.querySelector<HTMLSelectElement>('#compile-target')!.value = 'google_gemini';
+    document.querySelector<HTMLButtonElement>('#compile-form button[type="submit"]')!.click();
+    await new Promise((resolve) => window.setTimeout(resolve, 20));
+    expect(document.getElementById('compile-status')!.textContent).toBe(
+      'Contract unsupported — review the blocker issues',
+    );
+    expect(document.getElementById('compile-result')!.hidden).toBe(false);
+    expect(document.getElementById('compile-result')!.textContent).toContain(
+      'GOOGLE_KEYWORD_UNSUPPORTED',
     );
   });
 
