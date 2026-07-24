@@ -97,6 +97,8 @@ const presets={
   publish_ruleset:{method:'POST',path:'/v1/admin/rulesets',body:{version:'[REPLACE:UNIQUE_RULESET_VERSION]',issued_at:'',expires_at:'',rules:[{id:'coerce.string_to_integer',enabled_by_default:true,description:'Exact integer strings'}]}},
   create_api_key:{method:'POST',path:'/v1/admin/api-keys',body:{scopes:['validate','compile','evaluate:action','approve:action','reconcile:action','manage:webhooks','promote:schema','read:audit','read:alerts','read:billing','read:environment','read:intelligence','read:ruleset','read:usage','write:schema','admin']}},
   revoke_api_key:{method:'DELETE',path:'/v1/admin/api-keys/{KEY_ID}',body:null,mutation:true},
+  billing_checkout:{method:'POST',path:'/v1/billing/checkout-session',body:null,mutation:true},
+  billing_portal:{method:'POST',path:'/v1/billing/portal-session',body:null,mutation:true},
   plan_change:{method:'PUT',path:'/v1/admin/plan',body:{plan:'team'},mutation:true},
   retention_purge:{method:'POST',path:'/v1/admin/retention/purge',body:{before:'2025-01-01T00:00:00.000Z'},mutation:true}
 };
@@ -153,7 +155,7 @@ export function dashboardHtml(publicMode = false): string {
 <option value="action_descriptor">Set action descriptor</option><option value="action_challenge">Create approval challenge</option><option value="action_approve">Approve challenge</option><option value="action_cancel">Cancel challenge</option><option value="action_evaluate">Evaluate action</option>
 <option value="action_complete">Complete reservation</option><option value="action_release">Release reservation</option><option value="checkpoint_compare">Compare checkpoint</option><option value="anchor_redrive">Redrive anchor delivery</option><option value="reconcile">Reconcile uncertain action</option>
 <option value="conformance_run">Ingest conformance run</option><option value="webhook_create">Create alert webhook</option><option value="webhook_redrive">Redrive webhook delivery</option><option value="webhook_disable">Disable webhook</option>
-<option value="publish_ruleset">Publish ruleset</option><option value="create_api_key">Create API key</option><option value="revoke_api_key">Revoke API key</option><option value="plan_change">Attempt plan change</option><option value="retention_purge">Purge retained audits</option>
+<option value="publish_ruleset">Publish ruleset</option><option value="create_api_key">Create API key</option><option value="revoke_api_key">Revoke API key</option><option value="billing_checkout">Start Stripe checkout</option><option value="billing_portal">Open Stripe billing portal</option><option value="plan_change">Attempt plan change</option><option value="retention_purge">Purge retained audits</option>
 </select><button id="operation-load" type="button">Reset preset</button></div>
 <label for="operation-method">Method</label><input id="operation-method" autocomplete="off">
 <label for="operation-path">Path</label><input id="operation-path" autocomplete="off">

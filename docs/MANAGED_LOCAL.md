@@ -1,6 +1,9 @@
-# Managed local control plane
+# Managed control plane
 
-The managed package is an operational local proof of the private product boundary and team workflow. It is not deployed infrastructure.
+The managed package is the operational product boundary used by local proof
+workflows and the publicly reachable internal-staging deployment. That staging
+deployment is not approved for customer data, mutating customer action traffic,
+an SLA, or automated charging.
 
 ## Why this layer exists
 
@@ -69,7 +72,14 @@ The local package demonstrates the product spine: shared policy, schema history,
   statements, JSON/CSV audit export, complete tenant export, lifecycle locking,
   exact-confirmation deletion requests, offline verified deletion, local-file
   and generic HTTPS webhook alerts, liveness/readiness, request size/deadline
-  controls, graceful shutdown, and a tenant dashboard are operational.
+  controls, and graceful shutdown are operational.
+- The operator dashboard exposes 14 read panels and 29 editable request presets
+  spanning validation, compilation, registry/releases, policy/enforcement,
+  actions/approvals/idempotency/reconciliation/anchors, conformance, webhooks,
+  rulesets, API keys, billing-boundary checks, retention, lifecycle, and export.
+  API keys remain password inputs held in tab memory. Every non-GET workbench
+  request requires explicit confirmation, and unresolved path or JSON
+  placeholders are rejected before transmission.
 
 ## Bootstrap and run
 
@@ -91,6 +101,21 @@ fail until restart. The public staging drill measured a 3-second
 stop/bootstrap/restart window. This operator-led workflow is acceptable only
 for a controlled cohort; self-serve onboarding requires a transactional hosted
 provisioning control plane.
+
+Public/shared bootstrap also forbids `--api-key`, because command arguments can
+be visible to other host processes. Supply an existing non-group-writable
+secret file with `--api-key-file`, or generate directly into a new mode-0600
+file with `--api-key-output-file`. In both cases stdout contains metadata only,
+never the key:
+
+```bash
+npm run managed:bootstrap -- \
+  --tenant-id TENANT \
+  --tenant-name "Tenant name" \
+  --plan team \
+  --api-key-output-file /owner-only/path/TENANT-admin.key \
+  --service-state stopped
+```
 
 Validation requests may add bounded operational labels under `context` so failures can be compared without capturing payloads:
 
@@ -174,7 +199,7 @@ owner-readable secret files, never command-line arguments:
 ```bash
 npm run managed:tenant -- inspect --tenant-id TENANT
 npm run managed:tenant -- transition --tenant-id TENANT --status suspended --service-state stopped
-npm run managed:tenant -- export --tenant-id TENANT --output /owner-only/path/tenant-export.json
+npm run managed:tenant -- export --tenant-id TENANT --output /owner-only/path/tenant-export.json --service-state stopped
 npm run managed:tenant -- delete --tenant-id TENANT --confirmation-file /owner-only/path/deletion-confirmation.json --service-state stopped
 ```
 
@@ -188,13 +213,21 @@ the owner must define the legal retention period for those records.
 
 ## Honest external boundary
 
-No payment is collected. A publicly trusted staging endpoint is deployed at
+No payment is collected. A sandbox-only Stripe billing authority is implemented
+but is not configured on the deployed staging service and has not been
+exercised against a real Stripe test account. A publicly trusted staging
+endpoint is deployed at
 `api.akriven.com` for production-readiness verification, but it is not approved
 for customer data, customer action traffic, or an SLA. The generic alert
 transport and dedicated checkpoint-anchor transport are implemented; the
 checkpoint receiver is independently deployed and outage-tested, while no
 owned customer notification receiver or native email/chat provider is
-configured. The billing statement returns `payment_processing: integration_required`;
+configured. The deployed billing statement returns
+`payment_processing: integration_required`, and checkout, portal, and webhook
+routes fail closed. Source-level fake-provider, signed raw-body, SDK/CLI, crash
+window, and PostgreSQL reconciliation tests pass; those are not Stripe network
+or settlement evidence. See
+[`BILLING_STRIPE_SANDBOX.md`](BILLING_STRIPE_SANDBOX.md).
 alerts persist in the database, optional local JSONL file, and transactional
 webhook outbox. The current intelligence corpus is composed of
 repository fixtures and locally submitted value-free signatures and conformance

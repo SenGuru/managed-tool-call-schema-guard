@@ -215,6 +215,16 @@ export interface IssuedManagedApiKey {
   scopes: string[];
 }
 
+export interface ManagedBillingCheckoutSession {
+  session_id: string;
+  url: string;
+  expires_at: string;
+}
+
+export interface ManagedBillingPortalSession {
+  url: string;
+}
+
 export interface ManagedTenantLifecycle {
   status: 'active' | 'suspended' | 'canceled' | 'deletion_pending';
   reason_code: string | null;
@@ -1091,6 +1101,50 @@ export class SchemaGuardClient {
         'invalid_service_response',
       );
     return payload as Record<string, unknown>;
+  }
+  async createManagedBillingCheckoutSession(
+    callOptions: SchemaGuardValidateOptions = {},
+  ): Promise<ManagedBillingCheckoutSession> {
+    const { payload, status } = await this.post(
+      '/v1/billing/checkout-session',
+      undefined,
+      callOptions,
+    );
+    if (
+      payload === null ||
+      typeof payload !== 'object' ||
+      Array.isArray(payload) ||
+      typeof (payload as Record<string, unknown>).session_id !== 'string' ||
+      typeof (payload as Record<string, unknown>).url !== 'string' ||
+      typeof (payload as Record<string, unknown>).expires_at !== 'string'
+    )
+      throw new SchemaGuardServiceError(
+        'Schema Guard service returned an invalid billing checkout session',
+        status,
+        'invalid_service_response',
+      );
+    return payload as ManagedBillingCheckoutSession;
+  }
+  async createManagedBillingPortalSession(
+    callOptions: SchemaGuardValidateOptions = {},
+  ): Promise<ManagedBillingPortalSession> {
+    const { payload, status } = await this.post(
+      '/v1/billing/portal-session',
+      undefined,
+      callOptions,
+    );
+    if (
+      payload === null ||
+      typeof payload !== 'object' ||
+      Array.isArray(payload) ||
+      typeof (payload as Record<string, unknown>).url !== 'string'
+    )
+      throw new SchemaGuardServiceError(
+        'Schema Guard service returned an invalid billing portal session',
+        status,
+        'invalid_service_response',
+      );
+    return payload as ManagedBillingPortalSession;
   }
   async issueManagedApiKey(
     scopes: string[],

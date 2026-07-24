@@ -1,4 +1,4 @@
-# Production-readiness handoff — 2026-07-23
+# Production-readiness handoff — 2026-07-23 (updated 2026-07-24)
 
 ## Verdict
 
@@ -10,8 +10,10 @@ paging, a clean-machine recovery-key retrieval drill, approved legal/support
 operations, and a restriction against customer mutation traffic. The owner
 accepted the scheduled daily RPO, reported off-workstation recovery-key escrow
 complete, and approved publication of the reviewed website. Hosted identity,
-billing, email/recovery, KMS, live provider probes, independent security review,
-and customer evidence remain absent.
+an exercised Stripe sandbox account, email/recovery, KMS, live provider probes,
+independent security review, and customer evidence remain absent. The deployed
+r7 image implements a disabled-by-default sandbox billing authority, but no
+Stripe credential is configured and this is not external Stripe evidence.
 
 This verdict deliberately separates working software from a purchasable,
 operated SaaS.
@@ -24,7 +26,7 @@ deletion request changed PostgreSQL to `deletion_pending` while leaving the
 local SQLite projection active. The response looked correct, but the offline
 operator correctly refused irreversible deletion.
 
-r3 now:
+r3 fixed that lifecycle defect:
 
 - updates the signed local lifecycle before the shared transaction;
 - restores the prior signed local lifecycle if the shared update fails;
@@ -35,13 +37,49 @@ r3 now:
 - was independently proven through both the public API and in-app browser before
   exact-export-hash deletion.
 
+r4 adds the missing browser-operable managed control plane:
+
+- 14 read-only panels cover lifecycle, usage, audit, alerts, releases,
+  intelligence, webhooks, deliveries, actions, reconciliation, billing,
+  control-plane integrity, rulesets, and recent decisions;
+- 27 editable workbench presets cover the managed mutation and operational
+  route families;
+- non-GET requests require an explicit per-request confirmation;
+- unresolved path and JSON placeholders fail closed; and
+- the tenant API key remains a password input held only in tab memory.
+
+r5 closes the production-bootstrap credential exposure:
+
+- public/shared bootstrap rejects API keys passed in process arguments;
+- an existing key can be read from a protected file;
+- a generated key is written directly to a new mode-0600 file; and
+- stdout contains metadata only and never contains the generated credential.
+
+The current working tree, after r5, adds a sandbox-only Stripe billing
+authority: a separately namespaced billing migration, Checkout/Portal, raw signed webhooks,
+provider-current invoice/subscription reconciliation, fail-closed entitlement
+state, SDK/CLI methods, and two additional workbench presets (29 total). The
+exact amd64 image was built, scanned, and deployed to internal staging as r6
+with billing unconfigured. It has not been exercised against a real Stripe test
+account.
+
+The exact-r7 public audit then exposed a second defect that earlier empty-alert
+export fixtures had missed: a PostgreSQL alert row exported its internal
+`source_key_hash`. The public program failed at the initial export before
+continuing. r7 now excludes every internal `*_key_hash` field in both SQLite
+and PostgreSQL serializers, adds an alert-bearing PostgreSQL regression, and
+passes the same external export assertion against a tenant containing a real
+durable alert. No assertion was weakened.
+
 The deployed managed image is:
 
-`sha256:57ce369135602f5831663c43f305d4eb19e3906de123e36b8cc176cbda0c84ee`
+`sha256:516b0869f9bb507641ddd5ae602a02b43fc620375f5134409776fe374970239d`
 
 It is `linux/amd64`, UID/GID 65532, read-only, capability-free, healthy, and had
 zero restarts at final inspection. Trivy found zero HIGH/CRITICAL
-vulnerabilities and zero embedded secrets.
+vulnerabilities and zero embedded secrets. The exact image was streamed over
+the trusted SSH connection and its image ID verified before rollout. r6 and r5
+remain retained under rollback tags.
 
 ## Requirements-to-evidence traceability
 
@@ -64,37 +102,43 @@ launch disposition for:
 
 No documentation assertion is counted as runtime proof by itself.
 
+Provider choices and exact sandbox/owner-console gates are recorded in
+[EXTERNAL_PROVIDER_PLAN.md](EXTERNAL_PROVIDER_PLAN.md).
+
 ## Executed test inventory
 
-| Boundary                             | Exact command or operation                                                             | Observed result                                                                                                                                                                                        |
-| ------------------------------------ | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Declared repository gate             | `npm run check`                                                                        | 35 TS files passed, one PostgreSQL-only file skipped; 183 passed and 15 skipped; four Python tests passed                                                                                              |
-| Credentialed PostgreSQL and coverage | `SCHEMA_GUARD_TEST_POSTGRES_URL=... npm run test:coverage` against fresh PostgreSQL 16 | 36 files, 198/198 tests in 16.31 s; statements 79.63%, branches 73.72%, functions 80.98%, lines 81.59%; disposable database removed                                                                    |
-| Production-container lifecycle       | `npm run audit:container-e2e`                                                          | Passed in 18.647 s; managed, PostgreSQL, TLS proxy, anchor, two tenants, synchronized deletion projections, three restart classes, outage recovery, hardening, and log privacy                         |
-| Public managed workflow              | `npm run audit:public-managed`                                                         | 61 HTTPS requests in 18.077 s; registry, releases, every decision outcome, policy, key lifecycle, approval, idempotency, checkpoint, integrity, export, and lock                                       |
-| Separate-host outage                 | `npm run audit:public-anchor-outage` with explicit r3 label                            | Public action returned `checkpoint_anchor_unacknowledged`; anchor recovered in 7.622 s; reservation stayed duplicate-blocked; reconciliation/control integrity passed                                  |
-| In-app browser                       | Real dashboard at `https://api.akriven.com/dashboard`                                  | All panels loaded; export downloaded with hash; wrong deletion rejected; correct deletion locked access; locked reload suppressed operational panels; export remained available                        |
-| Browser-triggered deletion           | Offline inspect/export/delete after the browser request                                | Local and shared lifecycle both `deletion_pending`; exact export hashes accepted; signed receipts retained; audit tenant and temporary key removed                                                     |
-| Image security                       | Trivy runtime image and CycloneDX SBOM scans                                           | Zero HIGH, zero CRITICAL, zero embedded secrets                                                                                                                                                        |
-| Package security                     | `npm audit --audit-level=moderate`                                                     | Zero known npm vulnerabilities                                                                                                                                                                         |
-| Filesystem security                  | Trivy filesystem vulnerability/secret/misconfiguration scan                            | Zero reported HIGH/CRITICAL findings or secrets                                                                                                                                                        |
-| Severe local program                 | `npm run audit:extreme`                                                                | Passed; adversarial/property, load, recovery, packaging, audit, and evidence-redaction gates                                                                                                           |
-| Framework runtimes                   | `npm run audit:framework-integrations` with reviewed Python runtime                    | MCP, OpenAI Agents, PydanticAI, and Google ADK packages exercised; rejected calls executed zero tools                                                                                                  |
-| Static external corpora              | `audit:real-data`, `audit:benchmarks`, `audit:five-repos`, `audit:real-repos`          | Static data/source only; downloaded third-party code was not executed; limitations remain explicit                                                                                                     |
-| Website local boundary               | `npm ci`, `npm run lint`, `npm test`, then in-app-browser traversal in `website/`      | Zero npm vulnerabilities; lint/build and three render/trust tests passed; all 16 routes loaded in the browser; primary/trust navigation worked; privacy/support/terms/security non-claims were present |
-| Website public boundary              | Sites version 14 deployment plus in-app-browser traversal of the production URL        | Commit `fdaef4aef49c01ff5b0b28f7124e3aacd9b76429` deployed successfully; all 16 routes loaded with expected headings; no 404 or bearer-auth error; real Security and Terms link clicks succeeded       |
+| Boundary                             | Exact command or operation                                                                                   | Observed result                                                                                                                                                                                                                                                                                           |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Declared repository gate             | repository sub-gates plus `npm test` and `npm run test:python`                                               | 36 TS files passed, one PostgreSQL-only file skipped; 191 passed and 16 skipped; four Python tests passed                                                                                                                                                                                                 |
+| Credentialed PostgreSQL and coverage | `SCHEMA_GUARD_TEST_POSTGRES_URL=... npm run test:coverage` against fresh PostgreSQL 16                       | Current r7: 37 files and 207/207 tests in 9.48 s; statements 79.40%, branches 73.46%, functions 80.29%, lines 81.24%; PostgreSQL used bounded tmpfs and the disposable container was removed                                                                                                              |
+| Stripe billing source boundary       | focused tests, signed raw-body fixtures, disposable PostgreSQL 16, container/extreme negative gates          | Checkout/Portal/provider-current reconciliation, invoice/subscription events, replay/reordering, crash window, replacement and cross-tenant rejection pass; no Stripe account/network proof                                                                                                               |
+| r7 staging correction and rollback   | alert-bearing export regression; exact amd64 transfer; guarded dual-overlay rollout; prior clean r6→r5 drill | r7 healthy at exact digest with zero restarts; control migrations `1,2` and billing `1`; r6/r5 rollback tags retained; public ready/dashboard 200; billing remains unconfigured                                                                                                                           |
+| Secure production bootstrap          | Public-mode bootstrap with `--api-key-output-file`; file-input container bootstraps                          | Generated credential was written mode 0600 and absent from stdout; direct command-line credential and writable input file were rejected; the generated credential authenticated successfully                                                                                                              |
+| Production-container lifecycle       | `npm run audit:container-e2e`                                                                                | Current r7 passed in 12.970 s; managed, persistent PostgreSQL, TLS proxy, anchor, file-key bootstrap, synchronized deletion projections, restart/outage recovery, disabled billing guards, dashboard guards, and log privacy                                                                              |
+| Public managed workflow              | `npm run audit:public-managed`                                                                               | First exact-r7 run rejected an alert-bearing export containing `source_key_hash`; corrected exact-r7 rerun passed 64 HTTPS requests in 21.593 s, including registry, releases, every decision outcome, policy, key lifecycle, approval, idempotency, checkpoint, integrity, privacy-safe export, and lock |
+| Separate-host outage                 | `npm run audit:public-anchor-outage` with explicit `r5-3f514af8` label                                       | Passed in 15.991 s; public action returned `checkpoint_anchor_unacknowledged`; anchor recovered in 4.185 s; reservation stayed duplicate-blocked; reconciliation/control integrity passed                                                                                                                 |
+| In-app browser                       | Real dashboard at `https://api.akriven.com/dashboard`                                                        | Exact-r7 public browser executed all 29/29 presets and parsed all 14/14 panels; configured operations succeeded, durable webhook dead-letter/redrive succeeded, guarded conflicts were observed, and all three unconfigured billing mutations failed closed with 501                                      |
+| Browser-triggered deletion           | Locked-state browser export followed by offline inspect/export/delete                                        | All 13 operational panels cleared while lifecycle/export remained available; local/shared lifecycle both `deletion_pending`; exact local/shared export hashes accepted; dual signed receipts retained; tenant and every temporary key/export/confirmation file removed                                    |
+| Image security                       | Trivy runtime image and CycloneDX SBOM scans                                                                 | Zero HIGH, zero CRITICAL, zero embedded secrets                                                                                                                                                                                                                                                           |
+| Package security                     | `npm audit --audit-level=moderate`                                                                           | Zero known npm vulnerabilities                                                                                                                                                                                                                                                                            |
+| Filesystem security                  | Trivy filesystem vulnerability/secret/misconfiguration scan                                                  | Zero reported HIGH/CRITICAL findings or secrets                                                                                                                                                                                                                                                           |
+| Severe local program                 | `npm run audit:extreme`                                                                                      | Current r7 passed in 27.176 s; 2,000 requests at concurrency 32, 949.03 req/s, p50 31.15 ms, p95 36.48 ms, p99 178.40 ms, zero errors; adversarial, recovery, packaging, audit, and evidence-redaction gates passed                                                                                       |
+| Framework runtimes                   | `npm run audit:framework-integrations` with reviewed Python runtime                                          | MCP, OpenAI Agents, PydanticAI, and Google ADK packages exercised; rejected calls executed zero tools                                                                                                                                                                                                     |
+| Static external corpora              | `audit:real-data`, `audit:benchmarks`, `audit:five-repos`, `audit:real-repos`                                | Static data/source only; downloaded third-party code was not executed; limitations remain explicit                                                                                                                                                                                                        |
+| Website local boundary               | `npm ci`, `npm run lint`, `npm test`, then in-app-browser traversal in `website/`                            | Zero npm vulnerabilities; lint/build and three render/trust tests passed; all 16 routes loaded in the browser; primary/trust navigation worked; privacy/support/terms/security non-claims were present                                                                                                    |
+| Website public boundary              | Sites version 14 deployment plus in-app-browser traversal of the production URL                              | Commit `fdaef4aef49c01ff5b0b28f7124e3aacd9b76429` deployed successfully; all 16 routes loaded with expected headings; no 404 or bearer-auth error; real Security and Terms link clicks succeeded                                                                                                          |
 
 Dry-run provider probes are not live provider evidence. Local framework
-execution is not model-provider behavior. A browser dashboard does not expose
-every API route; routes without UI were exercised through the real public TLS
-boundary instead.
+execution is not model-provider behavior. The browser workbench exposes the
+managed daily-use route families, but scripted public-TLS assertions remain
+necessary and no dashboard proves downstream tool execution.
 
 ## Deployment topology and hardened inventory
 
 ### Main failure domain
 
 - DreamHost self-managed VPS.
-- Managed r3, hardened PostgreSQL 16, and scratch-based Caddy edge.
+- Managed r7, hardened PostgreSQL 16, and scratch-based Caddy edge.
 - Only SSH, HTTP/ACME, HTTPS, and HTTP/3 are allowed by the host firewall.
 - PostgreSQL, managed loopback, anchor, and Portainer ports are closed or
   filtered externally.
@@ -134,7 +178,7 @@ boundary instead.
 - Latest observed PostgreSQL restore: 1 second.
 - Managed clean-restore readiness: previously 12.676 seconds.
 - Anchor clean restore: previously 22 seconds.
-- Anchor outage recovery on exact r3 path: 7.622 seconds.
+- Anchor outage recovery on exact r5 path: 4.185 seconds.
 - Hardened PostgreSQL migration maintenance RTO: 90 seconds.
 - Current scheduled RPO: daily. WAL/PITR is not configured.
 - The owner explicitly accepted that daily RPO for the first cohort on
@@ -155,7 +199,13 @@ remain retained but are not counted as recoverable.
 ### Fixed
 
 - Shared deletion request left the local lifecycle projection stale.
+- The managed dashboard exposed only a small read-only subset of the managed
+  product. r4 adds the complete operator workbench and explicit mutation and
+  placeholder guards.
 - Public/shared bootstrap could be run without asserting stopped service.
+- Public/shared bootstrap could expose the one-time administrator key through
+  stdout or a process argument. r5 requires protected file input or direct
+  mode-0600 file output and keeps the credential out of stdout.
 - Container E2E did not inspect both lifecycle projections.
 - Long CLI lifecycle coverage could exceed the default test timeout.
 - Public outage evidence hardcoded an obsolete revision label.
@@ -163,6 +213,16 @@ remain retained but are not counted as recoverable.
 - Edge base image/runtime findings were replaced by a patched scratch build.
 - Backup recovery recipient lacked an available private identity for new
   evidence.
+
+The first r4 rollout invocation accidentally omitted the PostgreSQL TLS/CA
+Compose overlay. Readiness failed closed. The automatic rollback invocation
+used the same incomplete overlay and therefore also remained unhealthy until
+the operator restored r3 with both reviewed Compose files. No PostgreSQL, edge,
+DNS, or anchor service was restarted. r4 was then redeployed with the complete
+overlay and automatic rollback guard and finished healthy with zero restarts.
+This incident is retained as negative deployment evidence: all production
+rollout and rollback commands must include both `compose.yml` and
+`compose.postgres.yml`.
 
 ### Still open
 
@@ -174,8 +234,12 @@ remain retained but are not counted as recoverable.
 - No independent penetration test, ASVS record, or operated incident exercise.
 - No hosted human identity, organization membership/RBAC, recovery, or MFA
   policy.
-- No sandbox billing authority, checkout, portal, signed provider webhooks,
-  failed-payment handling, cancellation, refund, or entitlement reconciliation.
+- Sandbox-only billing code, Checkout/Portal interfaces, signed provider
+  webhooks, invoice/subscription reconciliation, replacement subscriptions,
+  and fail-closed entitlements now pass deterministic and PostgreSQL tests.
+  The code is deployed in r7 but disabled; no real Stripe test account,
+  Checkout, Portal, test clock, tax, refund, invoice, or settlement has been
+  exercised.
 - No protected live OpenAI/Anthropic/Gemini probes.
 - No published package consumer-install certification or registry provenance.
 - No customer usage, willingness-to-pay, retention, support, or market proof.
@@ -220,9 +284,11 @@ non-claims. Lint, build, and all three website tests passed after the change.
 
 1. Hosted identity, verified email, organization membership, invitations,
    role separation, recovery, sessions, CSRF defenses, and MFA policy.
-2. Sandbox billing checkout/portal, raw-body signature verification, replay,
-   duplicates, reordering, failure, cancellation, refund, tax, and entitlement
-   reconciliation.
+2. Run the implemented billing authority against a real Stripe test account:
+   browser Checkout/Portal, test clocks, failed payment/recovery, cancellation,
+   replacement, duplicates/reordering/outage, and exact-image public-TLS proof.
+   Decide and implement refund/credit, tax, invoice, and dunning policy. See
+   [`BILLING_STRIPE_SANDBOX.md`](BILLING_STRIPE_SANDBOX.md).
 3. KMS-backed secrets and versioned rotation.
 4. Operated metrics, SLOs, dashboards, paging, status communication, and support
    ownership.
@@ -302,11 +368,17 @@ not establish provider or customer behavior.
 
 ### Production-like network evidence
 
-The exact scanned r3 image is live behind public TLS with persisted PostgreSQL,
+The exact scanned r7 image is live behind public TLS with persisted PostgreSQL,
 an independent checkpoint host, scheduled encrypted cross-host backups,
-restorable evidence, hardened containers, fail-closed receiver outages, public
-API workflows, and a real browser dashboard. This is strong internal-staging
-evidence, not a production SLA.
+restorable evidence, hardened containers, and a 29-preset browser workbench.
+Exact-r7 evidence includes the 64-request public program, all 29 presets and 14
+panels, alert-bearing privacy-safe export, secure file-only bootstrap,
+dual-store export-hash deletion, pre-migration backup, separate billing
+migration history, clean r6→r5 rollback compatibility, exact-digest rollout,
+public readiness/dashboard, and disabled billing boundaries. The measured
+independent-host outage/recovery remains exact-r5 evidence because the
+DigitalOcean host key was not silently retrusted. This is strong
+internal-staging evidence, not a production SLA.
 
 ### Real customer and market evidence
 

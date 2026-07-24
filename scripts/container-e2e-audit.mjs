@@ -48,6 +48,8 @@ function secretFile(name, value) {
 
 const secretFiles = {
   master: secretFile('master', masterSecret),
+  adminKey: secretFile('admin-key', adminKey),
+  tenantTwoAdminKey: secretFile('tenant-two-admin-key', tenantTwoAdminKey),
   anchorSigning: secretFile('anchor-signing', anchorSigningSecret),
   anchorRead: secretFile('anchor-read', anchorReadToken),
   anchorChain: secretFile('anchor-chain', anchorChainSecret),
@@ -261,6 +263,10 @@ try {
     '-v',
     `${secretFiles.master}:/run/secrets/schema_guard_master:ro`,
     '-v',
+    `${secretFiles.adminKey}:/run/secrets/schema_guard_admin_key:ro`,
+    '-v',
+    `${secretFiles.tenantTwoAdminKey}:/run/secrets/schema_guard_tenant_two_admin_key:ro`,
+    '-v',
     `${sharedActionDatabaseFile}:/run/secrets/schema_guard_action_database:ro`,
     '-v',
     `${sharedControlDatabaseFile}:/run/secrets/schema_guard_control_database:ro`,
@@ -304,8 +310,8 @@ try {
     'Container E2E',
     '--plan',
     'team',
-    '--api-key',
-    adminKey,
+    '--api-key-file',
+    '/run/secrets/schema_guard_admin_key',
     '--service-state',
     'stopped',
   ]);
@@ -328,8 +334,8 @@ try {
     'Container E2E Tenant Two',
     '--plan',
     'team',
-    '--api-key',
-    tenantTwoAdminKey,
+    '--api-key-file',
+    '/run/secrets/schema_guard_tenant_two_admin_key',
     '--service-state',
     'stopped',
   ]);
@@ -464,14 +470,22 @@ try {
   );
   assert(
     dashboard.body.includes('Tenant lifecycle') &&
+      dashboard.body.includes('Managed API workbench') &&
+      dashboard.body.includes('Control-plane integrity') &&
       dashboard.body.includes('Request tenant deletion'),
-    'dashboard exposes lifecycle, export, and exact-confirmation deletion controls',
+    'dashboard exposes complete operations, workbench, export, and deletion controls',
   );
   assert(
     !dashboard.headers['content-security-policy'].includes("'unsafe-inline'"),
     'dashboard CSP forbids inline script and style execution',
   );
-  await request(managedBase, '/dashboard/app.js', 200);
+  const dashboardScript = await request(managedBase, '/dashboard/app.js', 200);
+  assert(
+    dashboardScript.body.includes('/v1/actions/reconciliation/{RESERVATION_ID}') &&
+      dashboardScript.body.includes('Replace every JSON placeholder before execution') &&
+      dashboardScript.body.includes('Confirm this mutation before executing'),
+    'dashboard workbench includes action reconciliation and fail-closed request guards',
+  );
   await request(managedBase, '/dashboard/app.css', 200);
   await request(managedBase, '/v1/usage', 401);
 
@@ -678,7 +692,37 @@ try {
   await request(managedBase, '/v1/intelligence', 200, { key: adminKey });
   const usage = await request(managedBase, '/v1/usage', 200, { key: adminKey });
   assert(usage.body.usage.validation_count >= 4, 'usage is shared and metered');
-  await request(managedBase, '/v1/billing/statement', 200, { key: adminKey });
+  const billingStatement = await request(managedBase, '/v1/billing/statement', 200, {
+    key: adminKey,
+  });
+  assert(
+    billingStatement.body.payment_processing === 'integration_required',
+    'unconfigured container exposes the billing integration boundary',
+  );
+  const checkoutDisabled = await request(managedBase, '/v1/billing/checkout-session', 501, {
+    method: 'POST',
+    key: adminKey,
+  });
+  assert(
+    checkoutDisabled.body.error === 'billing_integration_required',
+    'unconfigured container blocks checkout fail closed',
+  );
+  const portalDisabled = await request(managedBase, '/v1/billing/portal-session', 501, {
+    method: 'POST',
+    key: adminKey,
+  });
+  assert(
+    portalDisabled.body.error === 'billing_integration_required',
+    'unconfigured container blocks the billing portal fail closed',
+  );
+  const webhookDisabled = await request(managedBase, '/v1/billing/stripe/webhook', 501, {
+    method: 'POST',
+    body: {},
+  });
+  assert(
+    webhookDisabled.body.error === 'billing_integration_required',
+    'unconfigured container blocks Stripe webhooks fail closed',
+  );
   await request(managedBase, '/v1/alerts', 200, { key: adminKey });
 
   const rulesetVersion = `container-e2e-${startedAt}`;

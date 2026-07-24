@@ -1,0 +1,19 @@
+services:
+  schema-guard-managed:
+    environment:
+      SCHEMA_GUARD_STRIPE_MODE: sandbox
+      SCHEMA_GUARD_STRIPE_SECRET_KEY_FILE: /run/secrets/schema_guard_stripe_secret_key
+      SCHEMA_GUARD_STRIPE_WEBHOOK_SECRET_FILE: /run/secrets/schema_guard_stripe_webhook_secret
+      SCHEMA_GUARD_STRIPE_TEAM_PRICE_ID: ${SCHEMA_GUARD_STRIPE_TEAM_PRICE_ID}
+      SCHEMA_GUARD_STRIPE_CHECKOUT_SUCCESS_URL: ${SCHEMA_GUARD_STRIPE_CHECKOUT_SUCCESS_URL}
+      SCHEMA_GUARD_STRIPE_CHECKOUT_CANCEL_URL: ${SCHEMA_GUARD_STRIPE_CHECKOUT_CANCEL_URL}
+      SCHEMA_GUARD_STRIPE_PORTAL_RETURN_URL: ${SCHEMA_GUARD_STRIPE_PORTAL_RETURN_URL}
+    secrets:
+      - schema_guard_stripe_secret_key
+      - schema_guard_stripe_webhook_secret
+
+secrets:
+  schema_guard_stripe_secret_key:
+    file: ${SCHEMA_GUARD_STRIPE_SECRET_KEY_FILE}
+  schema_guard_stripe_webhook_secret:
+    file: ${SCHEMA_GUARD_STRIPE_WEBHOOK_SECRET_FILE}

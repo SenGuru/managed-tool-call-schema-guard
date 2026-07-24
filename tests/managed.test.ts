@@ -119,6 +119,37 @@ describe('managed local control plane', () => {
     ).toThrow(/PostgreSQL URL/u);
     expect(() =>
       validateManagedConfig({
+        databasePath: '/tmp/schema-guard-private.db',
+        masterSecret: 'private-mode-secret-that-is-at-least-32-characters',
+        stripeSecretKey: 'sk_test_partial',
+      }),
+    ).toThrow(/requires secret key, webhook secret/u);
+    const stripe = {
+      stripeMode: 'sandbox' as const,
+      stripeSecretKey: 'sk_test_configuration',
+      stripeWebhookSecret: 'whsec_configuration',
+      stripeTeamPriceId: 'price_test_team',
+      stripeCheckoutSuccessUrl: 'https://akriven.com/account/billing/success',
+      stripeCheckoutCancelUrl: 'https://akriven.com/account/billing',
+      stripePortalReturnUrl: 'https://akriven.com/account/billing',
+    };
+    expect(() =>
+      validateManagedConfig({
+        databasePath: '/tmp/schema-guard-private.db',
+        masterSecret: 'private-mode-secret-that-is-at-least-32-characters',
+        ...stripe,
+      }),
+    ).toThrow(/requires shared PostgreSQL/u);
+    expect(() =>
+      validateManagedConfig({
+        databasePath: '/tmp/schema-guard-private.db',
+        masterSecret: 'private-mode-secret-that-is-at-least-32-characters',
+        sharedControlDatabaseUrl: 'postgresql://database.example/schema_guard?sslmode=verify-full',
+        ...stripe,
+      }),
+    ).not.toThrow();
+    expect(() =>
+      validateManagedConfig({
         ...base,
         sharedActionDatabaseUrl: 'postgresql://database.example/schema_guard?sslmode=verify-full',
       }),
@@ -586,6 +617,39 @@ describe('managed local control plane', () => {
     expect(dashboardBody).toContain('Managed API workbench');
     expect(dashboardBody).toContain('Control-plane integrity');
     expect(dashboardBody).toContain('I reviewed this exact request and authorize this mutation.');
+    expect(dashboardBody.match(/<option value=/gu)).toHaveLength(29);
+    for (const label of [
+      'Validate tool call',
+      'Compile provider contract',
+      'Register schema',
+      'Release schema',
+      'Create environment',
+      'Update environment policy',
+      'Update schema enforcement',
+      'Update organization policy',
+      'Set action descriptor',
+      'Create approval challenge',
+      'Approve challenge',
+      'Cancel challenge',
+      'Evaluate action',
+      'Complete reservation',
+      'Release reservation',
+      'Compare checkpoint',
+      'Redrive anchor delivery',
+      'Reconcile uncertain action',
+      'Ingest conformance run',
+      'Create alert webhook',
+      'Redrive webhook delivery',
+      'Disable webhook',
+      'Publish ruleset',
+      'Create API key',
+      'Revoke API key',
+      'Start Stripe checkout',
+      'Open Stripe billing portal',
+      'Attempt plan change',
+      'Purge retained audits',
+    ])
+      expect(dashboardBody, label).toContain(`>${label}<`);
     const dashboardScript = await fetch(`${base}/dashboard/app.js`);
     expect(dashboardScript.status).toBe(200);
     const dashboardJavaScript = await dashboardScript.text();
@@ -613,13 +677,21 @@ describe('managed local control plane', () => {
       '/v1/actions/challenges',
       '/v1/actions/evaluate',
       '/v1/actions/idempotency/complete',
+      '/v1/actions/idempotency/release',
       '/v1/actions/idempotency/checkpoint/compare',
+      '/v1/actions/idempotency/anchors/deliveries/{DELIVERY_ID}/redrive',
       '/v1/actions/reconciliation/{RESERVATION_ID}',
       '/v1/conformance-runs',
       '/v1/alert-webhooks',
+      '/v1/alert-webhooks/deliveries/{DELIVERY_ID}/redrive',
+      '/v1/alert-webhooks/{WEBHOOK_ID}',
       '/v1/admin/rulesets',
       '/v1/admin/api-keys',
+      '/v1/admin/api-keys/{KEY_ID}',
+      '/v1/billing/checkout-session',
+      '/v1/billing/portal-session',
       '/v1/admin/plan',
+      '/v1/admin/policy',
       '/v1/admin/retention/purge',
     ])
       expect(dashboardJavaScript, endpoint).toContain(endpoint);

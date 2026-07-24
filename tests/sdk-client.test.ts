@@ -463,6 +463,26 @@ describe('SchemaGuardClient remote boundary', () => {
               }),
             ),
           );
+        if (url.endsWith('/v1/billing/checkout-session'))
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                session_id: 'cs_test_sdk',
+                url: 'https://checkout.stripe.com/c/pay/sdk',
+                expires_at: '2030-01-01T00:00:00.000Z',
+              }),
+              { status: 201 },
+            ),
+          );
+        if (url.endsWith('/v1/billing/portal-session'))
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                url: 'https://billing.stripe.com/p/session/sdk',
+              }),
+              { status: 201 },
+            ),
+          );
         if (url.endsWith('/v1/admin/tenant/lifecycle'))
           return Promise.resolve(
             new Response(
@@ -537,6 +557,12 @@ describe('SchemaGuardClient remote boundary', () => {
     });
     await expect(client.getManagedBillingStatement()).resolves.toMatchObject({
       payment_processing: 'integration_required',
+    });
+    await expect(client.createManagedBillingCheckoutSession()).resolves.toMatchObject({
+      session_id: 'cs_test_sdk',
+    });
+    await expect(client.createManagedBillingPortalSession()).resolves.toMatchObject({
+      url: 'https://billing.stripe.com/p/session/sdk',
     });
     await expect(client.getManagedTenantLifecycle()).resolves.toMatchObject({
       status: 'active',

@@ -15,6 +15,18 @@ async function database(): Promise<string> {
   return join(await mkdtemp(join(tmpdir(), 'schema-guard-lifecycle-')), 'managed.db');
 }
 
+async function expectCommandFailure(
+  command: ReturnType<typeof execFileAsync>,
+  message: string,
+): Promise<void> {
+  try {
+    await command;
+    throw new Error('command unexpectedly succeeded');
+  } catch (error) {
+    expect((error as { stderr?: string }).stderr).toContain(message);
+  }
+}
+
 afterEach(async () => {
   for (const service of open.splice(0)) await service.close();
 });
@@ -46,6 +58,98 @@ describe('tenant lifecycle', () => {
     } catch (error) {
       expect((error as { stderr?: string }).stderr).toContain('--service-state stopped');
     }
+  });
+
+  it('writes a generated public bootstrap key to an owner-only file without printing it', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'schema-guard-bootstrap-key-'));
+    const path = join(directory, 'managed.db');
+    const keyPath = join(directory, 'bootstrap.key');
+    const executable = join(process.cwd(), 'node_modules', '.bin', 'tsx');
+    const { stdout } = await execFileAsync(
+      executable,
+      [
+        'packages/managed/src/bootstrap.ts',
+        '--database',
+        path,
+        '--tenant-id',
+        'secure-bootstrap',
+        '--api-key-output-file',
+        keyPath,
+        '--service-state',
+        'stopped',
+      ],
+      {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          SCHEMA_GUARD_MASTER_SECRET: secret,
+          SCHEMA_GUARD_PUBLIC_MODE: 'true',
+        },
+      },
+    );
+    const result = JSON.parse(stdout) as Record<string, unknown>;
+    expect(result).toMatchObject({
+      tenant_id: 'secure-bootstrap',
+      api_key_file: keyPath,
+    });
+    expect(result).not.toHaveProperty('api_key');
+    expect(stdout).not.toContain('sg_live_');
+    expect((await stat(keyPath)).mode & 0o777).toBe(0o600);
+    const key = (await readFile(keyPath, 'utf8')).trim();
+    expect(key).toMatch(/^sg_live_[A-Za-z0-9_-]+$/u);
+    const store = new ManagedStore({ databasePath: path, masterSecret: secret });
+    open.push(store);
+    expect(store.authenticate(key)).toMatchObject({ tenantId: 'secure-bootstrap' });
+  });
+
+  it('rejects public bootstrap keys in observable arguments or writable files', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'schema-guard-bootstrap-key-'));
+    const executable = join(process.cwd(), 'node_modules', '.bin', 'tsx');
+    const environment = {
+      ...process.env,
+      SCHEMA_GUARD_MASTER_SECRET: secret,
+      SCHEMA_GUARD_PUBLIC_MODE: 'true',
+    };
+    await expectCommandFailure(
+      execFileAsync(
+        executable,
+        [
+          'packages/managed/src/bootstrap.ts',
+          '--database',
+          join(directory, 'argument.db'),
+          '--tenant-id',
+          'argument-bootstrap',
+          '--api-key',
+          'observable-bootstrap-key-at-least-32-characters',
+          '--service-state',
+          'stopped',
+        ],
+        { cwd: process.cwd(), env: environment },
+      ),
+      '--api-key is forbidden for public/shared bootstrap',
+    );
+
+    const writableKeyPath = join(directory, 'writable.key');
+    await writeFile(writableKeyPath, 'file-bootstrap-key-at-least-32-characters\n');
+    await chmod(writableKeyPath, 0o666);
+    await expectCommandFailure(
+      execFileAsync(
+        executable,
+        [
+          'packages/managed/src/bootstrap.ts',
+          '--database',
+          join(directory, 'file.db'),
+          '--tenant-id',
+          'file-bootstrap',
+          '--api-key-file',
+          writableKeyPath,
+          '--service-state',
+          'stopped',
+        ],
+        { cwd: process.cwd(), env: environment },
+      ),
+      'must not be writable by group or other users',
+    );
   });
 
   it('backfills an active lifecycle when upgrading an existing version-14 database', async () => {

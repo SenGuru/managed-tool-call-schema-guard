@@ -167,6 +167,7 @@ intelligence, usage/billing statements, alerts and durable HTTPS webhook
 delivery, signed rulesets, API-key lifecycle, organization policy, plan control,
 tenant lifecycle/complete export/deletion request, and retention purge. See
 [`docs/MANAGED_LOCAL.md`](docs/MANAGED_LOCAL.md),
+[`docs/BILLING_STRIPE_SANDBOX.md`](docs/BILLING_STRIPE_SANDBOX.md),
 [`docs/SCHEMA_RELEASES.md`](docs/SCHEMA_RELEASES.md),
 [`docs/CHECKPOINT_ANCHORS.md`](docs/CHECKPOINT_ANCHORS.md), and
 [`docs/ALERT_WEBHOOKS.md`](docs/ALERT_WEBHOOKS.md).
@@ -188,10 +189,12 @@ Supported resources are `usage`, `audits`, `audit-verification`, `alerts`,
 and `tenant-export`. `managed-request-deletion` requires an exact tenant ID.
 The TypeScript SDK exposes the same daily read workflow plus schema
 registration, API-key issue/revoke, action controls, releases, webhook
-operations, lifecycle/export, and deletion request. The Python client accepts
-`api_key=` and exposes the same lifecycle/export/deletion workflow.
+operations, sandbox billing Checkout/Portal, lifecycle/export, and deletion
+request. Billing CLI commands write provider URLs only to a new owner-only
+file. The Python client accepts `api_key=` and exposes the same
+lifecycle/export/deletion workflow.
 
-This is the local finished-product-spine walkthrough: bootstrap a tenant, protect validation with an API key, register evolving schemas, exercise repair and rejection cases, inspect the signed audit trail and drift alerts, review privacy-thresholded compatibility signals, and export operational evidence. It demonstrates the implemented product workflow end to end on one machine. A public staging ingress is now under production-readiness verification, but payment collection, hosted identity, a configured and deployment-tested customer notification receiver, cloud key management, and multi-region recovery remain integration work and are not simulated as successful.
+This is the local finished-product-spine walkthrough: bootstrap a tenant, protect validation with an API key, register evolving schemas, exercise repair and rejection cases, inspect the signed audit trail and drift alerts, review privacy-thresholded compatibility signals, and export operational evidence. It demonstrates the implemented product workflow end to end on one machine. A public staging ingress is now under production-readiness verification. The Stripe integration is sandbox-only and deterministically tested but has not been exercised against a real Stripe test account; payment collection, hosted identity, a configured and deployment-tested customer notification receiver, cloud key management, and multi-region recovery remain integration work and are not simulated as successful.
 
 Protocol JSON Schemas live in [`protocol/v1`](protocol/v1). See
 [`docs/CONTRACT_COMPILER.md`](docs/CONTRACT_COMPILER.md),
@@ -242,10 +245,11 @@ in [`docs/OPERATIONS_RUNBOOK.md`](docs/OPERATIONS_RUNBOOK.md).
 
 See [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md) and the
 [2026-07-23 production-readiness handoff](docs/PRODUCTION_READINESS_HANDOFF_2026-07-23.md).
-Public mode does not fake missing business infrastructure: payment settlement,
-hosted human identity, an owned external paging receiver, KMS custody, and live
-provider-version probe operation still require explicit production
-configuration.
+Public mode does not fake missing business infrastructure: the sandbox-only
+Stripe code remains disabled without complete test configuration, while payment
+settlement, hosted human identity, an owned external paging receiver, KMS
+custody, and live provider-version probe operation still require explicit
+production configuration and observed external evidence.
 
 Run the licensed public-data replay independently:
 
@@ -386,7 +390,7 @@ customer production corpus; current compatibility signals come from checked-in
 fixtures and locally generated privacy-safe signatures. Drift classification is
 structural, not learned from observed runtime outcomes. The managed control plane
 is still partly local: hosted human identity/organization membership,
-payment-provider settlement, owned external paging and certificate-renewal
+real Stripe sandbox/settlement evidence, owned external paging and certificate-renewal
 monitoring, receiver-specific email/Slack delivery, cloud KMS and key rotation,
 removal of the remaining single-instance
 projection boundaries, and multi-region availability still require explicitly

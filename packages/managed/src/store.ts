@@ -191,7 +191,7 @@ function privacySafeAlertDetail(kind: string, detail: unknown): Record<string, u
 function tenantExportRow(row: Row): Row {
   const safe: Row = {};
   for (const [key, value] of Object.entries(row)) {
-    if (TENANT_EXPORT_SECRET_COLUMNS.has(key)) continue;
+    if (TENANT_EXPORT_SECRET_COLUMNS.has(key) || key.endsWith('_key_hash')) continue;
     if (key.endsWith('_json') && typeof value === 'string') {
       try {
         safe[key.slice(0, -'_json'.length)] = JSON.parse(value) as unknown;
@@ -1641,6 +1641,9 @@ export class ManagedStore {
         };
       })
       .immediate();
+  }
+  operatorUpdatePlan(tenantId: string, plan: PlanId): void {
+    this.updatePlan(this.operatorPrincipal(tenantId), plan);
   }
   updateTenantPolicy(principal: Principal, policy: GuardPolicy): void {
     this.requireScope(principal, 'admin');

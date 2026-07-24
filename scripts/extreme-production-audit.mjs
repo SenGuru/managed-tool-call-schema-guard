@@ -187,6 +187,12 @@ try {
   const headers = { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' };
   const dashboard = await fetch('http://127.0.0.1:8798/dashboard');
   assert(dashboard.status === 200, 'managed dashboard must load');
+  const dashboardBody = await dashboard.text();
+  assert(
+    dashboardBody.includes('Managed API workbench') &&
+      dashboardBody.includes('Control-plane integrity'),
+    'managed dashboard must expose the complete operator surface',
+  );
   assert(
     dashboard.headers.get('strict-transport-security')?.includes('max-age=31536000'),
     'public mode dashboard must emit HSTS',
@@ -263,6 +269,30 @@ try {
   assert(
     billing.status === 200 && billing.body.payment_processing === 'integration_required',
     'managed billing statement must expose integration boundary',
+  );
+  const checkout = await jsonRequest('http://127.0.0.1:8798/v1/billing/checkout-session', {
+    method: 'POST',
+    headers,
+  });
+  assert(
+    checkout.status === 501 && checkout.body.error === 'billing_integration_required',
+    'managed checkout must remain disabled without a sandbox billing authority',
+  );
+  const portal = await jsonRequest('http://127.0.0.1:8798/v1/billing/portal-session', {
+    method: 'POST',
+    headers,
+  });
+  assert(
+    portal.status === 501 && portal.body.error === 'billing_integration_required',
+    'managed billing portal must remain disabled without a sandbox billing authority',
+  );
+  const stripeWebhook = await jsonRequest('http://127.0.0.1:8798/v1/billing/stripe/webhook', {
+    method: 'POST',
+    body: '{}',
+  });
+  assert(
+    stripeWebhook.status === 501 && stripeWebhook.body.error === 'billing_integration_required',
+    'managed Stripe webhook must remain disabled without a sandbox billing authority',
   );
   const dbText = readFileSync(managedDb);
   assert(

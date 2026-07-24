@@ -1,7 +1,8 @@
 # Production readiness
 
-This repository now contains a production-shaped managed service profile, not a
-claim that a public SaaS is already deployed. Public mode is deliberately
+This repository now contains a production-shaped managed service profile and an
+internal-staging deployment, not a claim that a customer-production SaaS is
+ready. Public mode is deliberately
 fail-closed: the service refuses to start unless the deployment supplies a
 64-character-or-longer master secret, an HTTPS external URL, an explicit trusted
 TLS proxy setting, bounded request timeout, bounded per-key rate limit, and an
@@ -26,8 +27,11 @@ independent checkpoint-anchor URL/signing-secret pair.
 - Local tenant bootstrap flow with one-time API-key display.
 - Public/shared tenant bootstrap is explicitly offline-only:
   `--service-state stopped` is required, followed by a managed-service restart
-  and readiness check. The staging drill measured 3 seconds. Online self-serve
-  provisioning remains blocked on a hosted identity/organization control plane.
+  and readiness check. Public/shared bootstrap forbids API keys in process
+  arguments and requires an existing protected key file or a new mode-0600
+  output file; stdout never contains the key. The staging drill measured 3
+  seconds. Online self-serve provisioning remains blocked on a hosted
+  identity/organization control plane.
 - HMAC-bound tenant lifecycle state with fail-closed suspension, cancellation
   and deletion-pending gates; complete tenant export; exact-confirmation
   deletion requests; and an offline operator-only deletion workflow that
@@ -75,6 +79,14 @@ independent checkpoint-anchor URL/signing-secret pair.
   credentials, HMAC-bound lease state, `SKIP LOCKED` claims, cross-instance
   routes/workers, and source-transaction coupling for validation and schema
   alerts.
+- Optional sandbox-only Stripe billing authority with Checkout and Customer
+  Portal sessions, exact raw-body signature verification, provider-current
+  subscription/invoice reconciliation, HMAC-bound PostgreSQL replay state,
+  fail-closed entitlement crash-window handling, tenant export/deletion, and
+  TypeScript SDK/CLI/dashboard entry points. Live keys are rejected. This code
+  has deterministic and real-PostgreSQL evidence but no Stripe account,
+  network, Checkout, Portal, test-clock, tax, refund, or settlement evidence;
+  see [`BILLING_STRIPE_SANDBOX.md`](BILLING_STRIPE_SANDBOX.md).
 - Reviewable, integrity-checked schema promotion and optional fail-closed
   environment admission. Existing environments migrate safely in `observe`
   mode and require an explicit privileged switch to `enforce`.
@@ -97,6 +109,12 @@ SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_SIGNING_SECRET_FILE=/run/secrets/schema_gu
 SCHEMA_GUARD_SHARED_ACTION_DATABASE_URL_FILE=/run/secrets/schema_guard_action_database_url
 SCHEMA_GUARD_SHARED_CONTROL_DATABASE_URL_FILE=/run/secrets/schema_guard_control_database_url
 ```
+
+For an explicitly approved Stripe test deployment, add the reviewed
+`deploy/docker-compose.stripe-sandbox.yml` overlay and the complete
+configuration documented in
+[`BILLING_STRIPE_SANDBOX.md`](BILLING_STRIPE_SANDBOX.md). Do not configure live
+keys; startup rejects them.
 
 Docker Compose file-backed secrets preserve the source file's ownership and
 mode. For these non-root images, create production secret files as root, set
@@ -176,17 +194,57 @@ removed. The owner reported that the recovery identity was copied into
 off-workstation escrow on 2026-07-23. A clean-machine retrieval/decryption drill
 has not been observed, so escrow availability remains owner-attested.
 
-The exact r3 managed image
-`sha256:57ce369135602f5831663c43f305d4eb19e3906de123e36b8cc176cbda0c84ee`
-is now deployed. It fixes a production-observed shared deletion-request defect:
-r2 updated PostgreSQL but left the local SQLite projection active. r3
-synchronizes both signed lifecycle stores and rolls local state back if the
-shared transaction fails. The corrected image passed 198/198 credentialed
-tests, the production-container audit, a 61-request public TLS workflow,
-separate-host anchor failure/recovery, and the in-app-browser lifecycle. Offline
-inspection proved both projections `deletion_pending` before exact-hash
-deletion. No disposable `audit-*` tenant remains; both stores retain seven
-signed deletion receipts.
+The exact r7 managed image
+`sha256:516b0869f9bb507641ddd5ae602a02b43fc620375f5134409776fe374970239d`
+is now deployed. It retains the r3 correction for the production-observed
+shared deletion-request defect: r2 updated PostgreSQL but left the local SQLite
+projection active, while r3 through r7 synchronize both signed lifecycle stores and
+roll local state back if the shared transaction fails.
+
+r4 also replaces the partial read-only dashboard with an operator workbench:
+14 read panels cover lifecycle, usage, evidence, delivery, action,
+reconciliation, billing, integrity, releases, intelligence, and rulesets; 27
+editable presets cover managed operational route families. Non-GET requests
+require explicit confirmation and unresolved path or JSON placeholders fail
+closed.
+
+The exact r5 source passed the declared repository gate, production-container
+audit, severe program, a 61-request public TLS workflow, separate-host anchor
+failure/recovery, and the in-app-browser lifecycle. The browser exercised all
+27 workbench presets and loaded all 14 panels, including real dead-letter,
+redrive, and aged-reconciliation paths. r5 also requires protected file input
+or direct mode-0600 output for public/shared bootstrap credentials; stdout
+contains metadata only. Offline inspection proved both lifecycle projections
+`deletion_pending` before exact-hash deletion for disposable tenants.
+Local/shared receipts were produced, all temporary key/export/confirmation
+files were removed, and no disposable `audit-*` tenant remains.
+
+r6 adds the disabled-by-default sandbox Stripe authority and two workbench
+presets. Before rollout, a clean current-r6 process migrated PostgreSQL and a
+clean r5 image then became ready against the same database; billing migration
+history is isolated from the legacy control history. The production-like
+rollout took a fresh encrypted backup, retained r5 as the rollback image,
+verified the transferred amd64 digest, used both required Compose files, and
+finished healthy with zero restarts. Public readiness and dashboard returned
+200, the browser observed all 29 presets, and the unconfigured webhook remained
+fail closed. No real Stripe account or settlement path was exercised.
+
+r7 closes a privacy defect found by the exact public program after a browser
+created a durable alert. The shared export excluded `key_hash` but not the
+alert deduplication column `source_key_hash`. The first public run stopped at
+that assertion. Both export serializers now exclude all internal
+`*_key_hash` fields; an alert-bearing PostgreSQL regression passes; the exact
+scanned r7 image is healthy with zero restarts; and the corrected public run
+passes 64/64 HTTPS requests in 21.593 seconds. The public browser also executed
+all 29/29 presets, parsed all 14/14 panels, verified locked-state export, and
+finished with exact-hash deletion from both stores.
+
+The first r4 rollout omitted the PostgreSQL TLS/CA Compose overlay and readiness
+failed closed. r3 was restored using both reviewed Compose files without
+restarting PostgreSQL, edge, DNS, or anchor. r4 then deployed successfully with
+the complete overlay and automatic rollback guard. Production rollout and
+rollback commands must always include both `compose.yml` and
+`compose.postgres.yml`.
 
 This is staging evidence only. It does not prove PITR, observed certificate
 renewal, owned external monitoring/paging, customer usage, or a customer-facing

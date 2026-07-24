@@ -6,6 +6,9 @@ import type { SharedStatePool } from './pool.js';
 type Row = Record<string, unknown>;
 
 const CONTROL_TENANT_TABLES = [
+  'sg_billing_checkout_sessions',
+  'sg_billing_events',
+  'sg_billing_subscriptions',
   'sg_alert_deliveries',
   'sg_alert_manifests',
   'sg_alert_webhooks',
@@ -55,7 +58,7 @@ function exportedValue(value: unknown): unknown {
 function exportedRow(row: Row): Row {
   const safe: Row = {};
   for (const [key, raw] of Object.entries(row)) {
-    if (SECRET_COLUMNS.has(key)) continue;
+    if (SECRET_COLUMNS.has(key) || key.endsWith('_key_hash')) continue;
     const value = exportedValue(raw);
     if (key.endsWith('_json') && typeof value === 'string') {
       try {

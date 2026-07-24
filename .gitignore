@@ -10,6 +10,9 @@ coverage/
 .schema-guard-audit.jsonl
 .schema-guard-container-e2e-secrets.*
 work/
+.codex-work/
+outputs/
+website/
 *.tsbuildinfo
 __pycache__/
 *.py[cod]

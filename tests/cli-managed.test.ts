@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -189,6 +189,67 @@ describe('managed CLI workflow', () => {
         },
       ]);
       expect(deletion.stdout).not.toContain('admin-api-key');
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  }, 15_000);
+
+  it('writes checkout and portal session URLs only to new owner-only files', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'schema-guard-cli-billing-'));
+    temporaryDirectories.push(directory);
+    const keyFile = join(directory, 'api-key');
+    await writeFile(keyFile, 'billing-api-key\n', { mode: 0o600 });
+    const server = createServer((request, response) => {
+      response.writeHead(201, { 'content-type': 'application/json' });
+      if (request.url?.endsWith('/checkout-session'))
+        response.end(
+          JSON.stringify({
+            session_id: 'cs_test_cli',
+            url: 'https://checkout.stripe.com/c/pay/cli-sensitive',
+            expires_at: '2030-01-01T00:00:00.000Z',
+          }),
+        );
+      else
+        response.end(
+          JSON.stringify({
+            url: 'https://billing.stripe.com/p/session/cli-sensitive',
+          }),
+        );
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === 'string') throw new Error('missing CLI test address');
+      const base = `http://127.0.0.1:${address.port}`;
+      for (const [command, filename, expected] of [
+        [
+          'managed-billing-checkout',
+          'checkout.json',
+          'https://checkout.stripe.com/c/pay/cli-sensitive',
+        ],
+        [
+          'managed-billing-portal',
+          'portal.json',
+          'https://billing.stripe.com/p/session/cli-sensitive',
+        ],
+      ] as const) {
+        const output = join(directory, filename);
+        const result = await runCli([
+          command,
+          '--base-url',
+          base,
+          '--api-key-file',
+          keyFile,
+          '--out',
+          output,
+        ]);
+        expect(result).toMatchObject({ code: 0, stderr: '' });
+        expect(result.stdout).not.toContain(expected);
+        expect((await stat(output)).mode & 0o777).toBe(0o600);
+        expect(JSON.parse(await readFile(output, 'utf8'))).toMatchObject({ url: expected });
+      }
     } finally {
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),

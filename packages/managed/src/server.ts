@@ -22,6 +22,7 @@ import {
   PostgresSchemaState,
   PostgresAlertState,
   PostgresIntelligenceState,
+  PostgresBillingState,
   createSharedStatePool,
   exportSharedTenantData,
   SharedQuotaExceededError,
@@ -35,6 +36,7 @@ import {
   type SharedObservationContext,
   type SharedReservationResult,
   type SharedStatePool,
+  type BillingState,
 } from '@schema-guard/shared-state';
 import { dashboardHtml, dashboardScript, dashboardStyle } from './dashboard.js';
 import { environmentValue } from './environment.js';
@@ -53,6 +55,7 @@ import {
   dispatchCheckpointAnchorsOnce,
   dispatchSharedCheckpointAnchorsOnce,
 } from './webhook.js';
+import { billingTenantReference, StripeBillingProvider, type BillingProvider } from './billing.js';
 import {
   ALL_SCOPES,
   type ActionIdempotencyCheckpoint,
@@ -89,6 +92,14 @@ function json(
   response.end(`${JSON.stringify(value)}\n`);
 }
 async function readBody(request: IncomingMessage, max = 1_000_000): Promise<unknown> {
+  const body = await readRawBody(request, max);
+  try {
+    return JSON.parse(body.toString('utf8')) as unknown;
+  } catch {
+    throw new ManagedError(400, 'invalid_json', 'request body must be valid JSON');
+  }
+}
+async function readRawBody(request: IncomingMessage, max = 1_000_000): Promise<Buffer> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of request) {
@@ -97,11 +108,7 @@ async function readBody(request: IncomingMessage, max = 1_000_000): Promise<unkn
     if (size > max) throw new ManagedError(413, 'body_too_large', 'request body exceeds 1 MB');
     chunks.push(bytes);
   }
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
-  } catch {
-    throw new ManagedError(400, 'invalid_json', 'request body must be valid JSON');
-  }
+  return Buffer.concat(chunks);
 }
 function bearer(request: IncomingMessage): string {
   const header = request.headers.authorization;
@@ -359,6 +366,19 @@ function sharedIntelligenceStateUnavailable(error: unknown): ManagedError {
   );
 }
 
+function billingStateUnavailable(error: unknown): ManagedError {
+  const integrityFailure =
+    error instanceof SharedStateIntegrityError ||
+    (error instanceof Error && error.name === 'SharedStateIntegrityError');
+  return new ManagedError(
+    503,
+    integrityFailure ? 'billing_state_integrity_invalid' : 'billing_state_unavailable',
+    integrityFailure
+      ? 'billing state integrity verification failed; entitlements are unavailable'
+      : 'billing state is unavailable; entitlements are unavailable',
+  );
+}
+
 export function createManagedServer(
   config: ManagedConfig,
   dependencies: {
@@ -368,6 +388,8 @@ export function createManagedServer(
     schemaState?: SchemaState;
     alertState?: AlertState;
     intelligenceState?: IntelligenceState;
+    billingState?: BillingState;
+    billingProvider?: BillingProvider;
   } = {},
 ) {
   validateManagedConfig(config);
@@ -470,6 +492,35 @@ export function createManagedServer(
           },
         )
       : undefined);
+  const stripeConfigured = [
+    config.stripeSecretKey,
+    config.stripeWebhookSecret,
+    config.stripeTeamPriceId,
+    config.stripeCheckoutSuccessUrl,
+    config.stripeCheckoutCancelUrl,
+    config.stripePortalReturnUrl,
+  ].every((value) => value !== undefined);
+  const billingState =
+    dependencies.billingState ??
+    (stripeConfigured && config.sharedControlDatabaseUrl
+      ? new PostgresBillingState(
+          config.sharedControlDatabaseUrl,
+          config.masterSecret,
+          sharedControlPool,
+        )
+      : undefined);
+  const billingProvider =
+    dependencies.billingProvider ??
+    (stripeConfigured
+      ? new StripeBillingProvider({
+          secretKey: config.stripeSecretKey!,
+          webhookSecret: config.stripeWebhookSecret!,
+          teamPriceId: config.stripeTeamPriceId!,
+          successUrl: config.stripeCheckoutSuccessUrl!,
+          cancelUrl: config.stripeCheckoutCancelUrl!,
+          portalReturnUrl: config.stripePortalReturnUrl!,
+        })
+      : undefined);
   const limiter = new FixedWindowRateLimiter(config.rateLimitPerMinute ?? 120);
   let draining = false;
   let actionStateInitialized = actionState === undefined;
@@ -533,6 +584,19 @@ export function createManagedServer(
         intelligenceStateInitialized = true;
       })().catch(() => {
         intelligenceStateInitializationFailed = true;
+      })
+    : Promise.resolve();
+  let billingStateInitialized = billingState === undefined;
+  let billingStateInitializationFailed = false;
+  const billingStateInitialization = billingState
+    ? (async () => {
+        await controlStateInitialization;
+        if (controlStateInitializationFailed)
+          throw new Error('shared control state initialization failed');
+        await billingState.migrate();
+        billingStateInitialized = true;
+      })().catch(() => {
+        billingStateInitializationFailed = true;
       })
     : Promise.resolve();
   let webhookDispatch: Promise<void> | undefined;
@@ -687,6 +751,7 @@ export function createManagedServer(
           schemaStateInitialization,
           alertStateInitialization,
           intelligenceStateInitialization,
+          billingStateInitialization,
         ]);
         const sharedAvailable =
           actionState === undefined ||
@@ -711,6 +776,11 @@ export function createManagedServer(
           (!intelligenceStateInitializationFailed &&
             intelligenceStateInitialized &&
             (await intelligenceState.ready()));
+        const billingAvailable =
+          billingState === undefined ||
+          (!billingStateInitializationFailed &&
+            billingStateInitialized &&
+            (await billingState.ready()));
         const available =
           !draining &&
           store.readinessCheck() &&
@@ -718,7 +788,8 @@ export function createManagedServer(
           sharedControlAvailable &&
           sharedSchemaAvailable &&
           sharedAlertAvailable &&
-          sharedIntelligenceAvailable;
+          sharedIntelligenceAvailable &&
+          billingAvailable;
         sendJson(response, available ? 200 : 503, {
           status: available
             ? 'ready'
@@ -732,9 +803,11 @@ export function createManagedServer(
                     ? 'shared_alert_state_unavailable'
                     : intelligenceStateInitializationFailed || !sharedIntelligenceAvailable
                       ? 'shared_intelligence_state_unavailable'
-                      : actionStateInitializationFailed || !sharedAvailable
-                        ? 'shared_action_state_unavailable'
-                        : 'database_unavailable',
+                      : billingStateInitializationFailed || !billingAvailable
+                        ? 'billing_state_unavailable'
+                        : actionStateInitializationFailed || !sharedAvailable
+                          ? 'shared_action_state_unavailable'
+                          : 'database_unavailable',
         });
         return;
       }
@@ -772,6 +845,96 @@ export function createManagedServer(
         response.end(dashboardStyle);
         return;
       }
+      if (request.method === 'POST' && url.pathname === '/v1/billing/stripe/webhook') {
+        if (!billingProvider || !billingState)
+          throw new ManagedError(
+            501,
+            'billing_integration_required',
+            'Stripe billing is not configured',
+          );
+        await Promise.all([controlStateInitialization, billingStateInitialization]);
+        if (controlStateInitializationFailed || billingStateInitializationFailed)
+          throw new ManagedError(503, 'billing_state_unavailable', 'billing state is unavailable');
+        const signature = request.headers['stripe-signature'];
+        if (typeof signature !== 'string' || signature.length > 2048)
+          throw new ManagedError(
+            400,
+            'invalid_billing_signature',
+            'a valid Stripe-Signature header is required',
+          );
+        const rawBody = await readRawBody(request);
+        let envelope;
+        try {
+          envelope = billingProvider.parseWebhook(rawBody, signature);
+        } catch {
+          throw new ManagedError(
+            400,
+            'invalid_billing_signature',
+            'billing webhook signature or envelope is invalid',
+          );
+        }
+        if (!envelope.subscription_id && !envelope.checkout_session_id) {
+          sendJson(response, 200, { received: true, event_status: 'ignored' });
+          return;
+        }
+        let snapshot = envelope.event_snapshot;
+        if (envelope.subscription_id)
+          try {
+            snapshot = await billingProvider.retrieveSubscription(
+              envelope.subscription_id,
+              envelope.event_type === 'customer.subscription.deleted'
+                ? envelope.event_snapshot
+                : undefined,
+            );
+          } catch {
+            throw new ManagedError(
+              503,
+              'billing_provider_unavailable',
+              'billing provider reconciliation is unavailable',
+            );
+          }
+        let result;
+        try {
+          result = await billingState.ingestStripeEvent({
+            event_id: envelope.event_id,
+            event_created: envelope.event_created,
+            event_type: envelope.event_type,
+            payload_sha256: envelope.payload_sha256,
+            ...(envelope.subscription_id ? { subscription_id: envelope.subscription_id } : {}),
+            ...(envelope.checkout_session_id
+              ? { checkout_session_id: envelope.checkout_session_id }
+              : {}),
+            ...(snapshot ? { snapshot } : {}),
+            team_price_id: billingProvider.teamPriceId,
+          });
+        } catch (error) {
+          throw billingStateUnavailable(error);
+        }
+        if (result.event_status === 'pending')
+          throw new ManagedError(
+            503,
+            'billing_binding_unavailable',
+            'billing event is retained pending a trusted tenant binding',
+          );
+        if (result.event_status === 'ready' && result.tenant_id && result.desired_plan) {
+          try {
+            if (controlState) await controlState.updatePlan(result.tenant_id, result.desired_plan);
+            else store.operatorUpdatePlan(result.tenant_id, result.desired_plan);
+          } catch (error) {
+            throw sharedControlStateUnavailable(error);
+          }
+          try {
+            await billingState.markEventApplied(envelope.event_id);
+          } catch (error) {
+            throw billingStateUnavailable(error);
+          }
+        }
+        sendJson(response, 200, {
+          received: true,
+          event_status: result.event_status,
+        });
+        return;
+      }
       await controlStateInitialization;
       if (controlStateInitializationFailed) throw sharedControlStateUnavailable(undefined);
       await schemaStateInitialization;
@@ -781,6 +944,9 @@ export function createManagedServer(
       await intelligenceStateInitialization;
       if (intelligenceStateInitializationFailed)
         throw sharedIntelligenceStateUnavailable(undefined);
+      await billingStateInitialization;
+      if (billingStateInitializationFailed)
+        throw new ManagedError(503, 'billing_state_unavailable', 'billing state is unavailable');
       let principal: Principal;
       try {
         principal = await authenticate(store, controlState, request);
@@ -788,6 +954,18 @@ export function createManagedServer(
         if (error instanceof ManagedError) throw error;
         throw sharedControlStateUnavailable(error);
       }
+      if (billingState)
+        try {
+          if (!(await billingState.entitlementReady(principal.tenantId)))
+            throw new ManagedError(
+              503,
+              'billing_reconciliation_pending',
+              'billing entitlement reconciliation is pending; tenant access is unavailable',
+            );
+        } catch (error) {
+          if (error instanceof ManagedError) throw error;
+          throw new ManagedError(503, 'billing_state_unavailable', 'billing state is unavailable');
+        }
       const lifecycleRoute =
         (request.method === 'GET' && url.pathname === '/v1/admin/tenant/lifecycle') ||
         (request.method === 'GET' && url.pathname === '/v1/admin/tenant/export') ||
@@ -1997,6 +2175,66 @@ export function createManagedServer(
         }
         return;
       }
+      if (request.method === 'POST' && url.pathname === '/v1/billing/checkout-session') {
+        store.requireScope(principal, 'admin');
+        if (!billingProvider || !billingState)
+          throw new ManagedError(
+            501,
+            'billing_integration_required',
+            'Stripe billing is not configured',
+          );
+        if (await billingState.customerForTenant(principal.tenantId))
+          throw new ManagedError(
+            409,
+            'billing_subscription_exists',
+            'use the billing portal to manage the existing subscription',
+          );
+        try {
+          const session = await billingProvider.createCheckoutSession({
+            tenantReference: billingTenantReference(config.masterSecret, principal.tenantId),
+          });
+          await billingState.recordCheckoutSession(
+            principal.tenantId,
+            session.session_id,
+            session.expires_at,
+          );
+          sendJson(response, 201, session);
+        } catch (error) {
+          if (error instanceof ManagedError) throw error;
+          throw new ManagedError(
+            503,
+            'billing_provider_unavailable',
+            'billing checkout is unavailable',
+          );
+        }
+        return;
+      }
+      if (request.method === 'POST' && url.pathname === '/v1/billing/portal-session') {
+        store.requireScope(principal, 'admin');
+        if (!billingProvider || !billingState)
+          throw new ManagedError(
+            501,
+            'billing_integration_required',
+            'Stripe billing is not configured',
+          );
+        const customerId = await billingState.customerForTenant(principal.tenantId);
+        if (!customerId)
+          throw new ManagedError(
+            409,
+            'billing_subscription_missing',
+            'start checkout before opening the billing portal',
+          );
+        try {
+          sendJson(response, 201, await billingProvider.createPortalSession(customerId));
+        } catch {
+          throw new ManagedError(
+            503,
+            'billing_provider_unavailable',
+            'billing portal is unavailable',
+          );
+        }
+        return;
+      }
       if (request.method === 'GET' && url.pathname === '/v1/billing/statement') {
         store.requireScope(principal, 'read:billing');
         const usage = controlState
@@ -2004,6 +2242,7 @@ export function createManagedServer(
               throw sharedControlStateUnavailable(error);
             })
           : store.usage(principal);
+        const billing = billingState ? await billingState.statement(principal.tenantId) : undefined;
         sendJson(response, 200, {
           period: usage.month,
           plan: principal.plan,
@@ -2011,7 +2250,8 @@ export function createManagedServer(
           usage,
           amount_due: null,
           currency: null,
-          payment_processing: 'integration_required',
+          payment_processing: billing ? 'stripe' : 'integration_required',
+          ...(billing ? { subscription: billing } : {}),
         });
         return;
       }
@@ -2031,9 +2271,16 @@ export function createManagedServer(
       }
       if (request.method === 'GET' && url.pathname === '/v1/admin/control-plane-integrity') {
         store.requireScope(principal, 'admin');
-        if (controlState || schemaState || alertState || actionState || intelligenceState) {
+        if (
+          controlState ||
+          schemaState ||
+          alertState ||
+          actionState ||
+          intelligenceState ||
+          billingState
+        ) {
           try {
-            const [audit, releases, alerts, actions, intelligence] = await Promise.all([
+            const [audit, releases, alerts, actions, intelligence, billing] = await Promise.all([
               controlState
                 ? controlState.verifyAuditChain(principal.tenantId)
                 : Promise.resolve(store.verifyAuditChain(principal)),
@@ -2055,8 +2302,11 @@ export function createManagedServer(
               intelligenceState
                 ? intelligenceState.verifyTenantHistory(principal.tenantId)
                 : Promise.resolve({ valid: true, checked: 0 }),
+              billingState
+                ? billingState.verifyIntegrity(principal.tenantId)
+                : Promise.resolve({ valid: true, checked: 0 }),
             ]);
-            const components = { audit, releases, alerts, actions, intelligence };
+            const components = { audit, releases, alerts, actions, intelligence, billing };
             sendJson(response, 200, {
               valid: Object.values(components).every((result) => result.valid),
               checked: Object.values(components).reduce(
@@ -2424,6 +2674,7 @@ export function createManagedServer(
         schemaStateInitialization,
         alertStateInitialization,
         intelligenceStateInitialization,
+        billingStateInitialization,
       ]);
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),
@@ -2433,6 +2684,7 @@ export function createManagedServer(
       if (schemaState) await schemaState.close();
       if (alertState) await alertState.close();
       if (intelligenceState) await intelligenceState.close();
+      if (billingState) await billingState.close();
       await Promise.all([...ownedSharedPools].map((pool) => pool.end()));
       store.close();
     },
@@ -2582,6 +2834,49 @@ export function validateManagedConfig(config: ManagedConfig): void {
     throw new Error(
       'SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_REQUEST_TIMEOUT_MS must be lower than SCHEMA_GUARD_REQUEST_TIMEOUT_MS',
     );
+  const stripeValues = [
+    config.stripeMode,
+    config.stripeSecretKey,
+    config.stripeWebhookSecret,
+    config.stripeTeamPriceId,
+    config.stripeCheckoutSuccessUrl,
+    config.stripeCheckoutCancelUrl,
+    config.stripePortalReturnUrl,
+  ];
+  if (
+    stripeValues.some((value) => value !== undefined) &&
+    !stripeValues.every((value) => value !== undefined)
+  )
+    throw new Error(
+      'Stripe billing requires secret key, webhook secret, team price, checkout success/cancel URLs, and portal return URL together',
+    );
+  if (stripeValues.every((value) => value !== undefined)) {
+    if (
+      config.stripeMode !== 'sandbox' ||
+      !config.stripeSecretKey!.startsWith('sk_test_') ||
+      !config.stripeWebhookSecret!.startsWith('whsec_') ||
+      !/^price_[A-Za-z0-9_]+$/u.test(config.stripeTeamPriceId!)
+    )
+      throw new Error(
+        'Stripe billing must use sandbox mode with a test secret key, valid webhook secret, and team price identifier',
+      );
+    if (!config.sharedControlDatabaseUrl)
+      throw new Error('Stripe billing requires shared PostgreSQL control state');
+    for (const value of [
+      config.stripeCheckoutSuccessUrl!,
+      config.stripeCheckoutCancelUrl!,
+      config.stripePortalReturnUrl!,
+    ]) {
+      let parsed: URL;
+      try {
+        parsed = new URL(value);
+      } catch {
+        throw new Error('Stripe billing return URLs must be absolute HTTPS URLs');
+      }
+      if (parsed.protocol !== 'https:')
+        throw new Error('Stripe billing return URLs must be absolute HTTPS URLs');
+    }
+  }
   if (config.publicMode) {
     if (config.masterSecret.length < 64)
       throw new Error('public mode requires a 64+ character SCHEMA_GUARD_MASTER_SECRET');
@@ -2672,6 +2967,19 @@ function configFromEnvironment(): ManagedConfig {
   );
   if (actionCheckpointAnchorSigningSecret)
     config.actionCheckpointAnchorSigningSecret = actionCheckpointAnchorSigningSecret;
+  const stripeSecretKey = environmentValue('SCHEMA_GUARD_STRIPE_SECRET_KEY');
+  if (stripeSecretKey) config.stripeSecretKey = stripeSecretKey;
+  if (process.env.SCHEMA_GUARD_STRIPE_MODE === 'sandbox') config.stripeMode = 'sandbox';
+  const stripeWebhookSecret = environmentValue('SCHEMA_GUARD_STRIPE_WEBHOOK_SECRET');
+  if (stripeWebhookSecret) config.stripeWebhookSecret = stripeWebhookSecret;
+  if (process.env.SCHEMA_GUARD_STRIPE_TEAM_PRICE_ID)
+    config.stripeTeamPriceId = process.env.SCHEMA_GUARD_STRIPE_TEAM_PRICE_ID;
+  if (process.env.SCHEMA_GUARD_STRIPE_CHECKOUT_SUCCESS_URL)
+    config.stripeCheckoutSuccessUrl = process.env.SCHEMA_GUARD_STRIPE_CHECKOUT_SUCCESS_URL;
+  if (process.env.SCHEMA_GUARD_STRIPE_CHECKOUT_CANCEL_URL)
+    config.stripeCheckoutCancelUrl = process.env.SCHEMA_GUARD_STRIPE_CHECKOUT_CANCEL_URL;
+  if (process.env.SCHEMA_GUARD_STRIPE_PORTAL_RETURN_URL)
+    config.stripePortalReturnUrl = process.env.SCHEMA_GUARD_STRIPE_PORTAL_RETURN_URL;
   if (process.env.SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_POLL_INTERVAL_MS)
     config.actionCheckpointAnchorPollIntervalMs = Number(
       process.env.SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_POLL_INTERVAL_MS,

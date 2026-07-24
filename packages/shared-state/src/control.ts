@@ -11,6 +11,7 @@ import {
 import { SharedStateIntegrityError, type TransactionalAcceptedDecisionWriter } from './postgres.js';
 import type { TransactionalAlertWriter } from './alerts.js';
 import type { SharedObservationContext, TransactionalIntelligenceWriter } from './intelligence.js';
+import { BILLING_MIGRATION_NAME, BILLING_MIGRATION_VERSION, BILLING_SCHEMA } from './billing.js';
 
 export type SharedPlanId = 'trial' | 'team';
 export type SharedTenantLifecycleStatus = 'active' | 'suspended' | 'canceled' | 'deletion_pending';
@@ -727,6 +728,7 @@ export class PostgresControlState implements ControlState {
       await client.query(CONTROL_SCHEMA);
       const checksum = sha256(CONTROL_SCHEMA);
       const lifecycleChecksum = sha256(CONTROL_LIFECYCLE_SCHEMA);
+      const billingChecksum = sha256(BILLING_SCHEMA);
       const rows = await client.query<{ version: number; checksum: string }>(
         'SELECT version,checksum FROM sg_control_schema_migrations ORDER BY version',
       );
@@ -774,6 +776,22 @@ export class PostgresControlState implements ControlState {
           [lifecycleChecksum, timestamp],
         );
       }
+      await client.query(BILLING_SCHEMA);
+      const billingRows = await client.query<{ version: number; checksum: string }>(
+        'SELECT version,checksum FROM sg_billing_schema_migrations ORDER BY version',
+      );
+      if (
+        billingRows.rows.some(
+          (row) => row.version !== BILLING_MIGRATION_VERSION || row.checksum !== billingChecksum,
+        )
+      )
+        throw new SharedStateIntegrityError('shared billing migration history is incompatible');
+      if (!billingRows.rows.some((row) => row.version === BILLING_MIGRATION_VERSION))
+        await client.query(
+          `INSERT INTO sg_billing_schema_migrations(version,migration_name,checksum,applied_at)
+           VALUES($1,$2,$3,$4)`,
+          [BILLING_MIGRATION_VERSION, BILLING_MIGRATION_NAME, billingChecksum, new Date()],
+        );
     });
   }
 

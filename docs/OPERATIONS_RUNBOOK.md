@@ -31,6 +31,12 @@ service, and require `/readyz` plus tenant lifecycle/control-integrity checks
 before returning traffic. The command rejects a public/shared invocation
 without the stopped-service assertion.
 
+Never pass a production API key with `--api-key`; public/shared bootstrap
+rejects it because process arguments may be observable. Use
+`--api-key-file /owner-only/existing.key` or
+`--api-key-output-file /owner-only/new.key`. The input file must not be writable
+by group or other users. The output path must not exist and is created mode 0600. Stdout contains only tenant metadata.
+
 Do not run bootstrap inside an active production container. It writes the
 single-node SQLite projection out of process; the running store correctly
 becomes unready until restart. The staging drill observed this fail-closed state
@@ -170,6 +176,39 @@ schema. The first must remain accepted and the second must return a protocol
 switch to observation merely to restore traffic. Preserve the database, verify
 release history and the underlying registry rows, then restore from a known-good
 backup if required. See [`SCHEMA_RELEASES.md`](SCHEMA_RELEASES.md).
+
+## Stripe sandbox billing reconciliation
+
+The integration is sandbox-only until the external certification in
+[`BILLING_STRIPE_SANDBOX.md`](BILLING_STRIPE_SANDBOX.md) passes. Never respond
+to a billing incident by enabling a live key, manually changing a public
+tenant's plan route, editing billing rows, or replaying an unverified body.
+
+If `/readyz` reports `billing_state_unavailable` or tenant traffic reports
+`billing_reconciliation_pending`:
+
+1. stop rollout and preserve application/PostgreSQL logs with secrets and raw
+   bodies redacted;
+2. check Stripe test-mode availability and endpoint delivery status in the
+   provider console;
+3. verify `/v1/admin/control-plane-integrity` with a protected admin key;
+4. restore provider/database connectivity without modifying retained `ready`
+   rows;
+5. ask Stripe test mode to retry the original signed event, or use its reviewed
+   retry control; and
+6. confirm the event becomes applied, readiness recovers, the billing statement
+   matches provider-current state, and the tenant entitlement is correct.
+
+A pending binding intentionally returns `503` so Stripe retries. Investigate
+whether Checkout state was durably recorded before retrying. A conflicting
+event ID or cross-tenant subscription/customer binding is an integrity
+incident: isolate the service, preserve evidence, and do not force a mapping.
+
+For failed payments, cancellations, recovery, and reordered notifications,
+trust the newly retrieved provider subscription rather than the event timestamp.
+The service reduces entitlement to `trial` for every status except `active` or
+`trialing` on the exact Team price. Tax, refunds/credits, invoice amounts,
+dunning, and customer communication remain external policy blockers.
 
 ## Backup and restore drill
 

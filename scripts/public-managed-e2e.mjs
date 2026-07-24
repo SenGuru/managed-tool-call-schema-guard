@@ -210,6 +210,25 @@ assert(
   billing.body.payment_processing === 'integration_required',
   'billing integration boundary is not explicit',
 );
+const checkout = await request('/v1/billing/checkout-session', 501, { method: 'POST' });
+assert(
+  checkout.body.error === 'billing_integration_required',
+  'unconfigured public checkout did not fail closed',
+);
+const portal = await request('/v1/billing/portal-session', 501, { method: 'POST' });
+assert(
+  portal.body.error === 'billing_integration_required',
+  'unconfigured public billing portal did not fail closed',
+);
+const stripeWebhook = await request('/v1/billing/stripe/webhook', 501, {
+  method: 'POST',
+  unauthenticated: true,
+  body: {},
+});
+assert(
+  stripeWebhook.body.error === 'billing_integration_required',
+  'unconfigured public Stripe webhook did not fail closed',
+);
 await request('/v1/alerts', 200);
 
 const rulesetVersion = `public-e2e-${nonce}`;

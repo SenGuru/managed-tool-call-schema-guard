@@ -8,6 +8,7 @@ import {
   PostgresActionState,
   PostgresAlertState,
   PostgresControlState,
+  PostgresBillingState,
   PostgresSchemaState,
   PostgresIntelligenceState,
   createSharedStatePool,
@@ -31,6 +32,8 @@ let firstAlerts: PostgresAlertState;
 let secondAlerts: PostgresAlertState;
 let firstIntelligence: PostgresIntelligenceState;
 let secondIntelligence: PostgresIntelligenceState;
+let firstBilling: PostgresBillingState;
+let secondBilling: PostgresBillingState;
 let firstPool: SharedStatePool;
 let secondPool: SharedStatePool;
 
@@ -57,11 +60,14 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
     firstIntelligence = new PostgresIntelligenceState(postgresUrl!, secret, firstPool);
     secondIntelligence = new PostgresIntelligenceState(postgresUrl!, secret, secondPool);
     await Promise.all([first.migrate(), firstControl.migrate()]);
+    firstBilling = new PostgresBillingState(postgresUrl!, secret, firstPool);
+    secondBilling = new PostgresBillingState(postgresUrl!, secret, secondPool);
+    await firstBilling.migrate();
     await firstSchema.migrate();
     await firstAlerts.migrate();
     await firstIntelligence.migrate();
     await first.pool.query(
-      'TRUNCATE sg_tenant_deletion_receipts,sg_tenant_lifecycle,sg_tenant_rulesets,sg_conformance_runs,sg_failure_observations,sg_intelligence_manifests,sg_alert_deliveries,sg_alerts,sg_alert_webhooks,sg_alert_manifests,sg_schema_releases,sg_tool_schemas,sg_tool_schema_manifests,sg_schema_environments,sg_schema_release_manifests,sg_control_audit_events,sg_control_audit_anchors,sg_control_audit_manifests,sg_control_api_keys,sg_control_tenants,sg_action_approvals,sg_action_descriptors,sg_accepted_action_decisions,sg_checkpoint_anchor_deliveries,sg_action_reconciliations,sg_action_reconciliation_manifests,sg_action_reservations,sg_action_manifests RESTART IDENTITY',
+      'TRUNCATE sg_billing_events,sg_billing_subscriptions,sg_billing_checkout_sessions,sg_tenant_deletion_receipts,sg_tenant_lifecycle,sg_tenant_rulesets,sg_conformance_runs,sg_failure_observations,sg_intelligence_manifests,sg_alert_deliveries,sg_alerts,sg_alert_webhooks,sg_alert_manifests,sg_schema_releases,sg_tool_schemas,sg_tool_schema_manifests,sg_schema_environments,sg_schema_release_manifests,sg_control_audit_events,sg_control_audit_anchors,sg_control_audit_manifests,sg_control_api_keys,sg_control_tenants,sg_action_approvals,sg_action_descriptors,sg_accepted_action_decisions,sg_checkpoint_anchor_deliveries,sg_action_reconciliations,sg_action_reconciliation_manifests,sg_action_reservations,sg_action_manifests RESTART IDENTITY',
     );
   });
 
@@ -77,6 +83,8 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
       secondAlerts.close(),
       firstIntelligence.close(),
       secondIntelligence.close(),
+      firstBilling.close(),
+      secondBilling.close(),
     ]);
     await Promise.all([firstPool.end(), secondPool.end()]);
   });
@@ -266,6 +274,197 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
     await firstControl.pool.query(`DELETE FROM sg_control_tenants WHERE id='tamper-tenant'`);
     await expect(secondControl.ready()).resolves.toBe(true);
   }, 30_000);
+
+  it('durably reconciles Stripe reordering, replay, entitlements, export, and tamper evidence', async () => {
+    const [controlHistory, billingHistory] = await Promise.all([
+      firstPool.query<{ version: number }>(
+        'SELECT version FROM sg_control_schema_migrations ORDER BY version',
+      ),
+      firstPool.query<{ version: number }>(
+        'SELECT version FROM sg_billing_schema_migrations ORDER BY version',
+      ),
+    ]);
+    expect(controlHistory.rows.map((row) => row.version)).toEqual([1, 2]);
+    expect(billingHistory.rows.map((row) => row.version)).toEqual([1]);
+
+    await firstControl.bootstrapTenant({
+      id: 'billing-pg',
+      name: 'Billing PostgreSQL',
+      plan: 'trial',
+      apiKey: 'billing-pg-admin',
+    });
+    const snapshot = {
+      subscription_id: 'sub_test_pg',
+      customer_id: 'cus_test_pg',
+      price_id: 'price_test_team',
+      status: 'active' as const,
+      current_period_end: '2030-01-01T00:00:00.000Z',
+      cancel_at_period_end: false,
+      provider_created_at: 1_700_000_000,
+      retrieved_at: '2026-07-24T00:00:00.000Z',
+    };
+    const pending = await firstBilling.ingestStripeEvent({
+      event_id: 'evt_test_before_checkout',
+      event_created: 1_700_000_001,
+      event_type: 'customer.subscription.created',
+      payload_sha256: `sha256:${'1'.repeat(64)}`,
+      subscription_id: snapshot.subscription_id,
+      snapshot,
+      team_price_id: 'price_test_team',
+    });
+    expect(pending).toEqual({ event_status: 'pending' });
+
+    await secondBilling.recordCheckoutSession(
+      'billing-pg',
+      'cs_test_pg',
+      '2030-01-01T00:00:00.000Z',
+    );
+    const checkoutInput = {
+      event_id: 'evt_test_checkout',
+      event_created: 1_700_000_002,
+      event_type: 'checkout.session.completed',
+      payload_sha256: `sha256:${'2'.repeat(64)}`,
+      subscription_id: snapshot.subscription_id,
+      checkout_session_id: 'cs_test_pg',
+      snapshot,
+      team_price_id: 'price_test_team',
+    };
+    const checkout = await firstBilling.ingestStripeEvent(checkoutInput);
+    expect(checkout).toMatchObject({
+      event_status: 'ready',
+      tenant_id: 'billing-pg',
+      desired_plan: 'team',
+    });
+    await expect(secondBilling.entitlementReady('billing-pg')).resolves.toBe(false);
+    await firstControl.updatePlan('billing-pg', checkout.desired_plan!);
+    await secondBilling.markEventApplied(checkoutInput.event_id);
+    await expect(firstBilling.entitlementReady('billing-pg')).resolves.toBe(true);
+    await expect(firstBilling.ingestStripeEvent(checkoutInput)).resolves.toEqual({
+      event_status: 'duplicate',
+    });
+    await expect(secondBilling.statement('billing-pg')).resolves.toMatchObject({
+      provider: 'stripe',
+      status: 'active',
+      plan: 'team',
+    });
+    await expect(secondControl.authenticate('billing-pg-admin')).resolves.toMatchObject({
+      plan: 'team',
+      monthlyLimit: 100_000,
+    });
+    const superseded = (
+      await firstPool.query<{ status: string; reason_code: string }>(
+        "SELECT status,reason_code FROM sg_billing_events WHERE event_id='evt_test_before_checkout'",
+      )
+    ).rows[0];
+    expect(superseded).toEqual({
+      status: 'ignored',
+      reason_code: 'superseded_by_provider_reconciliation',
+    });
+
+    const canceledSnapshot = {
+      ...snapshot,
+      status: 'canceled' as const,
+      retrieved_at: '2026-07-24T00:01:00.000Z',
+    };
+    const cancellationInput = {
+      event_id: 'evt_test_canceled',
+      event_created: 1_699_999_999,
+      event_type: 'customer.subscription.deleted',
+      payload_sha256: `sha256:${'3'.repeat(64)}`,
+      subscription_id: snapshot.subscription_id,
+      snapshot: canceledSnapshot,
+      team_price_id: 'price_test_team',
+    };
+    const cancellation = await secondBilling.ingestStripeEvent(cancellationInput);
+    expect(cancellation).toMatchObject({
+      event_status: 'ready',
+      tenant_id: 'billing-pg',
+      desired_plan: 'trial',
+    });
+    await expect(firstBilling.entitlementReady('billing-pg')).resolves.toBe(false);
+    await secondControl.updatePlan('billing-pg', cancellation.desired_plan!);
+    await firstBilling.markEventApplied(cancellationInput.event_id);
+    await expect(firstControl.authenticate('billing-pg-admin')).resolves.toMatchObject({
+      plan: 'trial',
+    });
+
+    await secondBilling.recordCheckoutSession(
+      'billing-pg',
+      'cs_test_pg_replacement',
+      '2030-01-02T00:00:00.000Z',
+    );
+    const replacementSnapshot = {
+      ...snapshot,
+      subscription_id: 'sub_test_pg_replacement',
+      retrieved_at: '2026-07-24T00:02:00.000Z',
+    };
+    const replacementInput = {
+      event_id: 'evt_test_replacement',
+      event_created: 1_700_000_003,
+      event_type: 'checkout.session.completed',
+      payload_sha256: `sha256:${'5'.repeat(64)}`,
+      subscription_id: replacementSnapshot.subscription_id,
+      checkout_session_id: 'cs_test_pg_replacement',
+      snapshot: replacementSnapshot,
+      team_price_id: 'price_test_team',
+    };
+    const replacement = await firstBilling.ingestStripeEvent(replacementInput);
+    expect(replacement).toMatchObject({
+      event_status: 'ready',
+      tenant_id: 'billing-pg',
+      desired_plan: 'team',
+    });
+    await firstControl.updatePlan('billing-pg', replacement.desired_plan!);
+    await secondBilling.markEventApplied(replacementInput.event_id);
+    await expect(firstBilling.statement('billing-pg')).resolves.toMatchObject({
+      status: 'active',
+      plan: 'team',
+    });
+
+    await firstControl.bootstrapTenant({
+      id: 'billing-pg-other',
+      name: 'Other Billing PostgreSQL',
+      plan: 'trial',
+      apiKey: 'billing-pg-other-admin',
+    });
+    await firstBilling.recordCheckoutSession(
+      'billing-pg-other',
+      'cs_test_pg_other',
+      '2030-01-03T00:00:00.000Z',
+    );
+    await expect(
+      secondBilling.ingestStripeEvent({
+        ...replacementInput,
+        event_id: 'evt_test_cross_tenant',
+        payload_sha256: `sha256:${'6'.repeat(64)}`,
+        checkout_session_id: 'cs_test_pg_other',
+      }),
+    ).rejects.toThrow(/another tenant/u);
+    await firstControl.pool.query("DELETE FROM sg_control_tenants WHERE id='billing-pg-other'");
+
+    await expect(
+      firstBilling.ingestStripeEvent({
+        ...cancellationInput,
+        payload_sha256: `sha256:${'4'.repeat(64)}`,
+      }),
+    ).rejects.toThrow(/replayed with conflicts/u);
+
+    const exported = await exportSharedTenantData(firstPool, firstPool, 'billing-pg');
+    expect((exported.tables as Record<string, unknown[]>).sg_billing_events).toHaveLength(4);
+    expect((exported.tables as Record<string, unknown[]>).sg_billing_subscriptions).toHaveLength(1);
+    await expect(firstBilling.verifyIntegrity('billing-pg')).resolves.toMatchObject({
+      valid: true,
+      checked: 7,
+    });
+    await firstPool.query(
+      "UPDATE sg_billing_subscriptions SET status='past_due' WHERE tenant_id='billing-pg'",
+    );
+    await expect(secondBilling.verifyIntegrity('billing-pg')).resolves.toEqual({
+      valid: false,
+      checked: 0,
+    });
+    await firstControl.pool.query("DELETE FROM sg_control_tenants WHERE id='billing-pg'");
+  });
 
   it('shares environment policy, reviewed releases, and fail-closed schema admission', async () => {
     await firstControl.bootstrapTenant({
@@ -742,7 +941,7 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
           side_effect: 'irreversible',
         }),
       });
-      expect(descriptor.status).toBe(200);
+      expect(descriptor.status, await descriptor.clone().text()).toBe(200);
       const validation = await fetch(`${services[0]!.base}/v1/validate`, {
         method: 'POST',
         headers,
@@ -1233,11 +1432,19 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
       'deletion_pending',
       'customer_requested',
     );
+    await firstAlerts.recordAlert(
+      'lifecycle-delete-tenant',
+      'validation_rejected',
+      'warning',
+      { audit_id: 'audit-export-regression', reason_code: 'SCHEMA_VALIDATION_FAILED' },
+      'private-alert-deduplication-key',
+    );
     const exported = await exportSharedTenantData(firstPool, firstPool, 'lifecycle-delete-tenant');
     expect(exported.content_sha256).toMatch(/^sha256:[0-9a-f]{64}$/u);
     expect(JSON.stringify(exported)).not.toContain('lifecycle-delete-admin');
     expect(JSON.stringify(exported)).not.toContain('control_hmac');
     expect(JSON.stringify(exported)).not.toContain('key_hash');
+    expect(JSON.stringify(exported)).not.toContain('private-alert-deduplication-key');
     const receipt = await deleteSharedTenantData(
       firstPool,
       firstPool,

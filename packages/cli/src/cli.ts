@@ -116,6 +116,17 @@ async function managedRequest(
 async function readManagedResource(found: Map<string, string>): Promise<unknown> {
   return managedRequest(found, managedResourcePath(required(found, 'resource'), found));
 }
+async function writeSensitiveManagedResult(
+  found: Map<string, string>,
+  result: unknown,
+): Promise<void> {
+  const output = required(found, 'out');
+  await writeFile(output, `${JSON.stringify(result, null, 2)}\n`, {
+    mode: 0o600,
+    flag: 'wx',
+  });
+  console.log(JSON.stringify({ written: output }, null, 2));
+}
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
@@ -239,8 +250,22 @@ async function main(): Promise<void> {
     );
     return;
   }
+  if (command === 'managed-billing-checkout') {
+    await writeSensitiveManagedResult(
+      found,
+      await managedRequest(found, '/v1/billing/checkout-session', 'POST'),
+    );
+    return;
+  }
+  if (command === 'managed-billing-portal') {
+    await writeSensitiveManagedResult(
+      found,
+      await managedRequest(found, '/v1/billing/portal-session', 'POST'),
+    );
+    return;
+  }
   throw new Error(
-    'usage: schemaguard validate --schema FILE --args FILE [--tool NAME] [--policy FILE] [--audit FILE]\n       schemaguard normalize --adapter NAME --input FILE\n       schemaguard drift --before FILE --after FILE\n       schemaguard compile --target openai|anthropic|google_gemini|mcp --schema FILE [--tool NAME] [--description TEXT] [--openai-strict-policy reject|normalize]\n       schemaguard fixture --schema FILE --args FILE --out FILE [--tool NAME] [--policy FILE]\n       schemaguard replay --fixture FILE\n       schemaguard managed --base-url URL --api-key-file FILE --resource NAME [--limit N] [--environment NAME] [--timeout-ms N]\n       schemaguard managed-request-deletion --base-url URL --api-key-file FILE --confirm-tenant-id ID [--timeout-ms N]',
+    'usage: schemaguard validate --schema FILE --args FILE [--tool NAME] [--policy FILE] [--audit FILE]\n       schemaguard normalize --adapter NAME --input FILE\n       schemaguard drift --before FILE --after FILE\n       schemaguard compile --target openai|anthropic|google_gemini|mcp --schema FILE [--tool NAME] [--description TEXT] [--openai-strict-policy reject|normalize]\n       schemaguard fixture --schema FILE --args FILE --out FILE [--tool NAME] [--policy FILE]\n       schemaguard replay --fixture FILE\n       schemaguard managed --base-url URL --api-key-file FILE --resource NAME [--limit N] [--environment NAME] [--timeout-ms N]\n       schemaguard managed-request-deletion --base-url URL --api-key-file FILE --confirm-tenant-id ID [--timeout-ms N]\n       schemaguard managed-billing-checkout --base-url URL --api-key-file FILE --out OWNER_ONLY_FILE [--timeout-ms N]\n       schemaguard managed-billing-portal --base-url URL --api-key-file FILE --out OWNER_ONLY_FILE [--timeout-ms N]',
   );
 }
 main().catch((error: unknown) => {

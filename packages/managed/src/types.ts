@@ -83,6 +83,13 @@ export interface ManagedConfig {
   actionCheckpointAnchorMaxAttempts?: number;
   requestTimeoutMs?: number;
   actionReconciliationMinAgeSeconds?: number;
+  stripeSecretKey?: string;
+  stripeMode?: 'sandbox';
+  stripeWebhookSecret?: string;
+  stripeTeamPriceId?: string;
+  stripeCheckoutSuccessUrl?: string;
+  stripeCheckoutCancelUrl?: string;
+  stripePortalReturnUrl?: string;
 }
 
 export interface AlertWebhookEndpoint {
