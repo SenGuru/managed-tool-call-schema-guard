@@ -9,6 +9,8 @@ export default tseslint.config(
       '**/coverage/**',
       'work/**',
       '.codex-work/**',
+      '.agents/**',
+      '.codex/**',
       'outputs/**',
       'website/**',
       'eslint.config.js',

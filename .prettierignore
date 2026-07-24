@@ -4,6 +4,9 @@ coverage/
 work/
 .codex-work/
 outputs/
+.agents/
+.codex/
+skills-lock.json
 
 # The marketing site is an independent nested project with its own formatter,
 # lint, build, and test gates.
