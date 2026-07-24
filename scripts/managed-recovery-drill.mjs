@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url';
 import Database from 'better-sqlite3';
 import { createApprovalChallenge, sha256, validateToolCall } from '../packages/core/dist/index.js';
 import { hmac } from '../packages/managed/dist/crypto.js';
+import { environmentValue } from '../packages/managed/dist/environment.js';
 import { ManagedStore } from '../packages/managed/dist/store.js';
 
 const countedTables = [
@@ -33,7 +34,7 @@ const countedTables = [
   'schema_releases',
 ];
 
-function argumentsFrom(argv) {
+function argumentsFrom(argv, masterSecret) {
   const options = {};
   for (let index = 0; index < argv.length; index += 1) {
     const item = argv[index];
@@ -42,8 +43,10 @@ function argumentsFrom(argv) {
     else if (item === '--report') options.report = argv[++index];
     else throw new TypeError(`unknown argument: ${item}`);
   }
-  if (options.source && !process.env.SCHEMA_GUARD_MASTER_SECRET)
-    throw new TypeError('SCHEMA_GUARD_MASTER_SECRET is required with --source');
+  if (options.source && !masterSecret)
+    throw new TypeError(
+      'SCHEMA_GUARD_MASTER_SECRET or SCHEMA_GUARD_MASTER_SECRET_FILE is required with --source',
+    );
   if (options.source && !existsSync(resolve(options.source)))
     throw new TypeError('the --source database does not exist');
   if (options.backup && existsSync(resolve(options.backup)))
@@ -240,13 +243,13 @@ function digest(path) {
 }
 
 export async function runManagedRecoveryDrill(argv = process.argv.slice(2)) {
-  const options = argumentsFrom(argv);
+  const configuredMasterSecret = environmentValue('SCHEMA_GUARD_MASTER_SECRET');
+  const options = argumentsFrom(argv, configuredMasterSecret);
   const temporary = await mkdtemp(join(tmpdir(), 'schema-guard-recovery-drill.'));
   const sourcePath = resolve(options.source ?? join(temporary, 'source.db'));
   const backupPath = resolve(options.backup ?? join(temporary, 'restored.db'));
   const masterSecret =
-    process.env.SCHEMA_GUARD_MASTER_SECRET ??
-    'self-contained-recovery-drill-master-secret-0123456789-0123456789';
+    configuredMasterSecret ?? 'self-contained-recovery-drill-master-secret-0123456789-0123456789';
   const managedConfig = (databasePath, withAnchor) => ({
     databasePath,
     masterSecret,

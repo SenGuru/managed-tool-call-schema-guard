@@ -5,7 +5,21 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const root = mkdtempSync(join(tmpdir(), 'schema-guard-framework-integrations.'));
-const python = process.env.SCHEMA_GUARD_INTEGRATION_PYTHON ?? 'python3';
+
+function supportedPython(command) {
+  const result = spawnSync(command, ['--version'], { encoding: 'utf8' });
+  if (result.error || result.status !== 0) return false;
+  const match = /Python (\d+)\.(\d+)/u.exec(`${result.stdout}${result.stderr}`.trim());
+  return (
+    match !== null && (Number(match[1]) > 3 || (Number(match[1]) === 3 && Number(match[2]) >= 10))
+  );
+}
+
+const configuredPython = process.env.SCHEMA_GUARD_INTEGRATION_PYTHON;
+const python =
+  configuredPython ??
+  ['python3', 'python3.13', 'python3.12', 'python3.11', 'python3.10'].find(supportedPython) ??
+  'python3';
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {

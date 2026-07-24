@@ -102,7 +102,7 @@ independent checkpoint-anchor URL/signing-secret pair.
 Set these outside the repo, ideally through the host secret manager:
 
 ```bash
-SCHEMA_GUARD_EXTERNAL_URL=https://app.invokeguard.example
+SCHEMA_GUARD_EXTERNAL_URL=https://api.akriven.com
 SCHEMA_GUARD_MASTER_SECRET_FILE=/run/secrets/schema_guard_master
 SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_URL=https://independent-anchor.example.com/v1/checkpoints
 SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_SIGNING_SECRET_FILE=/run/secrets/schema_guard_anchor_signing

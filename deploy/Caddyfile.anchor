@@ -18,6 +18,7 @@ http://{$SCHEMA_GUARD_ANCHOR_HOST} {
 		Cache-Control "no-store"
 		Permissions-Policy "camera=(), geolocation=(), microphone=()"
 		Referrer-Policy "no-referrer"
+		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options "nosniff"
 	}
 	reverse_proxy schema-guard-anchor-receiver:8790

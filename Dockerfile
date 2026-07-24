@@ -3,7 +3,8 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages ./packages
 COPY tsconfig*.json ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+    npm ci --fetch-retries=5 --fetch-retry-mintimeout=10000 --fetch-retry-maxtimeout=120000 --fetch-timeout=300000
 RUN npm run build -- --force
 RUN npm prune --omit=dev
 RUN mkdir -p /runtime-data /runtime-anchor-data

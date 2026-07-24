@@ -11,8 +11,8 @@ The URL and signing secret are a pair. Public mode refuses to start unless both
 are present.
 
 ```bash
-SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_URL=https://independent-anchor.example.com/v1/checkpoints
-SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_SIGNING_SECRET=<32+ random characters>
+SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_URL=https://anchor.akriven.com/v1/checkpoints
+SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_SIGNING_SECRET_FILE=/owner-only/path/to/anchor-signing-secret
 SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_POLL_INTERVAL_MS=5000
 SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_REQUEST_TIMEOUT_MS=5000
 SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_MAX_ATTEMPTS=8
@@ -29,9 +29,9 @@ is:
 
 ```bash
 SCHEMA_GUARD_ANCHOR_DATABASE=/independent-data/anchor.db
-SCHEMA_GUARD_ANCHOR_SIGNING_SECRET=<same transport secret as sender>
-SCHEMA_GUARD_ANCHOR_READ_TOKEN=<separate 32+ character read credential>
-SCHEMA_GUARD_ANCHOR_CHAIN_SECRET=<different 32+ character integrity secret>
+SCHEMA_GUARD_ANCHOR_SIGNING_SECRET_FILE=/owner-only/path/to/anchor-signing-secret
+SCHEMA_GUARD_ANCHOR_READ_TOKEN_FILE=/owner-only/path/to/anchor-read-token
+SCHEMA_GUARD_ANCHOR_CHAIN_SECRET_FILE=/owner-only/path/to/anchor-chain-secret
 ```
 
 `GET /v1/checkpoints/:tenant_ref` requires the read token and returns the latest

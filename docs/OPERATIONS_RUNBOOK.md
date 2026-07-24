@@ -44,6 +44,32 @@ and then measured a 3-second controlled stop/bootstrap/restart. A self-serve
 service must replace this maintenance workflow with one transactional hosted
 organization-provisioning control plane.
 
+## Host configuration templates
+
+Render host configuration from the reviewed examples rather than reconstructing
+environment names during an incident:
+
+- main service: `deploy/env.production.example`;
+- anchor service: `deploy/env.anchor-receiver.example`;
+- main encrypted backup: `deploy/host/dreamhost/backup.env.example`;
+- anchor encrypted backup: `deploy/host/digitalocean/backup.env.example`;
+- main monitor: `deploy/host/common/monitor.main.env.example`;
+- anchor monitor: `deploy/host/common/monitor.anchor.env.example`.
+
+Install rendered environment files below `/etc/akriven` with owner `root:root`
+and mode `0600`. The examples contain only paths and non-secret identifiers.
+Private SSH keys, database passwords, API keys, Age recovery identities,
+webhook URLs, and signing secrets belong in separate owner-only files or the
+production secret manager. Do not copy secret values into the environment
+templates, shell history, process arguments, logs, reports, or chat.
+
+The two backup accounts are deliberately asymmetric:
+`akriven-backup-main` exists on the anchor host to receive main-host archives,
+and `akriven-backup-anchor` exists on the main host to receive anchor archives.
+Pin each backup source to a separately generated Ed25519 key and a verified
+`known_hosts` file. Never reuse the interactive deployment identity for backup
+transfer.
+
 ## Release rollback and schema compatibility
 
 Capture an encrypted off-machine backup immediately before migration. Verify
@@ -222,7 +248,8 @@ For an operator database, use the same master secret as the source and an
 explicit new destination. The command refuses to overwrite the destination:
 
 ```bash
-SCHEMA_GUARD_MASTER_SECRET='<secret>' npm run audit:recovery -- \
+SCHEMA_GUARD_MASTER_SECRET_FILE=/owner-only/path/to/master-secret \
+  npm run audit:recovery -- \
   --source /protected/schema-guard/managed.db \
   --backup /protected/schema-guard/drills/managed-$(date +%Y%m%d).db \
   --report /protected/schema-guard/drills/latest-report.json

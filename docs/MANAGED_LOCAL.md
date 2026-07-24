@@ -91,8 +91,11 @@ The local package demonstrates the product spine: shared policy, schema history,
 ## Bootstrap and run
 
 ```bash
+umask 077
+mkdir -p "$PWD/work"
+openssl rand -base64 48 > "$PWD/work/master-secret"
 export SCHEMA_GUARD_DATABASE="$PWD/work/managed.db"
-export SCHEMA_GUARD_MASTER_SECRET="replace-with-a-random-secret-at-least-32-characters"
+export SCHEMA_GUARD_MASTER_SECRET_FILE="$PWD/work/master-secret"
 npm run managed:bootstrap -- --tenant-id demo --tenant-name "Demo tenant" --plan trial
 npm run managed
 ```
