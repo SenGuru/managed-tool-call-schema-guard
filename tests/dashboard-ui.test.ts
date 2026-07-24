@@ -319,12 +319,99 @@ describe('managed dashboard interactions', () => {
     expect(document.getElementById('usage-total')!.textContent).toBe('4');
   });
 
+  it('acknowledges alerts through an accessible in-product dialog and honors cancellation', async () => {
+    const window = dashboard('/dashboard/alerts');
+    const document = window.document;
+    const acknowledgementPaths: string[] = [];
+    Object.defineProperty(window, 'confirm', {
+      value: () => {
+        throw new Error('native confirm must not be used');
+      },
+    });
+    window.fetch = (input, init) => {
+      const path = typeof input === 'string' ? input : String(input.url);
+      if (init?.method === 'POST') acknowledgementPaths.push(path);
+      const body =
+        path === '/v1/admin/tenant/lifecycle'
+          ? {
+              tenant_id: 'tenant_active',
+              tenant_name: 'Active tenant',
+              lifecycle: { status: 'active' },
+            }
+          : path === '/v1/alerts'
+            ? {
+                alerts: [
+                  {
+                    id: 'alert_exact',
+                    kind: 'schema_drift',
+                    severity: 'warning',
+                    created_at: '2026-07-24T00:00:00.000Z',
+                    acknowledged_at: null,
+                  },
+                ],
+              }
+            : operationalResponses[path];
+      return Promise.resolve(
+        new window.Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+    };
+
+    (document.getElementById('key') as HTMLInputElement).value = 'test-only-key';
+    document.getElementById('load')!.click();
+    await new Promise((resolve) => window.setTimeout(resolve, 20));
+
+    const opener = document.querySelector<HTMLButtonElement>('#alerts-page-list button')!;
+    opener.focus();
+    opener.click();
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+    const dialog = document.getElementById('action-dialog') as HTMLDialogElement;
+    expect(dialog.open).toBe(true);
+    expect(document.getElementById('action-dialog-title')!.textContent).toBe('Acknowledge alert?');
+    expect(document.getElementById('action-dialog-copy')!.textContent).toContain('schema_drift');
+    expect(acknowledgementPaths).toEqual([]);
+
+    document.getElementById('action-dialog-cancel')!.click();
+    await new Promise((resolve) => window.setTimeout(resolve, 20));
+    expect(dialog.open).toBe(false);
+    expect(document.activeElement).toBe(opener);
+    expect(acknowledgementPaths).toEqual([]);
+
+    opener.click();
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    dialog.dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+    );
+    await new Promise((resolve) => window.setTimeout(resolve, 20));
+    expect(dialog.open).toBe(false);
+    expect(document.activeElement).toBe(opener);
+    expect(acknowledgementPaths).toEqual([]);
+
+    opener.click();
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    document.getElementById('action-dialog-confirm')!.click();
+    await new Promise((resolve) => window.setTimeout(resolve, 20));
+    expect(dialog.open).toBe(false);
+    expect(acknowledgementPaths).toEqual(['/v1/alerts/alert_exact/acknowledge']);
+  });
+
   it('renders real managed response shapes and sends row actions to exact IDs', async () => {
     const window = dashboard('/dashboard/actions');
     const document = window.document;
     const calls: Array<{ method: string; path: string; body?: unknown }> = [];
-    Object.defineProperty(window, 'confirm', { value: () => true });
-    Object.defineProperty(window, 'prompt', { value: () => 'ledger/browser-e2e' });
+    const acceptDialog = async (input?: string) => {
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+      const dialog = document.getElementById('action-dialog') as HTMLDialogElement;
+      expect(dialog.open).toBe(true);
+      if (input !== undefined)
+        (document.getElementById('action-dialog-input') as HTMLInputElement).value = input;
+      document.getElementById('action-dialog-confirm')!.click();
+      await new Promise((resolve) => window.setTimeout(resolve, 20));
+      expect(dialog.open).toBe(false);
+    };
     const shapedResponses: Record<string, unknown> = {
       ...operationalResponses,
       '/v1/actions/challenges?limit=100': {
@@ -485,12 +572,16 @@ describe('managed dashboard interactions', () => {
 
     document.querySelector<HTMLButtonElement>('#anchor-delivery-rows button')!.click();
     document.querySelector<HTMLButtonElement>('#delivery-rows button')!.click();
+    await new Promise((resolve) => window.setTimeout(resolve, 20));
     document.querySelector<HTMLButtonElement>('#webhook-rows button')!.click();
+    await acceptDialog();
     document.querySelector<HTMLButtonElement>('#api-key-rows button')!.click();
+    await acceptDialog();
     document.querySelector<HTMLButtonElement>('#reconciliation-pending-rows button')!.click();
+    await acceptDialog('ledger/browser-e2e');
     (document.getElementById('retention-confirm') as HTMLInputElement).checked = true;
     document.getElementById('retention-purge')!.click();
-    await new Promise((resolve) => window.setTimeout(resolve, 20));
+    await acceptDialog();
 
     expect(document.getElementById('retention-status')!.textContent).toBe('Purged 4 audit records');
     expect(calls).toEqual(

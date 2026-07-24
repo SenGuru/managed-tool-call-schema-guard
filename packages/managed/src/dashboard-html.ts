@@ -383,5 +383,22 @@ export function dashboardHtml(publicMode = false): string {
     </section>
   </main>
 </section>
-</div><script type="module" src="/dashboard/app.js"></script></body></html>`;
+</div>
+<dialog class="action-dialog" id="action-dialog" aria-labelledby="action-dialog-title" aria-describedby="action-dialog-copy">
+  <div class="dialog-surface">
+    <div class="dialog-mark" id="action-dialog-mark" aria-hidden="true">?</div>
+    <div class="dialog-copy">
+      <span class="dialog-kicker" id="action-dialog-kicker">Confirm action</span>
+      <h2 id="action-dialog-title">Continue?</h2>
+      <p id="action-dialog-copy"></p>
+    </div>
+    <label class="dialog-input" id="action-dialog-input-wrap" hidden><span id="action-dialog-input-label"></span><input class="field mono-input" id="action-dialog-input" autocomplete="off"></label>
+    <p class="dialog-error" id="action-dialog-error" role="alert"></p>
+    <div class="dialog-actions">
+      <button class="btn secondary" id="action-dialog-cancel" type="button">Cancel</button>
+      <button class="btn" id="action-dialog-confirm" type="button">Confirm</button>
+    </div>
+  </div>
+</dialog>
+<script type="module" src="/dashboard/app.js"></script></body></html>`;
 }

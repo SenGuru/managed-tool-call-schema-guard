@@ -91,6 +91,47 @@ addEventListener('keydown',event=>{
 try{if(localStorage.getItem('akriven-sidebar')==='collapsed'){shell.dataset.sidebar='collapsed';q('sidebar-toggle').setAttribute('aria-expanded','false');q('sidebar-toggle').setAttribute('aria-label','Expand navigation')}}catch{}
 navigate(routeFromPath(),{replace:true});
 
+const actionDialog=q('action-dialog');
+let actionDialogResolve=null;
+let actionDialogOpener=null;
+let actionDialogNeedsInput=false;
+function settleActionDialog(result){
+  if(!actionDialogResolve)return;
+  const resolve=actionDialogResolve;actionDialogResolve=null;
+  if(actionDialog.open)actionDialog.close();
+  resolve(result);
+  const opener=actionDialogOpener;actionDialogOpener=null;
+  if(opener instanceof HTMLElement)requestAnimationFrame(()=>opener.focus({preventScroll:true}));
+}
+function askAction({title,copy,confirmLabel='Confirm',kicker='Confirm action',tone='default',inputLabel='',inputPlaceholder=''}) {
+  if(actionDialogResolve)settleActionDialog(null);
+  actionDialogOpener=document.activeElement;
+  actionDialog.dataset.tone=tone;
+  text('action-dialog-kicker',kicker);text('action-dialog-title',title);text('action-dialog-copy',copy);
+  text('action-dialog-confirm',confirmLabel);text('action-dialog-mark',tone==='danger'?'!':'✓');
+  const inputWrap=q('action-dialog-input-wrap');const input=q('action-dialog-input');
+  actionDialogNeedsInput=Boolean(inputLabel);inputWrap.hidden=!actionDialogNeedsInput;
+  text('action-dialog-input-label',inputLabel);input.placeholder=inputPlaceholder;input.value='';
+  text('action-dialog-error','');
+  actionDialog.showModal();
+  requestAnimationFrame(()=>actionDialogNeedsInput?input.focus():q('action-dialog-cancel').focus());
+  return new Promise(resolve=>{actionDialogResolve=resolve});
+}
+q('action-dialog-cancel').onclick=()=>settleActionDialog(null);
+q('action-dialog-confirm').onclick=()=>{
+  if(actionDialogNeedsInput){
+    const input=q('action-dialog-input').value.trim();
+    if(!input){text('action-dialog-error','Enter the required evidence reference to continue.');q('action-dialog-input').focus();return}
+    settleActionDialog(input);return;
+  }
+  settleActionDialog(true);
+};
+actionDialog.addEventListener('cancel',event=>{event.preventDefault();settleActionDialog(null)});
+actionDialog.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();settleActionDialog(null)}});
+actionDialog.addEventListener('click',event=>{if(event.target===actionDialog)settleActionDialog(null)});
+q('action-dialog-input').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();q('action-dialog-confirm').click()}});
+const confirmAction=async options=>(await askAction(options))===true;
+
 const panelIds=['lifecycle','usage','chain','alerts','releases','schemas','policy','descriptors','challenges','intelligence','audits','webhooks','deliveries','actions','reconciliation','billing','control-integrity','rulesets','api-keys','export-result'];
 const clearPanels=()=>{for(const id of panelIds)q(id).textContent='—'};
 function resetDerivedViews(){
@@ -183,7 +224,7 @@ function renderAlerts(items){
       const icon=document.createElement('span');icon.className='check open';icon.textContent='!';
       const copy=document.createElement('span');const title=document.createElement('b');title.textContent=item.kind;const note=document.createElement('small');note.textContent=new Date(item.created_at).toLocaleString();copy.append(title,note);
       const action=document.createElement('button');action.type='button';action.className='btn secondary';action.textContent='Acknowledge';action.onclick=async()=>{
-        if(!window.confirm('Acknowledge this alert for the tenant?'))return;
+        if(!await confirmAction({title:'Acknowledge alert?',copy:'Mark '+item.kind+' as reviewed for this tenant. The alert remains in retained evidence.',confirmLabel:'Acknowledge alert',kicker:'Alert review'}))return;
         action.disabled=true;
         try{await request('/v1/alerts/'+encodeURIComponent(item.id)+'/acknowledge',{method:'POST'});q('load').click()}catch(error){q('status').className='bad';q('status').textContent=error instanceof Error?error.message:'Acknowledgement failed';action.disabled=false}
       };
@@ -247,8 +288,8 @@ function renderActions(data){
   const pendingBody=q('reconciliation-pending-rows');pendingBody.replaceChildren();
   for(const item of pending){
     const row=document.createElement('tr');const controls=document.createElement('div');controls.className='row-actions';
-    controls.append(actionButton('Executed',async()=>{const reservation=item.reservation_id||item.id;const reference=prompt('Authoritative execution-ledger evidence reference');if(!reference)return;if(!confirm('Record reservation '+reservation+' as CONFIRMED EXECUTED? This authoritative outcome cannot be changed.'))return;await request('/v1/actions/reconciliation/'+encodeURIComponent(reservation),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({outcome:'confirmed_executed',evidence_reference:reference})});await refreshActions()}));
-    controls.append(actionButton('Not executed',async()=>{const reservation=item.reservation_id||item.id;const reference=prompt('Authoritative execution-ledger evidence reference');if(!reference)return;if(!confirm('Record reservation '+reservation+' as CONFIRMED NOT EXECUTED? This authoritative outcome cannot be changed.'))return;await request('/v1/actions/reconciliation/'+encodeURIComponent(reservation),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({outcome:'confirmed_not_executed',evidence_reference:reference})});await refreshActions()}));
+    controls.append(actionButton('Executed',async()=>{const reservation=item.reservation_id||item.id;const reference=await askAction({title:'Confirm executed outcome?',copy:'Record reservation '+reservation+' as executed. This authoritative outcome cannot be changed.',confirmLabel:'Confirm executed',kicker:'Reconciliation decision',tone:'danger',inputLabel:'Execution-ledger evidence reference',inputPlaceholder:'ledger/change/transaction reference'});if(typeof reference!=='string')return;await request('/v1/actions/reconciliation/'+encodeURIComponent(reservation),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({outcome:'confirmed_executed',evidence_reference:reference})});await refreshActions()}));
+    controls.append(actionButton('Not executed',async()=>{const reservation=item.reservation_id||item.id;const reference=await askAction({title:'Confirm non-execution?',copy:'Record reservation '+reservation+' as not executed. This authoritative outcome cannot be changed.',confirmLabel:'Confirm not executed',kicker:'Reconciliation decision',tone:'danger',inputLabel:'Execution-ledger evidence reference',inputPlaceholder:'ledger/change/transaction reference'});if(typeof reference!=='string')return;await request('/v1/actions/reconciliation/'+encodeURIComponent(reservation),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({outcome:'confirmed_not_executed',evidence_reference:reference})});await refreshActions()}));
     appendCells(row,[codeValue(item.reservation_id||item.id),codeValue(value(item,'tool_name_hash','tool_name','tool')),codeValue(value(item,'execution_fingerprint')),formatTime(value(item,'updated_at','created_at')),codeValue(value(item,'audit_id')),controls]);pendingBody.append(row);
   }
   if(!pending.length)tableEmpty('reconciliation-pending-rows',6,'No reservations await reconciliation.');
@@ -268,8 +309,8 @@ function renderChallenges(data){
     const challenge=item.challenge||item;
     const row=document.createElement('tr');const controls=document.createElement('div');controls.className='row-actions';
     if(item.status==='pending'){
-      controls.append(actionButton('Approve',async()=>{if(!confirm('Approve challenge '+challenge.challenge_id+' for tool hash '+challenge.tool_name_hash+' in '+challenge.environment+'?'))return;const approved=await request('/v1/actions/challenges/'+encodeURIComponent(challenge.challenge_id)+'/approve',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});q('action-approval').value=JSON.stringify(approved.approval||approved,null,2);await refreshChallenges()}));
-      controls.append(actionButton('Cancel',async()=>{if(!confirm('Cancel challenge '+challenge.challenge_id+'?'))return;await request('/v1/actions/challenges/'+encodeURIComponent(challenge.challenge_id),{method:'DELETE'});await refreshChallenges()},'danger'));
+      controls.append(actionButton('Approve',async()=>{if(!await confirmAction({title:'Approve this challenge?',copy:'Authorize '+challenge.tool_name_hash+' in '+challenge.environment+' under challenge '+challenge.challenge_id+'.',confirmLabel:'Approve challenge',kicker:'Human authority'}))return;const approved=await request('/v1/actions/challenges/'+encodeURIComponent(challenge.challenge_id)+'/approve',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});q('action-approval').value=JSON.stringify(approved.approval||approved,null,2);await refreshChallenges()}));
+      controls.append(actionButton('Cancel',async()=>{if(!await confirmAction({title:'Cancel this challenge?',copy:'Revoke pending authority for challenge '+challenge.challenge_id+'. This cannot be approved afterward.',confirmLabel:'Cancel challenge',kicker:'Revoke authority',tone:'danger'}))return;await request('/v1/actions/challenges/'+encodeURIComponent(challenge.challenge_id),{method:'DELETE'});await refreshChallenges()},'danger'));
     }
     appendCells(row,[codeValue(value(challenge,'tool_name_hash','tool_name','tool')),value(challenge,'environment'),value(challenge,'risk_level','risk'),tag(item.status),formatTime(challenge.expires_at),codeValue(challenge.challenge_id),controls]);body.append(row);
   }
@@ -281,7 +322,7 @@ function renderAlertOperations(data){
   const webhookBody=q('webhook-rows');webhookBody.replaceChildren();
   for(const item of webhooks){
     const row=document.createElement('tr');const controls=document.createElement('div');controls.className='row-actions';
-    if(!item.disabled_at)controls.append(actionButton('Disable',async()=>{if(!confirm('Disable alert receiver '+item.label+'?'))return;await request('/v1/alert-webhooks/'+encodeURIComponent(item.webhook_id),{method:'DELETE'});await refreshAlerts()},'danger'));
+    if(!item.disabled_at)controls.append(actionButton('Disable',async()=>{if(!await confirmAction({title:'Disable alert receiver?',copy:item.label+' will stop receiving new signed alert deliveries. Retained delivery evidence is preserved.',confirmLabel:'Disable receiver',kicker:'Delivery control',tone:'danger'}))return;await request('/v1/alert-webhooks/'+encodeURIComponent(item.webhook_id),{method:'DELETE'});await refreshAlerts()},'danger'));
     appendCells(row,[item.label,codeValue(item.endpoint_hash),tag(item.disabled_at?'disabled':'active'),formatTime(item.created_at),controls]);webhookBody.append(row);
   }
   if(!webhooks.length)tableEmpty('webhook-rows',5,'No alert receivers configured.');
@@ -341,7 +382,7 @@ function renderAccess(data){
   const body=q('api-key-rows');body.replaceChildren();
   for(const item of keys){
     const row=document.createElement('tr');const controls=document.createElement('div');controls.className='row-actions';
-    if(!item.revoked_at&&!item.current)controls.append(actionButton('Revoke',async()=>{if(!confirm('Revoke this API key? Existing clients will immediately lose access.'))return;await request('/v1/admin/api-keys/'+encodeURIComponent(item.key_id||item.id),{method:'DELETE'});await refreshAccess()},'danger'));
+    if(!item.revoked_at&&!item.current)controls.append(actionButton('Revoke',async()=>{if(!await confirmAction({title:'Revoke this API key?',copy:'Clients using '+value(item,'prefix','key_prefix')+' will immediately lose access. This key cannot be restored.',confirmLabel:'Revoke API key',kicker:'Credential control',tone:'danger'}))return;await request('/v1/admin/api-keys/'+encodeURIComponent(item.key_id||item.id),{method:'DELETE'});await refreshAccess()},'danger'));
     appendCells(row,[codeValue(value(item,'key_prefix','prefix')),Array.isArray(item.scopes)?item.scopes.join(', '):'—',formatTime(item.created_at),tag(item.revoked_at?'revoked':item.current?'current':'active'),controls]);body.append(row);
   }
   if(!keys.length)tableEmpty('api-key-rows',5,'No API keys found.');
@@ -540,7 +581,7 @@ q('billing-checkout').onclick=async()=>{status('billing-action-status','Creating
 q('billing-portal').onclick=async()=>{status('billing-action-status','Opening portal…');try{await billingAction('/v1/billing/portal-session')}catch(error){status('billing-action-status',error instanceof Error?error.message:'Portal unavailable','bad')}};
 q('local-plan-change').onclick=async()=>{if(!q('local-plan-confirm').checked){status('billing-action-status','Confirm the local-only plan change first','bad');return}status('billing-action-status','Applying plan…');try{await request('/v1/admin/plan',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({plan:q('local-plan-select').value})});await refreshUsage();status('billing-action-status','Local evaluation plan applied','good')}catch(error){status('billing-action-status',error instanceof Error?error.message:'Plan change blocked','bad')}};
 bindForm('policy-form','policy-status',async()=>{await request('/v1/admin/policy',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(parseJson('policy-editor'))});await refreshSettings();return 'Organization policy saved'});
-q('retention-purge').onclick=async()=>{if(!q('retention-confirm').checked){status('retention-status','Confirm the irreversible purge first','bad');return}if(!confirm('Permanently purge audits older than the tenant retention window?'))return;status('retention-status','Purging…');try{const result=await request('/v1/admin/retention/purge',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({before:new Date(Date.now()-number(workspaceData?.usage?.entitlements?.retention_days||30)*86400000).toISOString()})});status('retention-status','Purged '+number(value(result,'deleted','purged','deleted_count'))+' audit records','good')}catch(error){status('retention-status',error instanceof Error?error.message:'Purge failed','bad')}};
+q('retention-purge').onclick=async()=>{if(!q('retention-confirm').checked){status('retention-status','Confirm the irreversible purge first','bad');return}if(!await confirmAction({title:'Purge expired audit records?',copy:'Permanently remove audits older than this tenant’s retention window. The signed anchor boundary remains, but deleted records cannot be recovered.',confirmLabel:'Purge expired audits',kicker:'Irreversible data action',tone:'danger'}))return;status('retention-status','Purging…');try{const result=await request('/v1/admin/retention/purge',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({before:new Date(Date.now()-number(workspaceData?.usage?.entitlements?.retention_days||30)*86400000).toISOString()})});status('retention-status','Purged '+number(value(result,'deleted','purged','deleted_count'))+' audit records','good')}catch(error){status('retention-status',error instanceof Error?error.message:'Purge failed','bad')}};
 async function downloadAuditCsv(){
   const response=await fetch('/v1/audits?format=csv',{headers:{authorization:'Bearer '+q('key').value},cache:'no-store'});if(!response.ok){const body=await parseBody(response);throw new Error(body?.message||body?.error||'Audit CSV export failed')}const blob=await response.blob();const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download='akriven-audits.csv';link.click();URL.revokeObjectURL(link.href);
 }

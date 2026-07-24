@@ -266,6 +266,39 @@ pre{margin:0;min-height:110px;max-height:360px;padding:15px 16px;overflow:auto;w
 .destructive-row{display:flex;gap:8px;max-width:640px}
 .good{color:var(--green)}.bad{color:var(--red)}.muted,small{color:var(--muted)}
 
+.action-dialog{
+  width:min(520px,calc(100vw - 32px));max-width:none;margin:auto;padding:0;overflow:visible;
+  border:0;border-radius:14px;background:transparent;color:var(--ink);
+  box-shadow:0 28px 80px rgba(17,19,26,.34)
+}
+.action-dialog::backdrop{
+  background:rgba(17,19,26,.62);backdrop-filter:blur(3px);
+  animation:dialog-backdrop-in 160ms ease-out
+}
+.dialog-surface{
+  position:relative;display:grid;grid-template-columns:44px minmax(0,1fr);gap:18px;
+  padding:24px;border:1px solid var(--line-strong);border-radius:14px;background:var(--white);
+  box-shadow:0 18px 60px rgba(17,19,26,.28);
+  animation:dialog-in 180ms cubic-bezier(.16,1,.3,1)
+}
+.dialog-mark{
+  width:44px;height:44px;display:grid;place-items:center;border:1px solid var(--ink);
+  border-radius:10px;background:var(--acid);font:750 18px/1 var(--mono)
+}
+.action-dialog[data-tone="danger"] .dialog-mark{border-color:var(--red);background:rgba(255,107,94,.13);color:var(--red)}
+.dialog-kicker{display:block;margin-bottom:7px;color:var(--muted);font:650 9px/1.2 var(--mono);letter-spacing:.1em;text-transform:uppercase}
+.dialog-copy h2{margin:0;font-size:22px;line-height:1.16;letter-spacing:-.035em;font-weight:650}
+.dialog-copy p{margin:8px 0 0;color:var(--muted);font-size:13px;line-height:1.55}
+.dialog-input{grid-column:1/-1;display:grid;gap:7px;color:var(--ink-soft);font-size:11px;font-weight:620}
+.dialog-input[hidden]{display:none}
+.dialog-error{grid-column:1/-1;min-height:1.4em;margin:0;color:var(--red);font:11px/1.4 var(--mono)}
+.dialog-error:empty{display:none}
+.dialog-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;margin-top:2px}
+.action-dialog[data-tone="danger"] #action-dialog-confirm{border-color:var(--red);background:var(--red);color:var(--white)}
+.action-dialog[data-tone="danger"] #action-dialog-confirm:hover{background:#8f211a}
+@keyframes dialog-in{from{opacity:.01;transform:translateY(10px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes dialog-backdrop-in{from{background:rgba(17,19,26,0);backdrop-filter:blur(0)}to{background:rgba(17,19,26,.62);backdrop-filter:blur(3px)}}
+
 @media(max-width:1120px){
   .metric-strip{grid-template-columns:repeat(3,1fr)}
   .metric:nth-child(4),.metric:nth-child(5){border-top:1px solid var(--line)}
@@ -308,6 +341,9 @@ pre{margin:0;min-height:110px;max-height:360px;padding:15px 16px;overflow:auto;w
   .definition-grid>div:last-child{border-bottom:0!important}
   .destructive-row{display:grid}
   .panel-head{display:block}.panel-actions{margin-top:12px}
+  .dialog-surface{grid-template-columns:40px minmax(0,1fr);gap:14px;padding:20px}
+  .dialog-mark{width:40px;height:40px}
+  .dialog-actions{display:grid;grid-template-columns:1fr 1fr}
 }
 @media(hover:hover) and (pointer:fine){
   .nav-link:hover,.btn:hover,.workbench button:hover,.workflow button:hover{will-change:transform}
