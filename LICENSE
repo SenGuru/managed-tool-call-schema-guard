@@ -1,21 +1,21 @@
-MIT License
+Akriven source license boundary
 
-Copyright (c) 2026 Schema Guard contributors
+This repository contains both open-source software and proprietary managed
+product software. A package's npm "private" flag is not a copyright license;
+the controlling boundary is the path-based license map in
+product-boundary.json.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Open-source paths listed in product-boundary.json are licensed under the MIT
+License in LICENSES/MIT.txt. Package-local copies of that license may also be
+included in distributable packages.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+All other first-party paths in this repository, unless a file says otherwise,
+are proprietary and governed by LICENSES/AKRIVEN-PROPRIETARY.txt.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Third-party dependencies, benchmark data, and separately attributed assets
+retain their own licenses. Nothing in this notice changes those licenses.
+
+This boundary applies to this revision and later revisions that carry it.
+Rights already granted with an earlier revision remain governed by the license
+that accompanied that earlier revision; this notice does not attempt to revoke
+them.

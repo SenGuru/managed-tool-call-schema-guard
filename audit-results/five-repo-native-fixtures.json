@@ -1,16 +1,16 @@
 {
   "version": 1,
-  "generated_at": "2026-07-22T05:06:42.103Z",
+  "generated_at": "2026-07-24T01:17:00.902Z",
   "policy": "shallow clone and static source reading only; repository code and dependencies were not executed",
   "repositories": [
     {
       "id": "mcp-python-sdk",
       "url": "https://github.com/modelcontextprotocol/python-sdk.git",
-      "commit": "3a6f2996cdd8358957479791e8b26198c07d6a75",
+      "commit": "837ef904f84658be94079ac1c00bf4d6da9a8330",
       "evidence": [
         {
           "file": "tests/interaction/lowlevel/test_tools.py",
-          "source_sha256": "e83d9e98fed4bd8c792d0e7ed26346afcf3fdec02a21e88111baa6976c1b8b7e",
+          "source_sha256": "2d5334b40025d445f2372a76e8b0c5855a3c7726d82a14d116158cd14de599ce",
           "anchors_verified": 2
         }
       ],
@@ -23,7 +23,7 @@
     {
       "id": "openai-agents-python",
       "url": "https://github.com/openai/openai-agents-python.git",
-      "commit": "5921667f570aa73a9f1d18b9a4ba0cb6c9549669",
+      "commit": "aa3ac378b9875ec2492debe44ad9b9e96de6308e",
       "evidence": [
         {
           "file": "tests/test_function_schema.py",
@@ -40,11 +40,11 @@
     {
       "id": "pydantic-ai",
       "url": "https://github.com/pydantic/pydantic-ai.git",
-      "commit": "24d105d21f779c783c2cd9c60c58b71ceaf125c7",
+      "commit": "801814a10cb54ce218d9efb16f116c54c6a3606d",
       "evidence": [
         {
           "file": "tests/test_tools.py",
-          "source_sha256": "d723b1af1b9242929b69d0697049d578b09418cc66293259170d98c0eab69b40",
+          "source_sha256": "84ffb95e148d99e9ce32b41e86b7497653fa4e4c1780a5095fd4321237ebc6f8",
           "anchors_verified": 4
         }
       ],
@@ -57,7 +57,7 @@
     {
       "id": "google-adk-python",
       "url": "https://github.com/google/adk-python.git",
-      "commit": "c4270203c657d4abb14188b90ed692465f1f36c9",
+      "commit": "07455ee62cbd5c11625aed8c75380b88eba55e6d",
       "evidence": [
         {
           "file": "tests/integration/fixture/home_automation_agent/test_files/dependent_tool_calls.test.json",
@@ -79,7 +79,7 @@
     {
       "id": "openai-agents-js",
       "url": "https://github.com/openai/openai-agents-js.git",
-      "commit": "b04baf06313564e40c1879c13d4ee960f02b6167",
+      "commit": "ad5a070bcdceb763aea8642747278eff40213be9",
       "evidence": [
         {
           "file": "packages/agents-core/test/toolCustomData.test.ts",

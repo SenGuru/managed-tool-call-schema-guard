@@ -15,10 +15,16 @@ The local package demonstrates the product spine: shared policy, schema history,
 
 - Tenant API keys are verified through master-secret HMACs; plaintext keys are shown only once and are not persisted.
 - Scoped keys can be issued and revoked. The active key cannot revoke itself.
+- Admins can enumerate tenant-owned API-key metadata (ID, prefix, scopes,
+  timestamps, revocation and current-key state) without receiving plaintext
+  credentials or stored verifiers.
 - Operational read routes use explicit scopes (`read:audit`, `read:alerts`,
   `read:billing`, `read:environment`, `read:intelligence`, `read:ruleset`, and
   `read:usage`); a validate-only key cannot enumerate tenant operations.
 - Organization policy is stored server-side and merged so caller policy can only narrow it.
+- Organization policy, latest registered schemas, action descriptors, and
+  approval challenges have tenant-scoped read routes so daily workflows do not
+  depend on mutation responses copied out of band.
 - Tenant policy/plan, API-key scopes and revocation state, environment policy and
   enforcement mode, action risk/side-effect descriptors, approval state,
   idempotency reservations, and webhook configuration are bound to the master
@@ -68,12 +74,13 @@ The local package demonstrates the product spine: shared policy, schema history,
   bounded backoff, dead-letter status, explicit redrive, and SSRF controls.
 - Aggregate compatibility intelligence is released only when a signature appears in at least three distinct tenants by default. Results contain no tenant identifiers.
 - Rulesets are tenant-scoped and use an Ed25519 signing key. The private key is encrypted at rest with AES-256-GCM under the master secret; embedded public keys must match the authenticated local trust record, and expired rulesets are not served.
-- Trial/team plans, monthly quotas, fixed-window per-key limits, usage
+- Internal-evaluation/private-beta-design-partner plans, monthly quotas,
+  fixed-window per-key limits, usage
   statements, JSON/CSV audit export, complete tenant export, lifecycle locking,
   exact-confirmation deletion requests, offline verified deletion, local-file
   and generic HTTPS webhook alerts, liveness/readiness, request size/deadline
   controls, and graceful shutdown are operational.
-- The operator dashboard exposes 14 read panels and 29 editable request presets
+- The operator dashboard exposes 19 read panels and 29 editable request presets
   spanning validation, compilation, registry/releases, policy/enforcement,
   actions/approvals/idempotency/reconciliation/anchors, conformance, webhooks,
   rulesets, API keys, billing-boundary checks, retention, lifecycle, and export.
@@ -136,6 +143,7 @@ Validation requests may add bounded operational labels under `context` so failur
 
 ## Endpoint summary
 
+- `GET /v1/plans`
 - `POST /v1/validate`
 - `POST /v1/contracts/compile`
 - `POST /v1/schemas`
@@ -228,13 +236,18 @@ routes fail closed. Source-level fake-provider, signed raw-body, SDK/CLI, crash
 window, and PostgreSQL reconciliation tests pass; those are not Stripe network
 or settlement evidence. See
 [`BILLING_STRIPE_SANDBOX.md`](BILLING_STRIPE_SANDBOX.md).
-alerts persist in the database, optional local JSONL file, and transactional
-webhook outbox. The current intelligence corpus is composed of
-repository fixtures and locally submitted value-free signatures and conformance
-summaries; it is not represented as learned production knowledge. Distributed
-limits, cloud KMS, database replication, object-storage backups, external
-monitoring, live provider fleet probes, multi-instance approval/idempotency
-coordination, deployed reconciliation exercises, and multi-region failover require further implementation, a selected provider, and
-deployment authorization. See [`SCHEMA_RELEASES.md`](SCHEMA_RELEASES.md) and
+Alerts persist in the database, optional local JSONL file, and transactional
+webhook outbox. The current intelligence corpus is composed of repository
+fixtures and locally submitted value-free signatures and conformance summaries;
+it is not represented as learned production knowledge.
+
+Cloud KMS, database replication/failover, continuous WAL/PITR,
+provider-reconciled object-storage backups, external monitoring delivery, live
+provider fleet probes, customer-owned approval identity, and multi-region
+failover require a selected provider, configuration, deployment authorization,
+and observed exercises. Shared PostgreSQL coordination for quotas, schema,
+approval, idempotency, reconciliation, alerts, and intelligence is implemented;
+that is not evidence of managed-database failover. See
+[`SCHEMA_RELEASES.md`](SCHEMA_RELEASES.md),
 [`ALERT_WEBHOOKS.md`](ALERT_WEBHOOKS.md) and
 [`CHECKPOINT_ANCHORS.md`](CHECKPOINT_ANCHORS.md).

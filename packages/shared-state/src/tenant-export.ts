@@ -9,6 +9,7 @@ const CONTROL_TENANT_TABLES = [
   'sg_billing_checkout_sessions',
   'sg_billing_events',
   'sg_billing_subscriptions',
+  'sg_alert_acknowledgements',
   'sg_alert_deliveries',
   'sg_alert_manifests',
   'sg_alert_webhooks',

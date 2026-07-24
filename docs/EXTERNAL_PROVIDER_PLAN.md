@@ -38,8 +38,10 @@ unless explicitly described as identifiers.
    - Store the client secret in the selected secret manager. Do not paste it
      into chat.
 2. **Stripe sandbox**
-   - Create a recurring Team price and record only its non-secret `price_...`
-     identifier for configuration.
+   - Create a test-only recurring price for lifecycle certification and record
+     only its non-secret `price_...` identifier for configuration. This is not
+     the manually contracted 90-day private-beta offer and must not be exposed
+     to customers.
    - Register
      `https://api.akriven.com/v1/billing/stripe/webhook` for the reviewed event
      set in `BILLING_STRIPE_SANDBOX.md`.

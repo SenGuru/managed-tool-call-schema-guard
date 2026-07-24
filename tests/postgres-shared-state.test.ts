@@ -67,7 +67,7 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
     await firstAlerts.migrate();
     await firstIntelligence.migrate();
     await first.pool.query(
-      'TRUNCATE sg_billing_events,sg_billing_subscriptions,sg_billing_checkout_sessions,sg_tenant_deletion_receipts,sg_tenant_lifecycle,sg_tenant_rulesets,sg_conformance_runs,sg_failure_observations,sg_intelligence_manifests,sg_alert_deliveries,sg_alerts,sg_alert_webhooks,sg_alert_manifests,sg_schema_releases,sg_tool_schemas,sg_tool_schema_manifests,sg_schema_environments,sg_schema_release_manifests,sg_control_audit_events,sg_control_audit_anchors,sg_control_audit_manifests,sg_control_api_keys,sg_control_tenants,sg_action_approvals,sg_action_descriptors,sg_accepted_action_decisions,sg_checkpoint_anchor_deliveries,sg_action_reconciliations,sg_action_reconciliation_manifests,sg_action_reservations,sg_action_manifests RESTART IDENTITY',
+      'TRUNCATE sg_billing_events,sg_billing_subscriptions,sg_billing_checkout_sessions,sg_tenant_deletion_receipts,sg_tenant_lifecycle,sg_tenant_rulesets,sg_conformance_runs,sg_failure_observations,sg_intelligence_manifests,sg_alert_deliveries,sg_alert_acknowledgements,sg_alerts,sg_alert_webhooks,sg_alert_manifests,sg_schema_releases,sg_tool_schemas,sg_tool_schema_manifests,sg_schema_environments,sg_schema_release_manifests,sg_control_audit_events,sg_control_audit_anchors,sg_control_audit_manifests,sg_control_api_keys,sg_control_tenants,sg_action_approvals,sg_action_descriptors,sg_accepted_action_decisions,sg_checkpoint_anchor_deliveries,sg_action_reconciliations,sg_action_reconciliation_manifests,sg_action_reservations,sg_action_manifests RESTART IDENTITY',
     );
   });
 
@@ -349,7 +349,7 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
     });
     await expect(secondControl.authenticate('billing-pg-admin')).resolves.toMatchObject({
       plan: 'team',
-      monthlyLimit: 100_000,
+      monthlyLimit: 250_000,
     });
     const superseded = (
       await firstPool.query<{ status: string; reason_code: string }>(
@@ -704,6 +704,30 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
     );
     expect(persisted).not.toContain('alerts.example.com');
     expect(persisted).not.toContain(webhook.signing_secret);
+    const listedAlert = (await secondAlerts.listAlerts('alert-tenant'))[0]!;
+    await expect(secondAlerts.acknowledgeAlert('alert-tenant', listedAlert.id)).resolves.toBe(true);
+    await expect(firstAlerts.acknowledgeAlert('alert-tenant', listedAlert.id)).resolves.toBe(true);
+    const acknowledgedAlerts = await firstAlerts.listAlerts('alert-tenant');
+    expect(acknowledgedAlerts[0]).toMatchObject({ id: listedAlert.id });
+    expect(acknowledgedAlerts[0]!.acknowledged_at).toMatch(/Z$/u);
+    const acknowledgement = (
+      await firstAlerts.pool.query<{ control_hmac: string }>(
+        `SELECT control_hmac FROM sg_alert_acknowledgements WHERE tenant_id='alert-tenant'`,
+      )
+    ).rows[0]!;
+    await firstAlerts.pool.query(
+      `UPDATE sg_alert_acknowledgements SET control_hmac='tampered' WHERE tenant_id='alert-tenant'`,
+    );
+    await expect(secondAlerts.verifyTenant('alert-tenant')).resolves.toMatchObject({
+      valid: false,
+    });
+    await firstAlerts.pool.query(
+      `UPDATE sg_alert_acknowledgements SET control_hmac=$1 WHERE tenant_id='alert-tenant'`,
+      [acknowledgement.control_hmac],
+    );
+    await expect(secondAlerts.verifyTenant('alert-tenant')).resolves.toMatchObject({
+      valid: true,
+    });
 
     await firstAlerts.recordAlert(
       'alert-tenant',
@@ -970,6 +994,18 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
       });
       expect(challengeResponse.status).toBe(201);
       const challenge = (await challengeResponse.json()) as { challenge_id: string };
+      const [descriptorInventory, pendingInventory] = await Promise.all([
+        fetch(`${services[1]!.base}/v1/admin/actions/descriptors`, { headers }),
+        fetch(`${services[0]!.base}/v1/actions/challenges?status=pending`, { headers }),
+      ]);
+      expect(descriptorInventory.status).toBe(200);
+      expect(await descriptorInventory.json()).toMatchObject({
+        descriptors: [{ environment: 'production', risk_level: 'high' }],
+      });
+      expect(pendingInventory.status).toBe(200);
+      expect(await pendingInventory.json()).toMatchObject({
+        challenges: [{ challenge_id: challenge.challenge_id, status: 'pending' }],
+      });
       const approvalResponse = await fetch(
         `${services[0]!.base}/v1/actions/challenges/${challenge.challenge_id}/approve`,
         { method: 'POST', headers },

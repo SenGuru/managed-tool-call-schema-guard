@@ -414,7 +414,14 @@ describe('SchemaGuardClient remote boundary', () => {
             new Response(
               JSON.stringify({
                 plan: 'team',
-                monthly_limit: 100_000,
+                plan_name: 'Private-beta design partner',
+                monthly_limit: 250_000,
+                entitlements: {
+                  validations_per_month: 250_000,
+                  retention_days: 30,
+                  managed_workflows: 'full',
+                  overage: 'disabled',
+                },
                 usage: {
                   tenant_id: 'tenant',
                   month: '2026-07',
@@ -427,12 +434,98 @@ describe('SchemaGuardClient remote boundary', () => {
               }),
             ),
           );
+        if (url.endsWith('/v1/plans'))
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                plans: [
+                  {
+                    id: 'team',
+                    display_name: 'Private-beta design partner',
+                    audience: 'Invited team',
+                    availability: 'invite_only',
+                    price: {
+                      amount_minor: 225_000,
+                      currency: 'USD',
+                      term: '90_days_prepaid',
+                      monthly_equivalent_minor: 75_000,
+                    },
+                    entitlements: {
+                      validations_per_month: 250_000,
+                      retention_days: 30,
+                      managed_workflows: 'full',
+                      overage: 'disabled',
+                    },
+                    support: 'Founder-led',
+                    payment_collection: 'manual_provider_setup_required',
+                  },
+                ],
+              }),
+            ),
+          );
+        if (url.endsWith('/v1/admin/policy'))
+          return Promise.resolve(new Response(JSON.stringify({ policy: { allowed_repairs: [] } })));
+        if (url.endsWith('/v1/schemas') && init?.method === 'GET')
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                schemas: [
+                  {
+                    tool_name_hash: `hmac-sha256:${'a'.repeat(64)}`,
+                    adapter: 'mcp',
+                    version: '1',
+                    schema_hash: `sha256:${'b'.repeat(64)}`,
+                    schema: { type: 'object' },
+                    drift: null,
+                    created_at: '2026-07-23T00:00:00.000Z',
+                  },
+                ],
+              }),
+            ),
+          );
+        if (url.endsWith('/v1/admin/actions/descriptors'))
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                descriptors: [
+                  {
+                    tool_name_hash: `hmac-sha256:${'c'.repeat(64)}`,
+                    environment: 'production',
+                    risk_level: 'high',
+                    side_effect: 'irreversible',
+                    created_at: '2026-07-23T00:00:00.000Z',
+                    updated_at: '2026-07-23T00:00:00.000Z',
+                  },
+                ],
+              }),
+            ),
+          );
+        if (url.includes('/v1/actions/challenges?'))
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                challenges: [
+                  {
+                    challenge_id: 'challenge_1',
+                    status: 'pending',
+                    challenge: {},
+                    evidence: null,
+                    created_at: '2026-07-23T00:00:00.000Z',
+                    expires_at: '2026-07-23T00:05:00.000Z',
+                    approved_at: null,
+                  },
+                ],
+              }),
+            ),
+          );
         if (url.includes('/v1/audits?'))
           return Promise.resolve(new Response(JSON.stringify({ audits: [] })));
         if (url.endsWith('/v1/audits/verify'))
           return Promise.resolve(new Response(JSON.stringify({ valid: true, checked: 0 })));
         if (url.endsWith('/v1/alerts'))
           return Promise.resolve(new Response(JSON.stringify({ alerts: [] })));
+        if (url.endsWith('/v1/alerts/7/acknowledge'))
+          return Promise.resolve(new Response(JSON.stringify({ acknowledged: true, alert_id: 7 })));
         if (url.endsWith('/v1/environments'))
           return Promise.resolve(
             new Response(
@@ -541,6 +634,23 @@ describe('SchemaGuardClient remote boundary', () => {
               { status: 201 },
             ),
           );
+        if (url.endsWith('/v1/admin/api-keys') && init?.method === 'GET')
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                api_keys: [
+                  {
+                    key_id: 'key_1',
+                    prefix: 'sg_live_1234',
+                    scopes: ['read:usage'],
+                    created_at: '2026-07-23T00:00:00.000Z',
+                    revoked_at: null,
+                    current: false,
+                  },
+                ],
+              }),
+            ),
+          );
         if (url.endsWith('/v1/admin/api-keys/key_1') && init?.method === 'DELETE')
           return Promise.resolve(new Response(JSON.stringify({ revoked: true })));
         return Promise.resolve(new Response('{}', { status: 404 }));
@@ -548,9 +658,30 @@ describe('SchemaGuardClient remote boundary', () => {
     });
 
     await expect(client.getManagedUsage()).resolves.toMatchObject({ plan: 'team' });
+    await expect(client.listManagedPlans()).resolves.toMatchObject([
+      { id: 'team', display_name: 'Private-beta design partner' },
+    ]);
+    await expect(client.getManagedPolicy()).resolves.toEqual({ allowed_repairs: [] });
+    await expect(client.listManagedSchemas()).resolves.toMatchObject([
+      { adapter: 'mcp', version: '1' },
+    ]);
+    await expect(client.listManagedActionDescriptors()).resolves.toMatchObject([
+      { environment: 'production', risk_level: 'high' },
+    ]);
+    await expect(
+      client.listManagedActionChallenges({ status: 'pending', limit: 25 }),
+    ).resolves.toMatchObject([{ challenge_id: 'challenge_1', status: 'pending' }]);
+    await expect(client.listManagedActionChallenges({ limit: 0 })).rejects.toThrow(
+      /between 1 and 500/u,
+    );
     await expect(client.listManagedAudits(25)).resolves.toEqual([]);
     await expect(client.verifyManagedAudits()).resolves.toEqual({ valid: true, checked: 0 });
     await expect(client.listManagedAlerts()).resolves.toEqual([]);
+    await expect(client.acknowledgeManagedAlert(7)).resolves.toBeUndefined();
+    await expect(client.acknowledgeManagedAlert(0)).rejects.toThrow(/positive safe integer/u);
+    await expect(client.listManagedApiKeys()).resolves.toMatchObject([
+      { key_id: 'key_1', current: false },
+    ]);
     await expect(client.listManagedEnvironments()).resolves.toHaveLength(1);
     await expect(client.getManagedIntelligence()).resolves.toMatchObject({
       failure_clusters: [],

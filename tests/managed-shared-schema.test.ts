@@ -331,6 +331,11 @@ describe('managed shared schema state', () => {
       });
       expect(registrationResponse.status).toBe(201);
       const registration = (await registrationResponse.json()) as { schema_hash: string };
+      const schemaInventory = await fetch(`${services[1]!.base}/v1/schemas`, { headers });
+      expect(schemaInventory.status).toBe(200);
+      expect(await schemaInventory.json()).toMatchObject({
+        schemas: [{ adapter: 'mcp', version: '1', schema_hash: registration.schema_hash }],
+      });
       expect(
         (
           await fetch(

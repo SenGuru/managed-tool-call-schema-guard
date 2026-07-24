@@ -64,6 +64,7 @@ import {
   type TenantLifecycle,
   type TenantLifecycleStatus,
 } from './types.js';
+import { managedPlan } from './plans.js';
 
 type Row = Record<string, unknown>;
 const now = (): string => new Date().toISOString();
@@ -1150,7 +1151,6 @@ export class ManagedStore {
     retentionDays?: number;
     policy?: GuardPolicy;
   }): void {
-    const limits: Record<PlanId, number> = { trial: 1_000, team: 100_000 };
     if (
       !/^[A-Za-z0-9_-]{1,64}$/u.test(input.id) ||
       input.name.length === 0 ||
@@ -1173,8 +1173,8 @@ export class ManagedStore {
         id: input.id,
         name: input.name,
         plan: input.plan,
-        monthly_limit: limits[input.plan],
-        retention_days: input.retentionDays ?? 30,
+        monthly_limit: managedPlan(input.plan).entitlements.validations_per_month,
+        retention_days: input.retentionDays ?? managedPlan(input.plan).entitlements.retention_days,
         policy_json: JSON.stringify(input.policy ?? {}),
         created_at: tenantCreatedAt,
       };
@@ -1389,6 +1389,26 @@ export class ManagedStore {
         this.apiKeyControlHmac(keyRow),
       );
     return { key_id: keyId, api_key: apiKey, scopes };
+  }
+  listApiKeys(principal: Principal): Row[] {
+    this.requireScope(principal, 'admin');
+    return (
+      this.db
+        .prepare('SELECT * FROM api_keys WHERE tenant_id=? ORDER BY created_at DESC,id')
+        .all(principal.tenantId) as Row[]
+    ).map((row) => {
+      this.assertControlHmac(row, this.apiKeyControlHmac(row), 'API key');
+      const scopes = parse(row.scopes_json) as Scope[];
+      this.assertScopes(scopes);
+      return {
+        key_id: row.id,
+        prefix: row.prefix,
+        scopes,
+        created_at: row.created_at,
+        revoked_at: row.revoked_at ?? null,
+        current: row.id === principal.keyId,
+      };
+    });
   }
   revokeApiKey(principal: Principal, keyId: string): boolean {
     this.requireScope(principal, 'admin');
@@ -1664,15 +1684,15 @@ export class ManagedStore {
   }
   updatePlan(principal: Principal, plan: PlanId): void {
     this.requireScope(principal, 'admin');
-    const limits: Record<PlanId, number> = { trial: 1_000, team: 100_000 };
     const row = this.db.prepare('SELECT * FROM tenants WHERE id=?').get(principal.tenantId) as
       Row | undefined;
     if (!row) throw new ManagedError(404, 'tenant_not_found', 'tenant does not exist');
     this.assertControlHmac(row, this.tenantControlHmac(row), 'tenant');
-    const updated = { ...row, plan, monthly_limit: limits[plan] };
+    const monthlyLimit = managedPlan(plan).entitlements.validations_per_month;
+    const updated = { ...row, plan, monthly_limit: monthlyLimit };
     this.db
       .prepare('UPDATE tenants SET plan=?,monthly_limit=?,control_hmac=? WHERE id=?')
-      .run(plan, limits[plan], this.tenantControlHmac(updated), principal.tenantId);
+      .run(plan, monthlyLimit, this.tenantControlHmac(updated), principal.tenantId);
   }
 
   listEnvironments(principal: Principal): Row[] {
@@ -1907,6 +1927,28 @@ export class ManagedStore {
     };
   }
 
+  listActionDescriptors(principal: Principal): Row[] {
+    this.requireScope(principal, 'admin');
+    return (
+      this.db
+        .prepare(
+          `SELECT * FROM action_descriptors
+           WHERE tenant_id=? ORDER BY updated_at DESC,tool_name_hash,environment`,
+        )
+        .all(principal.tenantId) as Row[]
+    ).map((row) => {
+      this.assertControlHmac(row, this.actionDescriptorControlHmac(row), 'action descriptor');
+      return {
+        tool_name_hash: text(row.tool_name_hash),
+        environment: text(row.environment),
+        risk_level: text(row.risk_level),
+        side_effect: text(row.side_effect),
+        created_at: text(row.created_at),
+        updated_at: text(row.updated_at),
+      };
+    });
+  }
+
   verifyActionDecision(principal: Principal, decision: GuardDecision, toolName: string): boolean {
     if (decision.decision === 'rejected' || !decision.audit.validated_arguments_hash) return false;
     const row = this.db
@@ -1989,6 +2031,47 @@ export class ManagedStore {
         );
       throw error;
     }
+  }
+
+  listActionChallenges(
+    principal: Principal,
+    status: 'pending' | 'approved' | 'revoked' | undefined,
+    limit: number,
+  ): Row[] {
+    this.requireScope(principal, 'approve:action');
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500)
+      throw new ManagedError(
+        400,
+        'invalid_action_challenge_limit',
+        'action challenge limit must be 1-500',
+      );
+    const rows = (
+      status
+        ? this.db
+            .prepare(
+              `SELECT * FROM action_approvals
+               WHERE tenant_id=? AND status=? ORDER BY created_at DESC,challenge_id LIMIT ?`,
+            )
+            .all(principal.tenantId, status, limit)
+        : this.db
+            .prepare(
+              `SELECT * FROM action_approvals
+               WHERE tenant_id=? ORDER BY created_at DESC,challenge_id LIMIT ?`,
+            )
+            .all(principal.tenantId, limit)
+    ) as Row[];
+    return rows.map((row) => {
+      this.assertControlHmac(row, this.actionApprovalControlHmac(row), 'action approval');
+      return {
+        challenge_id: text(row.challenge_id),
+        status: text(row.status),
+        challenge: parse(row.challenge_json),
+        evidence: row.evidence_json === null ? null : parse(row.evidence_json),
+        created_at: text(row.created_at),
+        expires_at: text(row.expires_at),
+        approved_at: row.approved_at === null ? null : text(row.approved_at),
+      };
+    });
   }
 
   approveActionChallenge(principal: Principal, challengeId: string): ApprovalEvidence {
@@ -3142,6 +3225,31 @@ export class ManagedStore {
     return { schema_hash: schemaHash, drift };
   }
 
+  listLatestSchemas(principal: Principal): Row[] {
+    this.requireScope(principal, 'read:environment');
+    return (
+      this.db
+        .prepare(
+          `SELECT s.tool_name_hash,s.adapter,s.version,s.schema_hash,s.schema_json,s.drift_json,s.created_at
+           FROM tool_schemas s
+           WHERE s.tenant_id=? AND NOT EXISTS (
+             SELECT 1 FROM tool_schemas newer
+             WHERE newer.tenant_id=s.tenant_id AND newer.tool_name_hash=s.tool_name_hash AND newer.id>s.id
+           )
+           ORDER BY s.created_at DESC,s.id DESC`,
+        )
+        .all(principal.tenantId) as Row[]
+    ).map((row) => ({
+      tool_name_hash: text(row.tool_name_hash),
+      adapter: text(row.adapter),
+      version: text(row.version),
+      schema_hash: text(row.schema_hash),
+      schema: parse(row.schema_json),
+      drift: row.drift_json === null ? null : parse(row.drift_json),
+      created_at: text(row.created_at),
+    }));
+  }
+
   private schemaReleaseRecordHash(
     tenantId: string,
     record: Omit<ManagedSchemaRelease, 'record_hash'>,
@@ -3845,6 +3953,18 @@ export class ManagedStore {
       )
       .all(principal.tenantId) as Row[];
     return rows.map(({ detail_json, ...row }) => ({ ...row, detail: parse(detail_json) }));
+  }
+  acknowledgeAlert(principal: Principal, alertId: number): boolean {
+    this.requireScope(principal, 'admin');
+    if (!Number.isSafeInteger(alertId) || alertId < 1) return false;
+    const result = this.db
+      .prepare(
+        `UPDATE alerts
+            SET acknowledged_at=COALESCE(acknowledged_at,?)
+          WHERE tenant_id=? AND id=?`,
+      )
+      .run(now(), principal.tenantId, alertId);
+    return result.changes === 1;
   }
   private checkpointAnchorOperational(): boolean {
     if (!this.config.actionCheckpointAnchorUrl) return true;

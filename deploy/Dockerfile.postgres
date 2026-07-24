@@ -7,3 +7,5 @@ RUN sed -i 's/^postgres:x:70:70:/postgres:x:999:999:/' /etc/passwd \
     && sed -i 's/^postgres:x:70:/postgres:x:999:/' /etc/group \
     && chown -R 999:999 /var/lib/postgresql /var/run/postgresql \
     && rm -f /usr/local/bin/gosu /sbin/su-exec
+
+USER 999:999

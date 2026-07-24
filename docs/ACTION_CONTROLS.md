@@ -46,6 +46,17 @@ recomputes every manifest; a running process repeats the full check after an
 out-of-band SQLite commit, before another action transition. This makes row
 deletion fail closed instead of erasing duplicate-execution memory.
 
+Daily-use discovery is explicit:
+
+- `GET /v1/admin/actions/descriptors` returns tenant-owned descriptor hashes,
+  environment, risk, side effect and timestamps under `admin`; plaintext tool
+  names remain excluded from persistence and the inventory.
+- `GET /v1/actions/challenges?status=pending&limit=100` returns bounded,
+  tenant-owned approval state under `approve:action`, so approval and
+  cancellation do not depend on challenge IDs copied from an earlier response.
+- both read paths verify authenticated state before returning it and fail
+  closed on tampering.
+
 `GET /v1/actions/idempotency/checkpoint` returns a value-free revision, row
 count, set accumulator, tenant reference, and checkpoint HMAC under the
 `reconcile:action` scope. Retain it outside the database after controlled action

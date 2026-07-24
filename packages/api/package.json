@@ -2,6 +2,12 @@
   "name": "@schema-guard/api",
   "version": "0.2.0",
   "type": "module",
+  "main": "./dist/server.js",
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "license": "MIT",
   "dependencies": {
     "@schema-guard/core": "0.2.0"
   },

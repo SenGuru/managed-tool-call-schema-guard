@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "open_source": {
+    "license": "MIT",
+    "license_file": "LICENSES/MIT.txt",
+    "paths": [
+      "action.yml",
+      "conformance/**",
+      "examples/**",
+      "packages/api/**",
+      "packages/cli/**",
+      "packages/core/**",
+      "packages/sdk-typescript/**",
+      "protocol/**",
+      "python/**"
+    ],
+    "workspaces": [
+      "@schema-guard/api",
+      "@schema-guard/cli",
+      "@schema-guard/core",
+      "@schema-guard/sdk"
+    ]
+  },
+  "paid_managed": {
+    "license": "LicenseRef-Akriven-Proprietary",
+    "license_file": "LICENSES/AKRIVEN-PROPRIETARY.txt",
+    "paths": [
+      "deploy/**",
+      "packages/anchor-receiver/**",
+      "packages/managed/**",
+      "packages/shared-state/**"
+    ],
+    "workspaces": [
+      "@schema-guard/checkpoint-anchor-receiver",
+      "@schema-guard/managed-local",
+      "@schema-guard/shared-state"
+    ]
+  },
+  "separate_private_products": [
+    {
+      "path": "website/",
+      "repository": "SenGuru/akriven-website",
+      "purpose": "private product website source"
+    }
+  ]
+}

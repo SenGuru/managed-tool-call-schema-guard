@@ -68,12 +68,49 @@ class SchemaGuardClientTest(unittest.TestCase):
             paths.append(request.full_url)
             if request.full_url.endswith("/v1/usage"):
                 return JsonResponse({"plan": "team"})
+            if request.full_url.endswith("/v1/plans"):
+                return JsonResponse({"plans": [{"id": "team"}]})
+            if request.full_url.endswith("/v1/admin/api-keys"):
+                return JsonResponse(
+                    {
+                        "api_keys": [
+                            {
+                                "key_id": "key_1",
+                                "prefix": "sg_live_1234",
+                                "current": False,
+                            }
+                        ]
+                    }
+                )
+            if request.full_url.endswith("/v1/admin/policy"):
+                return JsonResponse({"policy": {"allowed_repairs": []}})
+            if request.full_url.endswith("/v1/schemas"):
+                return JsonResponse({"schemas": [{"adapter": "mcp", "version": "1"}]})
+            if request.full_url.endswith("/v1/admin/actions/descriptors"):
+                return JsonResponse(
+                    {
+                        "descriptors": [
+                            {"environment": "production", "risk_level": "high"}
+                        ]
+                    }
+                )
+            if "/v1/actions/challenges?" in request.full_url:
+                return JsonResponse(
+                    {
+                        "challenges": [
+                            {"challenge_id": "challenge_1", "status": "pending"}
+                        ]
+                    }
+                )
             if "/v1/audits?" in request.full_url:
                 return JsonResponse({"audits": []})
             if request.full_url.endswith("/v1/audits/verify"):
                 return JsonResponse({"valid": True, "checked": 0})
             if request.full_url.endswith("/v1/alerts"):
                 return JsonResponse([])
+            if request.full_url.endswith("/v1/alerts/7/acknowledge"):
+                self.assertEqual(request.method, "POST")
+                return JsonResponse({"acknowledged": True, "alert_id": 7})
             if request.full_url.endswith("/v1/environments"):
                 return JsonResponse([])
             if request.full_url.endswith("/v1/intelligence"):
@@ -127,9 +164,21 @@ class SchemaGuardClientTest(unittest.TestCase):
         )
         with patch("urllib.request.urlopen", side_effect=remote):
             self.assertEqual(client.usage()["plan"], "team")
+            self.assertEqual(client.plans()["plans"][0]["id"], "team")
+            self.assertEqual(client.api_keys()["api_keys"][0]["key_id"], "key_1")
+            self.assertEqual(client.policy()["allowed_repairs"], [])
+            self.assertEqual(client.schemas()["schemas"][0]["adapter"], "mcp")
+            self.assertEqual(
+                client.action_descriptors()["descriptors"][0]["risk_level"], "high"
+            )
+            self.assertEqual(
+                client.action_challenges("pending", 25)["challenges"][0]["status"],
+                "pending",
+            )
             self.assertEqual(client.audits(25)["audits"], [])
             self.assertTrue(client.verify_audits()["valid"])
             self.assertEqual(client.alerts(), [])
+            self.assertTrue(client.acknowledge_alert(7)["acknowledged"])
             self.assertEqual(client.environments(), [])
             self.assertEqual(client.intelligence()["failure_clusters"], [])
             self.assertEqual(
@@ -142,11 +191,19 @@ class SchemaGuardClientTest(unittest.TestCase):
                 client.request_tenant_deletion("tenant-a")["status"],
                 "deletion_pending",
             )
-        self.assertEqual(len(paths), 11)
+        self.assertEqual(len(paths), 18)
         self.assertIn(
             "environment=production",
             next(path for path in paths if "/v1/schema-releases?" in path),
         )
+
+    def test_alert_acknowledgement_rejects_invalid_identifiers(self):
+        client = SchemaGuardClient(
+            "https://api.example.test", api_key="read-key"
+        )
+        for value in (0, -1, True, 9007199254740992):
+            with self.assertRaises(ValueError):
+                client.acknowledge_alert(value)
 
     def test_remote_errors_fail_closed(self):
         payload = JsonResponse(

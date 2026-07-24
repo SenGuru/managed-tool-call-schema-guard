@@ -19,7 +19,7 @@ export interface SharedAlert {
   severity: string;
   detail: Record<string, unknown>;
   created_at: string;
-  acknowledged_at: null;
+  acknowledged_at: string | null;
 }
 export interface SharedAlertWebhook {
   webhook_id: string;
@@ -61,6 +61,7 @@ export interface AlertState {
     sourceKey: string,
   ): Promise<SharedAlert>;
   listAlerts(tenantId: string, limit?: number): Promise<SharedAlert[]>;
+  acknowledgeAlert(tenantId: string, alertSequence: number): Promise<boolean>;
   createWebhook(
     tenantId: string,
     label: string,
@@ -114,6 +115,12 @@ type AlertRow = {
   created_at: Date;
   previous_hash: string;
   record_hash: string;
+};
+type AlertAcknowledgementRow = {
+  alert_id: string;
+  tenant_id: string;
+  acknowledged_at: Date;
+  control_hmac: string;
 };
 type WebhookRow = {
   webhook_id: string;
@@ -185,6 +192,16 @@ const DDL = `
     ON sg_alert_deliveries(status,next_attempt_at,lease_expires_at);
   CREATE INDEX IF NOT EXISTS sg_alert_deliveries_tenant
     ON sg_alert_deliveries(tenant_id,created_at DESC);
+`;
+const ACKNOWLEDGEMENT_DDL = `
+  CREATE TABLE IF NOT EXISTS sg_alert_acknowledgements (
+    alert_id TEXT PRIMARY KEY REFERENCES sg_alerts(alert_id) ON DELETE CASCADE,
+    tenant_id TEXT NOT NULL REFERENCES sg_control_tenants(id) ON DELETE CASCADE,
+    acknowledged_at TIMESTAMPTZ NOT NULL,
+    control_hmac TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS sg_alert_acknowledgements_tenant
+    ON sg_alert_acknowledgements(tenant_id,acknowledged_at DESC);
 `;
 
 const hmac = (secret: string, purpose: string, value: unknown): string =>
@@ -374,7 +391,10 @@ export class PostgresAlertState implements AlertState {
     )
       throw new SharedStateIntegrityError('shared alert delivery integrity failed');
   }
-  private alertFrom(row: AlertRow): SharedAlert {
+  private acknowledgementHmac(row: Omit<AlertAcknowledgementRow, 'control_hmac'>): string {
+    return hmac(this.masterSecret, 'shared-alert-acknowledgement-v1', row);
+  }
+  private alertFrom(row: AlertRow & { acknowledged_at?: Date | null }): SharedAlert {
     return {
       id: Number(row.sequence),
       alert_id: row.alert_id,
@@ -382,7 +402,7 @@ export class PostgresAlertState implements AlertState {
       severity: row.severity,
       detail: JSON.parse(row.detail_json) as Record<string, unknown>,
       created_at: row.created_at.toISOString(),
-      acknowledged_at: null,
+      acknowledged_at: row.acknowledged_at?.toISOString() ?? null,
     };
   }
   private deliveryFrom(row: DeliveryRow, alertSequence: number): SharedAlertDelivery {
@@ -480,6 +500,24 @@ export class PostgresAlertState implements AlertState {
         return { valid: false, checked: index };
       }
     }
+    const acknowledgements = (
+      await client.query<AlertAcknowledgementRow>(
+        `SELECT * FROM sg_alert_acknowledgements WHERE tenant_id=$1 ORDER BY alert_id${suffix}`,
+        [tenantId],
+      )
+    ).rows;
+    for (const row of acknowledgements)
+      if (
+        !equal(
+          row.control_hmac,
+          this.acknowledgementHmac({
+            alert_id: row.alert_id,
+            tenant_id: row.tenant_id,
+            acknowledged_at: row.acknowledged_at,
+          }),
+        )
+      )
+        return { valid: false, checked: alerts.length };
     return { valid: previous === manifest.tip_hash, checked: alerts.length };
   }
   async migrate(): Promise<void> {
@@ -489,15 +527,29 @@ export class PostgresAlertState implements AlertState {
       );
       await client.query(DDL);
       const checksum = sha256(DDL);
+      const acknowledgementChecksum = sha256(ACKNOWLEDGEMENT_DDL);
       const rows = await client.query<{ version: number; checksum: string }>(
         'SELECT version,checksum FROM sg_alert_state_migrations ORDER BY version',
       );
-      if (rows.rows.some((row) => row.version !== 1 || row.checksum !== checksum))
+      if (
+        rows.rows.some(
+          (row) =>
+            (row.version === 1 && row.checksum !== checksum) ||
+            (row.version === 2 && row.checksum !== acknowledgementChecksum) ||
+            (row.version !== 1 && row.version !== 2),
+        )
+      )
         throw new SharedStateIntegrityError('shared alert migration history is incompatible');
-      if (!rows.rows.length)
+      if (!rows.rows.some((row) => row.version === 1))
         await client.query(
           "INSERT INTO sg_alert_state_migrations(version,migration_name,checksum,applied_at) VALUES(1,'initial_alert_state',$1,$2)",
           [checksum, new Date()],
+        );
+      await client.query(ACKNOWLEDGEMENT_DDL);
+      if (!rows.rows.some((row) => row.version === 2))
+        await client.query(
+          "INSERT INTO sg_alert_state_migrations(version,migration_name,checksum,applied_at) VALUES(2,'alert_acknowledgements',$1,$2)",
+          [acknowledgementChecksum, new Date()],
         );
     });
     const tenants = await this.pool.query<{ id: string }>(
@@ -732,11 +784,62 @@ export class PostgresAlertState implements AlertState {
       await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
       if (!(await this.verifyWith(client, tenantId)).valid)
         throw new SharedStateIntegrityError('shared alert state is invalid');
-      const rows = await client.query<AlertRow>(
-        'SELECT * FROM sg_alerts WHERE tenant_id=$1 ORDER BY sequence DESC LIMIT $2',
+      const rows = await client.query<AlertRow & { acknowledged_at: Date | null }>(
+        `SELECT a.*,k.acknowledged_at
+           FROM sg_alerts a
+           LEFT JOIN sg_alert_acknowledgements k ON k.alert_id=a.alert_id AND k.tenant_id=a.tenant_id
+          WHERE a.tenant_id=$1 ORDER BY a.sequence DESC LIMIT $2`,
         [tenantId, bounded],
       );
       return rows.rows.map((row) => this.alertFrom(row));
+    });
+  }
+  async acknowledgeAlert(tenantId: string, alertSequence: number): Promise<boolean> {
+    if (!Number.isSafeInteger(alertSequence) || alertSequence < 1) return false;
+    return this.transaction(async (client) => {
+      const alert = (
+        await client.query<AlertRow>(
+          'SELECT * FROM sg_alerts WHERE tenant_id=$1 AND sequence=$2 FOR UPDATE',
+          [tenantId, alertSequence],
+        )
+      ).rows[0];
+      if (!alert) return false;
+      const existing = (
+        await client.query<AlertAcknowledgementRow>(
+          'SELECT * FROM sg_alert_acknowledgements WHERE tenant_id=$1 AND alert_id=$2 FOR UPDATE',
+          [tenantId, alert.alert_id],
+        )
+      ).rows[0];
+      if (existing) {
+        if (
+          !equal(
+            existing.control_hmac,
+            this.acknowledgementHmac({
+              alert_id: existing.alert_id,
+              tenant_id: existing.tenant_id,
+              acknowledged_at: existing.acknowledged_at,
+            }),
+          )
+        )
+          throw new SharedStateIntegrityError('shared alert acknowledgement integrity failed');
+        return true;
+      }
+      const acknowledgement = {
+        alert_id: alert.alert_id,
+        tenant_id: tenantId,
+        acknowledged_at: new Date(),
+      };
+      await client.query(
+        `INSERT INTO sg_alert_acknowledgements(alert_id,tenant_id,acknowledged_at,control_hmac)
+         VALUES($1,$2,$3,$4)`,
+        [
+          acknowledgement.alert_id,
+          acknowledgement.tenant_id,
+          acknowledgement.acknowledged_at,
+          this.acknowledgementHmac(acknowledgement),
+        ],
+      );
+      return true;
     });
   }
   async createWebhook(

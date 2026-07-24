@@ -31,6 +31,11 @@ receipts added required fields.
 
 ## Public versus managed boundary
 
+The authoritative, machine-checked path and license map is
+[`product-boundary.json`](../product-boundary.json); see
+[`PRODUCT_BOUNDARY.md`](PRODUCT_BOUNDARY.md). The root workspace is deliberately
+private and unlicensed because it assembles both domains.
+
 The public offline layer contains the protocol, engine, repair registry and
 receipts, canonical contract compiler, local incident replay, action policy,
 adapters, drift comparison, conformance corpus, CLI, local API, SDKs, and local

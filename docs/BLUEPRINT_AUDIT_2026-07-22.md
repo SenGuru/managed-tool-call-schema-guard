@@ -1,5 +1,11 @@
 # Production blueprint audit — 2026-07-22 (updated 2026-07-24)
 
+> The final provider-independent private-beta gate, including evidence for
+> source changes after r7, is recorded in
+> [`PRIVATE_BETA_TRACEABILITY_2026-07-24.md`](PRIVATE_BETA_TRACEABILITY_2026-07-24.md).
+> Deployed r7 measurements in this document remain exact-revision historical
+> evidence and do not automatically prove later code.
+
 This is the living requirements-to-evidence matrix for the Akriven / Managed
 Tool-Call Schema Guard release candidate at commit `c473da8` plus the working
 tree changes produced by this audit. A passing local test is not treated as

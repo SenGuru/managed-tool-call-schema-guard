@@ -12,6 +12,9 @@ does not unexpectedly stop traffic.
 
 1. Register the candidate with `POST /v1/schemas` and retain the returned
    `schema_hash`.
+   `GET /v1/schemas` returns the tenant's latest version for each privacy-hashed
+   tool identity, including the canonical schema, adapter, drift result, and
+   registration time under `read:environment`.
 2. Promote that exact version and hash with a `promote:schema` key:
 
 ```http

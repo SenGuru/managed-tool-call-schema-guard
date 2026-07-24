@@ -1,0 +1,222 @@
+# Provider-independent private-beta traceability — 2026-07-24
+
+## Verdict scope
+
+This document is the release gate for the source on
+`codex/production-readiness-2026-07-24`. It supersedes repository-wide
+readiness conclusions in earlier reports while retaining their measurements as
+historical evidence for the exact revisions they exercised.
+
+The provider-independent product is suitable for **internal staging** and is a
+**conditional private-beta candidate for operator-onboarded design partners**.
+It is a **no-go for public beta, self-service enrollment, automated charging,
+or a production SLO claim** until the external gates in
+[`EXTERNAL_PROVIDER_PLAN.md`](EXTERNAL_PROVIDER_PLAN.md) are exercised.
+
+The private-beta candidate means:
+
+- the customer receives an independently usable MIT checkpoint plus an
+  operator-managed shared service;
+- tenant access is by scoped operator-issued API key, not human identity;
+- the design-partner offer is manually contracted and invoiced;
+- live payment, identity, email, paging, secret-manager, immutable-backup, and
+  model-provider integrations are not represented as proven;
+- irreversible tool execution remains the customer's responsibility and must
+  use the reservation, acknowledgement, completion, and reconciliation
+  protocol;
+- the private website may be reviewed locally but must not be published or
+  moved to customer-facing DNS by this gate.
+
+## Evidence vocabulary
+
+- **proven** — deterministically exercised at the stated boundary on this
+  source revision;
+- **partially proven** — the important internal behavior was exercised, but an
+  external or multi-host boundary remains;
+- **configured only** — reviewed code or configuration exists without a
+  credentialed provider exercise;
+- **documented only** — a procedure exists without observed execution;
+- **missing** — the claimed or required behavior is not implemented;
+- **blocked** — an external account, credential, verified host, legal decision,
+  customer endpoint, or owner-console action is required.
+
+Historical evidence is never silently promoted to exact-source evidence.
+
+## Requirements-to-evidence matrix
+
+| Requirement                                                                              | Reachable implementation                                                                    | Deterministic evidence                                                                                                 | Production-like evidence                                                                    | Status and launch consequence                                                                             |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Deterministic `valid`, `valid_with_repair`, and `rejected` checkpoint semantics          | `packages/core`, protocol, compiler, engine                                                 | Core, property, adversarial, conformance, SDK and Python tests                                                         | Exact-source managed/PostgreSQL/anchor container lifecycle                                  | **Proven** for internal and container boundaries                                                          |
+| Raw argument and raw schema preservation                                                 | strict JSON parser, protocol receipts, managed audit envelopes                              | Duplicate-key, malformed JSON, Unicode, numeric, depth, size, hashing and export tests                                 | Container validation/audit/export path                                                      | **Proven**; raw sensitive values are not written to access logs or cross-tenant intelligence              |
+| Safe allowlisted unambiguous repair and reject-on-uncertainty                            | repair planner and engine                                                                   | Property/adversarial suites plus 30,203 and 15,702 mutation replays                                                    | Container proves scalar repair and ambiguous numeric rejection                              | **Proven**                                                                                                |
+| Reasons, hints, repaired fields, audit IDs and verifiable receipts                       | protocol, audit builders and signed stores                                                  | Unit, SDK, CLI, tamper and chain tests                                                                                 | Container audit lifecycle and integrity verification                                        | **Proven**                                                                                                |
+| Provider normalization parity                                                            | provider adapters and conformance fixtures                                                  | Differential/conformance tests and static benchmark replays                                                            | No live model-provider call in this revision                                                | **Partially proven**; live pinned-provider probes are **blocked**                                         |
+| Framework runtime parity                                                                 | MCP, OpenAI Agents, PydanticAI and Google ADK adapters                                      | Real installed framework audit on Node 22 and Python 3.13; rejected calls execute zero tools                           | No model API used                                                                           | **Proven** at framework boundary; external provider behavior remains blocked                              |
+| Policy enforcement and environment narrowing                                             | managed policy/environment stores and evaluator                                             | SQLite, PostgreSQL, API, SDK and CLI tests                                                                             | Container policy and environment override lifecycle                                         | **Proven**                                                                                                |
+| Action classification and approval                                                       | action descriptors, challenges and evidence chain                                           | Local/shared/tenant-isolation/tamper tests                                                                             | Container challenge, approval and irreversible action admission                             | **Proven** internally                                                                                     |
+| Idempotency reservation, exact checkpoint acknowledgement, completion and reconciliation | action shared-state tables, anchor outbox and APIs                                          | Concurrency, replay, checkpoint compare, tamper and reconciliation tests                                               | Container duplicate block, anchor outage fail-closed, recovery and redrive                  | **Proven** through a separate TLS container; customer downstream side-effect ledger is **blocked**        |
+| Schema registry, releases, promotion and runtime admission                               | managed schemas, environments and schema releases                                           | Local/shared/PG/API/SDK/CLI tests                                                                                      | Container register/promote/enforce/reject workflow                                          | **Proven**                                                                                                |
+| Drift, compatibility, conformance and privacy-thresholded intelligence                   | core drift and managed conformance/intelligence stores                                      | Unit/property/conformance and privacy threshold tests                                                                  | Container idempotent conformance ingestion and intelligence read                            | **Proven** for synthetic/value-free data; customer corpus value is **blocked**                            |
+| Signed audit chains and tamper detection                                                 | SQLite and PostgreSQL audit/control stores                                                  | Forgery, mutation, cross-tenant and chain verification tests                                                           | Container control-plane and audit verification                                              | **Proven**                                                                                                |
+| Retention, purge receipts and independent anchors                                        | retention policy, purge transaction, checkpoint outbox/receiver                             | Local/shared/PG tests and recovery audit                                                                               | Container purge plus independent anchor persistence/outage recovery                         | **Partially proven**; legal retention schedule and exact-source off-machine restore are blocked           |
+| Managed API daily workflow                                                               | managed HTTP server and dashboard                                                           | Extensive HTTP suite and embedded dashboard guard tests                                                                | Exact-source production image/container E2E                                                 | **Proven** for operator API-key model                                                                     |
+| TypeScript SDK, CLI and Python client                                                    | public workspaces and Python package                                                        | SDK, CLI and Python client tests cover plans, policy, schemas, descriptors, challenges, keys and alert acknowledgement | Clients call the same HTTP contract exercised in containers                                 | **Proven** provider-independently                                                                         |
+| Open-source/paid-managed boundary                                                        | `product-boundary.json`, scoped licenses and package graph gate                             | `npm run check:packages` verifies membership, licenses, dependency direction and packed contents                       | Not applicable                                                                              | **Proven**                                                                                                |
+| Tenant lifecycle and isolation                                                           | tenant bootstrap, local/shared lifecycle, export and deletion                               | SQLite/PG BOLA/IDOR, key scope, deletion and export tests                                                              | Two-tenant container isolation plus dual-store deletion lock                                | **Proven** for operator-created tenants                                                                   |
+| API-key create, list metadata, scope, rotate/revoke                                      | local and PostgreSQL control stores and admin APIs                                          | HMAC, tamper, no-plaintext, scope, tenant and SDK/CLI tests                                                            | Container create/use/revoke lifecycle                                                       | **Proven**                                                                                                |
+| Human authentication, organization membership, invitations, recovery, MFA and RBAC       | no production human identity boundary                                                       | No deterministic provider test                                                                                         | None                                                                                        | **Missing/blocked**; WorkOS is required before self-service or multi-user customer access                 |
+| Quotas, plan enforcement and metering                                                    | code-owned plan catalog and transactional counters                                          | SQLite/PG quota, plan, usage and billing tests                                                                         | Container shared metering and billing statement                                             | **Proven**                                                                                                |
+| Customer-facing offer and entitlements                                                   | `packages/managed/src/plans.ts` and pricing document                                        | Plan/API/SDK/CLI/Python tests                                                                                          | Private website source/build/browser verification                                           | **Proven as an invite-only offer**, not as market demand                                                  |
+| Billing statements and entitlement state                                                 | managed billing store and statement API                                                     | Signature, replay, reordering, conflict and provider-current contract tests                                            | Container billing boundary returns state and fails disabled routes closed                   | **Proven internally**                                                                                     |
+| Checkout, portal, webhooks, failed payments and cancellation                             | Stripe sandbox adapter and Compose overlay                                                  | Deterministic contract tests only                                                                                      | Disabled container returns `501` fail closed                                                | **Configured only/blocked** until real Stripe test-mode lifecycle                                         |
+| Alerts and acknowledgement                                                               | signed local/shared alert stores and dashboard/API/clients                                  | Tenant isolation, HMAC, idempotency and client tests                                                                   | Container alert read; acknowledgement is exact-source unit/PG tested                        | **Proven internally**                                                                                     |
+| Durable alert webhooks, retry, dead-letter and redrive                                   | webhook outbox/operator endpoints                                                           | Signature, retry, replay and redrive tests                                                                             | Container rejects unsafe callback target; no customer receiver used                         | **Partially proven**; external receiver and paging delivery are blocked                                   |
+| Independent checkpoint anchor                                                            | anchor receiver, TLS edge configuration and signed acknowledgement protocol                 | Anchor protocol, tamper and shared-state tests                                                                         | Separate managed/anchor containers, outage, restart and persistence                         | **Proven on one Docker host**; exact-source separate-host rollout is blocked                              |
+| Data export and deletion                                                                 | privacy-safe export, lifecycle lock and offline deletion operator                           | Local/shared/PG export, hash, confirmation and rollback tests                                                          | Container export excludes verifiers; deletion pending fails closed                          | **Proven internally**; legal verification and customer delivery process remain external                   |
+| Paying-customer dashboard                                                                | workflow-first dashboard with overview, readiness, 19 read panels and 29 guarded operations | Static/HTTP script checks, CSP and request-guard tests                                                                 | Production image serves dashboard and assets                                                | **Proven locally/container**; human session/role UX is blocked                                            |
+| Website, pricing and product-boundary claims                                             | private Next.js website including `/pricing`                                                | Lint, build, render tests, desktop/mobile in-app-browser inspection                                                    | Not deployed by this revision                                                               | **Proven as private source only**; signup/account recovery intentionally absent                           |
+| Deployment and migrations                                                                | pinned images, Compose overlays and backward-safe migrations                                | Build, migration, PG and configuration tests                                                                           | Fresh PostgreSQL/container startup plus service/database restarts                           | **Proven on local Docker**; new-source host rollout is blocked                                            |
+| Rollback                                                                                 | retained versioned migrations/images and documented runbook                                 | Compatibility tests and historical exact-revision drill                                                                | No exact-source provider rollback in this gate                                              | **Partially proven**                                                                                      |
+| Backup and restore                                                                       | SQLite online backup plus host scripts for encrypted PostgreSQL/anchor backups              | Local recovery audit and non-root backup-reader audit                                                                  | Container persistence restart; historical separate-host restore belongs to earlier revision | **Partially proven**; exact-source clean-host encrypted restore and Object Lock are blocked               |
+| TLS, ports, CORS, proxy trust, limits and headers                                        | Caddy/Compose/server configuration                                                          | Configuration, HTTP and adversarial tests                                                                              | Container TLS anchor path, CSP, request limits and auth behavior                            | **Proven locally**; public-edge exact-source scan is blocked                                              |
+| Non-root/read-only/capability-limited containers and secret files                        | pinned Dockerfiles and Compose hardening                                                    | Dockerfile/config scan and image inspection                                                                            | Managed/anchor container E2E plus non-root backup-reader archive exercise                   | **Proven**                                                                                                |
+| Monitoring, uptime, backup heartbeats and independent paging                             | runbooks and provider plan                                                                  | Local alert generation only                                                                                            | No real external delivery target                                                            | **Documented only/blocked**                                                                               |
+| Dependency, source, image and supply-chain controls                                      | lockfile, package gate, pinned images and scan scripts                                      | npm audit and Trivy source/image scans                                                                                 | Exact local images scanned                                                                  | **Proven for current databases**; registry attestation and continuous monitoring remain future operations |
+| Performance and denial-of-service controls                                               | request/body/schema limits and managed runtime                                              | adversarial tests, 10k core benchmark and 2k-request managed load                                                      | Short local process load only                                                               | **Partially proven**; no sustained VPS soak or public SLO                                                 |
+| Real customer value, willingness to pay, renewal and support load                        | none                                                                                        | Planning assumptions only                                                                                              | No paid cohort evidence                                                                     | **Missing**; must not be described as product-market proof                                                |
+
+## Claim reconciliation
+
+The audit corrected these contradictions rather than preserving optimistic
+documentation:
+
+1. The repository is not wholly MIT. The public checkpoint packages are MIT;
+   managed control-plane, shared-state and anchor packages are proprietary and
+   private. Earlier published revisions retain their shipped license.
+2. Multi-instance managed coordination is no longer described as missing:
+   PostgreSQL-backed audit, control, action, schema, billing and alert state are
+   implemented and exercised. SQLite remains a bounded local projection.
+3. The dashboard is no longer called a complete customer account product. It
+   is a complete operator/API-key workflow surface with 19 read panels and 29
+   guarded operations. Human sessions, memberships and recovery are external
+   gates.
+4. The only customer-facing paid offer is the 90-day design-partner package.
+   Former Team/Business/Enterprise prices are planning hypotheses, not public
+   offers or revenue evidence.
+5. Billing code is not payment proof. Disabled runtime routes fail closed;
+   Stripe remains blocked until its real sandbox lifecycle is exercised.
+6. Historical DreamHost/DigitalOcean evidence proves only the exact historical
+   revisions named in earlier reports. The current source has local,
+   PostgreSQL and container evidence and requires a new verified rollout before
+   it can inherit multi-host status.
+7. The private website describes blocked provider boundaries explicitly and
+   has no fake signup, checkout, renewal or account-recovery journey.
+
+## Exact provider-independent test inventory
+
+| Command                                                                                                    | Observed result                                                                                                                                                                                             | Boundary                                          |
+| ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `npm run check`                                                                                            | Passed in 15.15 s: format, build, lint, script syntax, dry provider probe, package boundary, typecheck, conformance, 200 TypeScript tests, 16 PostgreSQL tests skipped, and 5 Python tests                  | Local/SQLite/in-memory                            |
+| credentialed `npm run test:coverage` against disposable PostgreSQL 16                                      | 39/39 files and 216/216 tests passed in 5.84 s; statements 79.12%, branches 73.37%, functions 80.56%, lines 81.06%                                                                                          | Loopback PostgreSQL                               |
+| `npm run audit:extreme`                                                                                    | Final rerun passed in 21.76 s                                                                                                                                                                               | Severe local gate                                 |
+| managed load inside `audit:extreme`                                                                        | 2,000/2,000 HTTP 200; zero errors; 1,307.32 req/s; p50 22.36 ms, p95 27.52 ms, p99 127.73 ms; unique audits and valid chain                                                                                 | Short local load, not SLO                         |
+| core benchmark inside `audit:extreme`                                                                      | 10,000 operations; p50 19.958 µs, p95 23.709 µs, p99 41.959 µs                                                                                                                                              | Local CPU                                         |
+| `npm run audit:container-e2e`                                                                              | Final rerun passed in 10.27 s; fresh PostgreSQL, TLS anchor, two tenants, all decision paths, promotion/admission, approval/idempotency, outage/redrive, restarts, persistence, hardening and log redaction | Exact-source production images on one Docker host |
+| `SCHEMA_GUARD_INTEGRATION_PYTHON=/opt/homebrew/bin/python3.13 npm run audit:framework-integrations`        | Passed; MCP 1.29.0, OpenAI Agents 0.13.5, PydanticAI 2.13.0, Google ADK 2.5.0; no model API and no external repository code                                                                                 | Real framework packages                           |
+| `npm run audit:five-repos`                                                                                 | 5 static repositories, 9 fixtures, 20 source calls, 35 derived calls, zero failures                                                                                                                         | Commit-pinned static source reads                 |
+| `npm run audit:benchmarks`                                                                                 | 7,699 recorded calls; 7,575 conforming; 124 visible source conflicts; 30,203/30,203 mutations matched                                                                                                       | Static benchmark data; no downloaded code         |
+| `npm run audit:real-data`                                                                                  | 2,501 rows; 3,302 expected calls; 3,266 baseline pass; 36 visible conflicts; 15,702/15,702 mutations matched                                                                                                | BFCL static data; no downloaded code              |
+| `npm audit --audit-level=moderate`                                                                         | 0 vulnerabilities across 370 dependencies                                                                                                                                                                   | Current npm advisory database                     |
+| `npm run audit:images`                                                                                     | Managed, anchor and PostgreSQL images: 0 High/Critical vulnerabilities and 0 secrets                                                                                                                        | Local image contents                              |
+| exact-source CycloneDX generation plus `trivy sbom --scanners vuln --severity HIGH,CRITICAL --exit-code 1` | SBOMs retained for managed, anchor and PostgreSQL images; all three SBOM scans passed                                                                                                                       | Local image contents                              |
+| `trivy fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL --exit-code 1 .`                       | 0 vulnerabilities, 0 secrets and 0 High/Critical misconfigurations after non-root deployment fixes                                                                                                          | Local checkout                                    |
+| non-root backup-reader archive exercise                                                                    | UID/GID 65532, no network, read-only root filesystem and all capabilities dropped; archive of same-UID anchor volume succeeded                                                                              | Disposable local Docker volumes                   |
+| private website `npm run lint`, `npm run build`, and render tests                                          | Passed; 17 routes including `/pricing`; 3/3 render tests                                                                                                                                                    | Nested private website repository                 |
+| private website in-app-browser inspection                                                                  | Desktop and mobile layouts, pricing copy, navigation and no horizontal overflow verified                                                                                                                    | Local browser only                                |
+
+The final regression rerun and commit identifiers are appended during release
+checkpointing. Generated test outputs are evidence artifacts, not
+implementation proof by themselves.
+
+## Failures found during this gate
+
+- Strict lint rejected two new test assertions; the tests were typed directly
+  and rerun without weakening lint.
+- The first credentialed PostgreSQL run exposed a missing
+  `sg_alert_acknowledgements` table in test reset ordering. The foreign-key
+  dependency was fixed and all 214 tests reran.
+- The first container run exhausted Docker storage while PostgreSQL created
+  WAL. Only dangling audit images and build cache were pruned; tagged
+  candidates and user data were preserved. The exact suite then passed.
+- The framework audit rejected macOS Python 3.9. It passed unchanged against
+  the installed Python 3.13 runtime.
+- The filesystem scan identified root defaults in the PostgreSQL and backup
+  utility images. PostgreSQL now declares UID/GID 999 and the one-shot backup
+  reader uses UID/GID 65532 with a pre-owned output file, no network, read-only
+  root filesystem and no Linux capabilities. A disposable archive exercise
+  and the scan both pass.
+
+These are evidence that the gates detected defects; the initial failures are
+not counted as passes.
+
+## External blockers
+
+### Must be closed before the first design partner sends action traffic
+
+1. Independently verify the DigitalOcean host fingerprint in the provider
+   console before any SSH operation.
+2. Deploy this exact committed source to private staging on the reviewed main
+   and anchor hosts; repeat TLS, migration, outage, rollback and clean restore
+   drills.
+3. Configure independently delivered uptime, backup-heartbeat and paging
+   alerts and observe acknowledgement/escalation.
+4. Install secrets through an owner-controlled secret manager, never chat,
+   source control or command-line arguments.
+5. Configure immutable off-machine backups and complete a clean-host restore
+   with audit/anchor checkpoint comparison.
+6. Obtain a customer-owned test webhook and downstream side-effect ledger;
+   prove acknowledgement-before-execution, completion and ambiguous-result
+   reconciliation.
+7. Select and live-test the exact model/provider versions the customer will
+   use, including timeout, malformed-stream and provider-drift behavior.
+
+### Must be closed before self-service or automated charging
+
+1. WorkOS identity, organization membership, MFA, recovery and server-side
+   role/tenant binding.
+2. Postmark verification, invitation, recovery, security and billing email,
+   including bounce/retry/outage behavior.
+3. Stripe test-mode Checkout, Portal, signed webhook, replay/reordering,
+   failed-payment, cancellation and entitlement reconciliation.
+4. Public website account flows, support ownership, privacy/terms acceptance
+   and an externally reviewed retention/deletion policy.
+
+### Post-launch validation
+
+- paid cohort willingness to pay and renewal;
+- actual provider bills, payment loss, support time and gross margin;
+- sustained multi-tenant load/soak and database growth;
+- availability, latency and incident data sufficient to set a defensible SLO.
+
+## What was actually proven
+
+### Deterministic local evidence
+
+The checkpoint engine, repairs, policy, schemas, audits, action protocol,
+tenant lifecycle, quotas, internal billing state, alert/webhook machinery,
+clients, package boundary, pricing catalog and private website source pass
+their local, PostgreSQL and static-data gates.
+
+### Production-like network evidence
+
+Exact-source pinned containers exercised managed HTTP, fresh PostgreSQL and a
+TLS-separated checkpoint receiver with restart, outage, recovery, persistence,
+tenant isolation, fail-closed billing and secret/log hardening on one Docker
+host. Earlier reports retain real DreamHost-to-DigitalOcean evidence only for
+their named historical revisions.
+
+### Real customer and market evidence
+
+None. No live provider integration, automated payment, public signup, paying
+cohort, renewal, measured support burden or customer incident was produced by
+this gate.

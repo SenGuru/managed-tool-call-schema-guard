@@ -37,7 +37,12 @@ dependency on managed infrastructure.
 
 Managed supplies tenant identity, API-key lifecycle, organization policy, schema registry, reviewed environment releases with runtime admission, durable audit history, signed audit-chain verification, retention, export, alerts with a durable signed HTTPS outbox, environments and plans. It distributes signed rulesets rather than silently changing local enforcement behavior.
 
-The repository implements a useful single-machine version of this layer. Public hosting, payment settlement, configured notification receivers, cloud key custody, distributed coordination, availability engineering, support operations, and compliance certification are future production work.
+The repository implements this layer with a local SQLite mode and optional
+shared PostgreSQL authorities for control, schema, action, alert, intelligence,
+and billing state. Internal staging exercises a public TLS boundary, but
+customer-approved hosting, payment settlement, configured customer notification
+receivers, cloud key custody, failover, support operations, and compliance
+certification remain external production gates.
 
 ### 3. Compatibility intelligence
 
@@ -75,12 +80,12 @@ canonical compiler, proof-carrying repairs, exact local incident replay,
 SDK-enforced action gating, persistent value-free clustering, schema scoring,
 recommended fixes, conformance-summary ingestion, a compatibility matrix, and a
 deterministic daily conformance workflow. Durable single-node managed
-approvals/idempotency, uncertain-outcome reconciliation, and a durable generic
-alert-webhook transport are implemented. Environment schema promotion now binds
-reviewed registry versions to fail-closed runtime admission; shared
-multi-instance coordination, live provider fleet probes, receiver-specific
-integrations, and production hosting remain direction rather than completed
-claims.
+approvals/idempotency, uncertain-outcome reconciliation, a durable generic
+alert-webhook transport, and shared multi-instance coordination are
+implemented. Environment schema promotion binds reviewed registry versions to
+fail-closed runtime admission. Live provider fleet probes, customer-owned
+receivers, hosted identity/recovery, payment-provider networking, failover, and
+customer-production hosting remain direction rather than completed claims.
 
 ## Local product narrative
 

@@ -1,5 +1,10 @@
 # Production-readiness handoff — 2026-07-23 (updated 2026-07-24)
 
+> The final provider-independent private-beta gate, including evidence for
+> source changes after r7, is recorded in
+> [`PRIVATE_BETA_TRACEABILITY_2026-07-24.md`](PRIVATE_BETA_TRACEABILITY_2026-07-24.md).
+> Deployed r7 measurements below apply only to that exact revision.
+
 ## Verdict
 
 **NO-GO for public production or automated paid self-service.**

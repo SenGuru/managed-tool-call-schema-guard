@@ -122,6 +122,25 @@ export interface TransactionalAcceptedDecisionWriter {
   ): Promise<void>;
 }
 
+export interface SharedActionDescriptorSummary {
+  tool_name_hash: string;
+  environment: string;
+  risk_level: ActionDescriptor['risk_level'];
+  side_effect: ActionDescriptor['side_effect'];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SharedActionChallengeSummary {
+  challenge_id: string;
+  status: 'pending' | 'approved' | 'revoked';
+  challenge: ApprovalChallenge;
+  evidence: ApprovalEvidence | null;
+  created_at: string;
+  expires_at: string;
+  approved_at: string | null;
+}
+
 export interface ActionState {
   readonly recordsReconciliationAlerts?: boolean;
   readonly recordsAcceptedDecisions?: boolean;
@@ -145,7 +164,13 @@ export interface ActionState {
     toolName: string,
     environment: string,
   ): Promise<ActionDescriptor & { environment: string }>;
+  listActionDescriptors(tenantId: string): Promise<SharedActionDescriptorSummary[]>;
   recordActionChallenge(tenantId: string, challenge: ApprovalChallenge): Promise<void>;
+  listActionChallenges(
+    tenantId: string,
+    status: SharedActionChallengeSummary['status'] | undefined,
+    limit: number,
+  ): Promise<SharedActionChallengeSummary[]>;
   approveActionChallenge(
     tenantId: string,
     challengeId: string,
@@ -693,6 +718,25 @@ export class PostgresActionState implements ActionState {
       environment: row.environment,
     };
   }
+  async listActionDescriptors(tenantId: string): Promise<SharedActionDescriptorSummary[]> {
+    const rows = (
+      await this.pool.query<ActionDescriptorRow>(
+        'SELECT * FROM sg_action_descriptors WHERE tenant_id=$1 ORDER BY updated_at DESC,tool_name_hash,environment',
+        [tenantId],
+      )
+    ).rows;
+    return rows.map((row) => {
+      this.assertActionDescriptor(row);
+      return {
+        tool_name_hash: row.tool_name_hash,
+        environment: row.environment,
+        risk_level: row.risk_level,
+        side_effect: row.side_effect,
+        created_at: row.created_at.toISOString(),
+        updated_at: row.updated_at.toISOString(),
+      };
+    });
+  }
   private actionApprovalSecret(tenantId: string): string {
     return hmac(this.masterSecret, 'tenant-action-approval-secret-v1', {
       tenant_id: tenantId,
@@ -765,6 +809,34 @@ export class PostgresActionState implements ActionState {
         row.expires_at.toISOString() !== expiresAt.toISOString()
       )
         throw new SharedStateIntegrityError('shared action challenge conflict');
+    });
+  }
+  async listActionChallenges(
+    tenantId: string,
+    status: SharedActionChallengeSummary['status'] | undefined,
+    limit: number,
+  ): Promise<SharedActionChallengeSummary[]> {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500)
+      throw new TypeError('shared action challenge limit must be 1-500');
+    const rows = (
+      await this.pool.query<ActionApprovalRow>(
+        `SELECT * FROM sg_action_approvals
+         WHERE tenant_id=$1 AND ($2::text IS NULL OR status=$2)
+         ORDER BY created_at DESC,challenge_id LIMIT $3`,
+        [tenantId, status ?? null, limit],
+      )
+    ).rows;
+    return rows.map((row) => {
+      this.assertActionApproval(row);
+      return {
+        challenge_id: row.challenge_id,
+        status: row.status,
+        challenge: JSON.parse(row.challenge_json) as ApprovalChallenge,
+        evidence: row.evidence_json ? (JSON.parse(row.evidence_json) as ApprovalEvidence) : null,
+        created_at: row.created_at.toISOString(),
+        expires_at: row.expires_at.toISOString(),
+        approved_at: row.approved_at?.toISOString() ?? null,
+      };
     });
   }
   async approveActionChallenge(

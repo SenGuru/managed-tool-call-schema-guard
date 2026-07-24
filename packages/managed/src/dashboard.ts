@@ -1,16 +1,24 @@
 export const dashboardStyle = `
-:root{color-scheme:light}*{box-sizing:border-box}body{font:15px/1.5 system-ui;margin:2rem auto;max-width:1200px;padding:0 1rem;color:#18212f;background:#fff}
-input,button,select,textarea{font:inherit;padding:.55rem;border:1px solid #aeb9c6;border-radius:6px}input,textarea{width:100%}button{cursor:pointer;margin-right:.4rem;background:#fff}button:hover{background:#eef3f8}
-.credential-row{display:grid;grid-template-columns:minmax(18rem,1fr) auto auto;gap:.5rem;align-items:start}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem;margin:1.5rem 0}
-.card,.workbench{border:1px solid #dbe2ea;border-radius:10px;padding:1rem;background:#f8fafc;min-width:0}.workbench-grid{display:grid;grid-template-columns:10rem 1fr;gap:.75rem 1rem;align-items:start}.workbench-grid label{font-weight:650;padding-top:.55rem}
-pre{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;overflow:auto;background:#111827;color:#e5e7eb;padding:1rem;border-radius:8px;font-size:12px;line-height:1.45;min-height:3rem}
-textarea{min-height:15rem;font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace}.actions{margin-top:1rem}.confirm{display:flex;gap:.5rem;align-items:center;margin:.75rem 0}.confirm input{width:auto}
-small{color:#526071}.bad{color:#a01616}.good{color:#126b39}.muted{color:#526071}@media(max-width:700px){body{margin-top:1rem}.credential-row,.workbench-grid{grid-template-columns:1fr}.workbench-grid label{padding-top:0}}
+:root{color-scheme:light;--ink:#172033;--muted:#647184;--line:#dfe5ec;--paper:#fff;--canvas:#f4f7f9;--navy:#17324d;--blue:#285cff;--green:#14845e;--amber:#b56605;--red:#b42318}
+*{box-sizing:border-box}body{font:15px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;margin:0;color:var(--ink);background:var(--canvas)}
+button,input,select,textarea{font:inherit}button{cursor:pointer}.shell{max-width:1440px;margin:auto;min-height:100vh}.topbar{display:flex;justify-content:space-between;align-items:center;padding:1rem 1.5rem;background:var(--navy);color:#fff}.brand{display:flex;align-items:center;gap:.75rem;font-weight:800;letter-spacing:.08em}.brand-mark{display:grid;place-items:center;width:34px;height:34px;border:1px solid #8ca5bb;border-radius:8px}.topbar small{color:#bed0df}
+.credential{padding:1rem 1.5rem;background:#eef2f6;border-bottom:1px solid var(--line)}.credential-row{display:grid;grid-template-columns:minmax(18rem,1fr) auto auto;gap:.6rem;align-items:start}.credential input,.workbench input,.workbench select,.workbench textarea{width:100%;padding:.65rem .75rem;border:1px solid #aeb9c6;border-radius:7px;background:#fff}.btn{border:0;border-radius:7px;padding:.68rem .9rem;font-weight:700;background:var(--blue);color:#fff}.btn.secondary{background:#fff;color:var(--ink);border:1px solid #b9c3cf}.btn.danger{background:#fff;color:var(--red);border:1px solid #e7b6b1}
+.layout{display:grid;grid-template-columns:230px minmax(0,1fr);gap:0}.sidebar{padding:1.4rem 1rem;border-right:1px solid var(--line);background:#fff}.sidebar a{display:block;color:#425066;text-decoration:none;padding:.65rem .75rem;border-radius:7px;margin:.15rem 0}.sidebar a:hover{background:#eef3ff;color:#163fa8}.sidebar strong{display:block;padding:.5rem .75rem;color:var(--ink)}main{padding:1.6rem;min-width:0}.hero-row{display:flex;justify-content:space-between;gap:1rem;align-items:start;margin-bottom:1.2rem}.hero-row h1{margin:0;font-size:1.8rem;line-height:1.2}.hero-row p{margin:.35rem 0 0;color:var(--muted)}
+.status-pill{display:inline-flex;align-items:center;gap:.45rem;padding:.42rem .65rem;border-radius:999px;background:#e6f5ef;color:#0e6848;font-weight:700;white-space:nowrap}.status-pill.bad{background:#fdeceb;color:var(--red)}.status-pill.warn{background:#fff3dc;color:#8d5104}.dot{width:8px;height:8px;border-radius:50%;background:currentColor}
+.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.85rem;margin:1rem 0 1.4rem}.metric,.panel,.workflow-card,.advanced{background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 2px #1322380a}.metric{padding:1rem}.metric small{display:block;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;font-size:.72rem}.metric strong{display:block;font-size:1.65rem;margin:.2rem 0}.metric span{color:var(--muted);font-size:.85rem}.meter{height:7px;background:#e7ebf0;border-radius:999px;overflow:hidden;margin-top:.7rem}.meter i{display:block;height:100%;width:0;background:var(--blue)}
+.section-head{display:flex;justify-content:space-between;align-items:end;margin:1.8rem 0 .8rem}.section-head h2{margin:0;font-size:1.15rem}.section-head p{margin:0;color:var(--muted);font-size:.88rem}.workflow-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.85rem}.workflow-card{padding:1rem;position:relative}.workflow-card b{display:block;margin-bottom:.25rem}.workflow-card p{color:var(--muted);margin:.2rem 0 .8rem;min-height:2.8rem}.workflow-card button{border:0;background:none;color:#1746c7;padding:0;font-weight:750}.workflow-card .step{position:absolute;right:.8rem;top:.8rem;color:#96a2b1;font:700 .72rem ui-monospace,monospace}
+.two-col{display:grid;grid-template-columns:1.15fr .85fr;gap:.85rem}.panel{padding:1rem;min-width:0}.panel h3{margin:0 0 .75rem;font-size:1rem}.clean-list{list-style:none;padding:0;margin:0}.clean-list li{display:grid;grid-template-columns:auto 1fr auto;gap:.65rem;padding:.62rem 0;border-top:1px solid #edf0f3;align-items:center}.clean-list li:first-child{border-top:0}.clean-list small{color:var(--muted)}.check{width:20px;height:20px;display:grid;place-items:center;border-radius:50%;background:#e8f5ef;color:var(--green);font-size:.72rem;font-weight:900}.check.open{background:#fff3dc;color:var(--amber)}
+table{width:100%;border-collapse:collapse;font-size:.88rem}th{text-align:left;color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.05em}th,td{padding:.62rem;border-bottom:1px solid #edf0f3}td code{font-size:.78rem}.decision{font-weight:750}.decision.valid{color:var(--green)}.decision.valid_with_repair{color:var(--amber)}.decision.rejected{color:var(--red)}
+details{margin-top:1rem}summary{cursor:pointer;font-weight:750}.advanced{padding:1rem;margin-top:.75rem}.data-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:.7rem;margin-top:.8rem}.data-card{border:1px solid var(--line);border-radius:8px;padding:.8rem;min-width:0}.data-card h3{font-size:.85rem;margin:0 0 .5rem}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;overflow:auto;background:#111827;color:#e5e7eb;padding:.8rem;border-radius:7px;font-size:11px;line-height:1.45;min-height:2.5rem;max-height:22rem}textarea{min-height:13rem;font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace}.workbench-grid{display:grid;grid-template-columns:10rem 1fr;gap:.7rem 1rem;align-items:start}.workbench-grid label{font-weight:650;padding-top:.55rem}.actions{margin-top:1rem}.confirm{display:flex;gap:.5rem;align-items:center;margin:.75rem 0}.confirm input{width:auto}
+.destructive{border-top:1px solid var(--line);margin-top:1.4rem;padding-top:1rem}.destructive input{max-width:32rem;padding:.65rem;border:1px solid #d2a7a4;border-radius:7px}.good{color:var(--green)}.bad{color:var(--red)}.muted,small{color:var(--muted)}
+@media(max-width:1050px){.metrics{grid-template-columns:repeat(2,1fr)}.workflow-grid{grid-template-columns:repeat(2,1fr)}.two-col{grid-template-columns:1fr}}
+@media(max-width:760px){.layout{grid-template-columns:1fr}.sidebar{display:none}.credential-row,.workbench-grid{grid-template-columns:1fr}.metrics,.workflow-grid{grid-template-columns:1fr}.hero-row{display:block}.status-pill{margin-top:.8rem}main{padding:1rem}.topbar{padding:1rem}}
 `;
 
 export const dashboardScript = `
 const q=id=>document.getElementById(id);
-const panelIds=['lifecycle','usage','chain','alerts','releases','intelligence','audits','webhooks','deliveries','actions','reconciliation','billing','control-integrity','rulesets','export-result'];
+const panelIds=['lifecycle','usage','chain','alerts','releases','schemas','policy','descriptors','challenges','intelligence','audits','webhooks','deliveries','actions','reconciliation','billing','control-integrity','rulesets','api-keys','export-result'];
 const clearPanels=()=>{for(const id of panelIds)q(id).textContent='—'};
 const parseBody=async response=>{const text=await response.text();if(!text)return null;try{return JSON.parse(text)}catch{return {unparsed_response:true}}};
 async function requestRaw(path,options={}){
@@ -26,22 +34,111 @@ const get=path=>request(path);
 const getOptional=async path=>{const result=await requestRaw(path);if(result.ok)return result.body;if(result.status===404)return {status:'not_configured',detail:result.body};throw new Error(result.body?.message||result.body?.error||('HTTP '+result.status))};
 const compactAudits=items=>items.map(({audit_id,occurred_at,decision,reason_code,repair_rules})=>({audit_id,occurred_at,decision,reason_code,repair_rules}));
 const compactAlerts=items=>items.map(({id,kind,severity,created_at,acknowledged_at,detail})=>({id,kind,severity,created_at,acknowledged_at,detail}));
+const text=(id,value)=>{q(id).textContent=String(value)};
+const number=value=>Number.isFinite(Number(value))?Number(value):0;
+const percent=value=>Math.max(0,Math.min(100,value));
+function renderChecklist(items){
+  const list=q('readiness-list');list.replaceChildren();
+  for(const item of items){
+    const row=document.createElement('li');
+    const icon=document.createElement('span');icon.className='check'+(item.ready?'':' open');icon.textContent=item.ready?'✓':'!';
+    const copy=document.createElement('span');const title=document.createElement('b');title.textContent=item.label;const note=document.createElement('small');note.textContent=item.note;copy.append(title,note);
+    const state=document.createElement('small');state.textContent=item.ready?'Ready':'Needs attention';
+    row.append(icon,copy,state);list.append(row);
+  }
+}
+function renderDecisions(items){
+  const body=q('decision-rows');body.replaceChildren();
+  for(const item of items.slice(0,8)){
+    const row=document.createElement('tr');
+    const time=document.createElement('td');time.textContent=new Date(item.occurred_at).toLocaleString();
+    const decision=document.createElement('td');decision.className='decision '+item.decision;decision.textContent=item.decision;
+    const reason=document.createElement('td');reason.textContent=item.reason_code||'—';
+    const audit=document.createElement('td');const code=document.createElement('code');code.textContent=String(item.audit_id).slice(0,18)+'…';audit.append(code);
+    row.append(time,decision,reason,audit);body.append(row);
+  }
+  q('decision-empty').hidden=items.length>0;
+}
+function renderAlerts(items){
+  const list=q('alert-list');list.replaceChildren();
+  for(const item of items.filter(alert=>!alert.acknowledged_at).slice(0,6)){
+    const row=document.createElement('li');
+    const icon=document.createElement('span');icon.className='check open';icon.textContent='!';
+    const copy=document.createElement('span');const title=document.createElement('b');title.textContent=item.kind;const note=document.createElement('small');note.textContent=new Date(item.created_at).toLocaleString();copy.append(title,note);
+    const action=document.createElement('button');action.type='button';action.className='btn secondary';action.textContent='Acknowledge';action.onclick=async()=>{
+      if(!window.confirm('Acknowledge this alert for the tenant?'))return;
+      action.disabled=true;
+      try{await request('/v1/alerts/'+encodeURIComponent(item.id)+'/acknowledge',{method:'POST'});q('load').click()}catch(error){q('status').className='bad';q('status').textContent=error instanceof Error?error.message:'Acknowledgement failed';action.disabled=false}
+    };
+    row.append(icon,copy,action);list.append(row);
+  }
+  if(list.children.length===0){const row=document.createElement('li');row.textContent='No open alerts.';list.append(row)}
+}
+function renderOverview(data){
+  const usage=data.usage.usage||{};
+  const total=number(usage.validation_count);
+  const repaired=number(usage.repair_count);
+  const rejected=number(usage.rejection_count);
+  const accepted=Math.max(0,total-rejected);
+  const quota=number(data.usage.monthly_limit);
+  const quotaPercent=quota===0?0:percent(total/quota*100);
+  const environments=data.environments.environments||[];
+  const releases=data.releases.releases||[];
+  const schemas=data.schemas.schemas||[];
+  const descriptors=data.descriptors.descriptors||[];
+  const pendingChallenges=(data.challenges.challenges||[]).filter(item=>item.status==='pending');
+  const production=environments.find(item=>item.name==='production');
+  const productionReleased=releases.some(item=>item.environment==='production');
+  const openAlerts=(data.alerts.alerts||[]).filter(item=>!item.acknowledged_at);
+  const integrityValid=Boolean(data.integrity.valid??data.integrity.control_plane_valid);
+  text('tenant-name',data.lifecycle.tenant_name||data.lifecycle.tenant_id||'Tenant');
+  text('plan-name',data.usage.plan_name||data.usage.plan);
+  text('usage-total',total.toLocaleString());
+  text('usage-limit',quota.toLocaleString()+' included');
+  text('accept-rate',total===0?'—':(accepted/total*100).toFixed(1)+'%');
+  text('repair-total',repaired.toLocaleString());
+  text('rejection-total',rejected.toLocaleString());
+  text('environment-total',environments.length.toLocaleString());
+  text('open-alert-total',openAlerts.length.toLocaleString());
+  text('api-key-total',(data.apiKeys.api_keys||[]).filter(item=>item.revoked_at===null).length.toLocaleString());
+  q('quota-meter').style.width=quotaPercent.toFixed(1)+'%';
+  q('protection-state').className='status-pill '+(integrityValid?'':'bad');
+  text('protection-state-text',integrityValid?'Protection healthy':'Integrity attention required');
+  renderChecklist([
+    {label:'Control-plane integrity',ready:integrityValid,note:integrityValid?'Signed state verified':'Open integrity details before action traffic'},
+    {label:'Production schema admission',ready:Boolean(production&&production.schema_enforcement==='enforce'&&productionReleased),note:productionReleased?'Production has a reviewed release':'Promote and enforce a reviewed schema'},
+    {label:'Schema registry',ready:schemas.length>0,note:schemas.length+' latest registered contract(s) are reachable'},
+    {label:'Action classification',ready:descriptors.length>0,note:descriptors.length+' signed action descriptor(s) are reachable'},
+    {label:'Approval queue',ready:pendingChallenges.length===0,note:pendingChallenges.length+' pending approval challenge(s)'},
+    {label:'Independent checkpoint',ready:Boolean(data.checkpoint&&data.checkpoint.revision!==undefined),note:'Latest idempotency checkpoint is available for comparison'},
+    {label:'Alert delivery',ready:(data.webhooks.webhooks||[]).some(item=>item.disabled_at===null||item.enabled===true),note:'Configure and exercise a customer-owned HTTPS receiver'},
+    {label:'Audit chain',ready:Boolean(data.chain.valid),note:data.chain.valid?'Retained decisions verify':'Stop and investigate chain integrity'}
+  ]);
+  renderDecisions(data.audits.audits||[]);
+  renderAlerts(data.alerts.alerts||[]);
+}
 q('load').onclick=async()=>{
   clearPanels();q('status').className='';q('status').textContent='Loading…';
   try{
     const lifecycle=await get('/v1/admin/tenant/lifecycle');
     q('lifecycle').textContent=JSON.stringify(lifecycle,null,2);
-    if(lifecycle.lifecycle.status!=='active'){q('status').textContent='Loaded — operational access is locked';return}
-    const [usage,chain,audits,alerts,intelligence,environments,releases,releaseChain,webhooks,deliveries,checkpoint,anchorDeliveries,reconciliationPending,reconciliationHistory,reconciliationChain,billing,integrity,ruleset]=await Promise.all([
+    text('tenant-name',lifecycle.tenant_name||lifecycle.tenant_id||'Tenant');
+    if(lifecycle.lifecycle.status!=='active'){q('protection-state').className='status-pill bad';text('protection-state-text','Tenant '+lifecycle.lifecycle.status);q('status').textContent='Loaded — operational access is locked';return}
+    const [usage,chain,audits,alerts,intelligence,environments,releases,releaseChain,schemas,policy,descriptors,challenges,webhooks,deliveries,checkpoint,anchorDeliveries,reconciliationPending,reconciliationHistory,reconciliationChain,billing,integrity,ruleset,apiKeys]=await Promise.all([
       get('/v1/usage'),get('/v1/audits/verify'),get('/v1/audits?limit=25'),get('/v1/alerts'),get('/v1/intelligence'),get('/v1/environments'),get('/v1/schema-releases?limit=25'),get('/v1/schema-releases/verify'),
+      get('/v1/schemas'),get('/v1/admin/policy'),get('/v1/admin/actions/descriptors'),get('/v1/actions/challenges?limit=100'),
       get('/v1/alert-webhooks'),get('/v1/alert-webhooks/deliveries?limit=100'),get('/v1/actions/idempotency/checkpoint'),get('/v1/actions/idempotency/anchors/deliveries?limit=100'),
-      get('/v1/actions/reconciliation/pending'),get('/v1/actions/reconciliation/history'),get('/v1/actions/reconciliation/verify'),get('/v1/billing/statement'),get('/v1/admin/control-plane-integrity'),getOptional('/v1/rulesets/latest')
+      get('/v1/actions/reconciliation/pending'),get('/v1/actions/reconciliation/history'),get('/v1/actions/reconciliation/verify'),get('/v1/billing/statement'),get('/v1/admin/control-plane-integrity'),getOptional('/v1/rulesets/latest'),get('/v1/admin/api-keys')
     ]);
     q('usage').textContent=JSON.stringify(usage,null,2);
     q('chain').textContent=JSON.stringify(chain,null,2);
     q('audits').textContent=JSON.stringify(compactAudits(audits.audits),null,2);
     q('alerts').textContent=JSON.stringify(compactAlerts(alerts.alerts),null,2);
     q('releases').textContent=JSON.stringify({environments:environments.environments,chain:releaseChain,releases:releases.releases},null,2);
+    q('schemas').textContent=JSON.stringify(schemas,null,2);
+    q('policy').textContent=JSON.stringify(policy,null,2);
+    q('descriptors').textContent=JSON.stringify(descriptors,null,2);
+    q('challenges').textContent=JSON.stringify(challenges,null,2);
     q('intelligence').textContent=JSON.stringify(intelligence,null,2);
     q('webhooks').textContent=JSON.stringify(webhooks,null,2);
     q('deliveries').textContent=JSON.stringify(deliveries,null,2);
@@ -50,6 +147,8 @@ q('load').onclick=async()=>{
     q('billing').textContent=JSON.stringify(billing,null,2);
     q('control-integrity').textContent=JSON.stringify(integrity,null,2);
     q('rulesets').textContent=JSON.stringify(ruleset,null,2);
+    q('api-keys').textContent=JSON.stringify(apiKeys,null,2);
+    renderOverview({lifecycle,usage,chain,audits,alerts,intelligence,environments,releases,releaseChain,schemas,policy,descriptors,challenges,webhooks,deliveries,checkpoint,anchorDeliveries,reconciliationPending,reconciliationHistory,reconciliationChain,billing,integrity,ruleset,apiKeys});
     q('status').className='good';q('status').textContent='Loaded';
   }catch(error){clearPanels();q('status').className='bad';q('status').textContent=error instanceof Error?error.message:'Request failed'}
 };
@@ -130,25 +229,58 @@ q('operation-run').onclick=async()=>{
   }catch(error){q('operation-result').className='bad';q('operation-result').textContent=error instanceof Error?error.message:'Operation failed'}
 };
 loadPreset();
+for(const button of document.querySelectorAll('[data-preset]'))button.onclick=()=>{
+  q('operation').value=button.dataset.preset;loadPreset();q('advanced-details').open=true;q('workbench').scrollIntoView({behavior:'smooth',block:'start'});
+};
 `;
 
 export function dashboardHtml(publicMode = false): string {
-  const title = publicMode ? 'Schema Guard Control Plane' : 'Schema Guard Local Control Plane';
+  const title = publicMode
+    ? 'Akriven / Schema Guard Control Plane'
+    : 'Akriven / Schema Guard Local Control Plane';
   const description = publicMode
     ? "Enter a tenant API key. It remains only in this tab's memory and is sent to this service origin over its configured TLS connection."
     : "Enter a tenant API key. It remains only in this tab's memory and is sent to this loopback service origin.";
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer"><title>${title}</title><link rel="stylesheet" href="/dashboard/app.css"></head>
-<body><h1>${title}</h1><p>${description}</p>
-<div class="credential-row"><input id="key" type="password" autocomplete="off" placeholder="sg_live_…"><button id="load" type="button">Load complete control plane</button><button id="export" type="button">Download tenant export</button></div><p id="status"></p>
-<div class="grid">
-<div class="card"><h2>Tenant lifecycle</h2><pre id="lifecycle">—</pre></div><div class="card"><h2>Usage</h2><pre id="usage">—</pre></div><div class="card"><h2>Audit chain</h2><pre id="chain">—</pre></div><div class="card"><h2>Alerts</h2><pre id="alerts">—</pre></div>
-<div class="card"><h2>Alert webhooks</h2><pre id="webhooks">—</pre></div><div class="card"><h2>Webhook deliveries</h2><pre id="deliveries">—</pre></div><div class="card"><h2>Action checkpoint</h2><pre id="actions">—</pre></div><div class="card"><h2>Reconciliation</h2><pre id="reconciliation">—</pre></div>
-<div class="card"><h2>Billing boundary</h2><pre id="billing">—</pre></div><div class="card"><h2>Control-plane integrity</h2><pre id="control-integrity">—</pre></div><div class="card"><h2>Latest ruleset</h2><pre id="rulesets">—</pre></div>
+<body><div class="shell">
+<header class="topbar"><div class="brand"><span class="brand-mark">A</span><span>AKRIVEN</span></div><small>${title}</small></header>
+<section class="credential"><div class="credential-row"><input id="key" type="password" autocomplete="off" placeholder="Tenant API key — held only in this tab"><button class="btn" id="load" type="button">Load workspace</button><button class="btn secondary" id="export" type="button">Download tenant export</button></div><small>${description}</small><p id="status"></p></section>
+<div class="layout"><nav class="sidebar" aria-label="Workspace sections"><strong id="tenant-name">Tenant workspace</strong><a href="#overview">Overview</a><a href="#workflows">Protect &amp; release</a><a href="#decisions">Decisions</a><a href="#alerts-section">Alerts</a><a href="#advanced">Advanced controls</a><a href="#data-controls">Data controls</a></nav>
+<main>
+<section id="overview"><div class="hero-row"><div><h1>Protection overview</h1><p><span id="plan-name">Load a tenant to begin</span> · value-free operational evidence</p></div><span class="status-pill warn" id="protection-state"><i class="dot"></i><span id="protection-state-text">Credential required</span></span></div>
+<div class="metrics">
+<article class="metric"><small>Decisions this month</small><strong id="usage-total">—</strong><span id="usage-limit">— included</span><div class="meter" aria-label="Monthly quota use"><i id="quota-meter"></i></div></article>
+<article class="metric"><small>Accepted rate</small><strong id="accept-rate">—</strong><span>valid + safely repaired</span></article>
+<article class="metric"><small>Safely repaired</small><strong id="repair-total">—</strong><span>proof-carrying repairs</span></article>
+<article class="metric"><small>Rejected</small><strong id="rejection-total">—</strong><span>stopped before execution</span></article>
+</div></section>
+<section id="workflows"><div class="section-head"><div><h2>Run the protection lifecycle</h2><p>Start from the customer job; advanced controls open with a reviewed preset.</p></div></div>
+<div class="workflow-grid">
+<article class="workflow-card"><span class="step">01</span><b>Protect a tool call</b><p>Validate raw arguments, apply only exact repairs, and return an accountable outcome.</p><button data-preset="validate" type="button">Open validation workflow →</button></article>
+<article class="workflow-card"><span class="step">02</span><b>Register a contract</b><p>Add a schema version and see drift before it reaches an environment.</p><button data-preset="register_schema" type="button">Register schema →</button></article>
+<article class="workflow-card"><span class="step">03</span><b>Release to an environment</b><p>Promote a reviewed schema and switch runtime admission to fail-closed enforcement.</p><button data-preset="release_schema" type="button">Prepare release →</button></article>
+<article class="workflow-card"><span class="step">04</span><b>Govern a high-risk action</b><p>Bind approval to the accepted decision and reserve an idempotency key before execution.</p><button data-preset="action_challenge" type="button">Create approval →</button></article>
+<article class="workflow-card"><span class="step">05</span><b>Resolve uncertain execution</b><p>Review aged reservations and reconcile only against an authoritative external ledger.</p><button data-preset="reconcile" type="button">Open reconciliation →</button></article>
+<article class="workflow-card"><span class="step">06</span><b>Deliver an alert</b><p>Register a signed HTTPS receiver and inspect retry, dead-letter, and redrive state.</p><button data-preset="webhook_create" type="button">Configure receiver →</button></article>
+</div></section>
+<section class="two-col"><article class="panel"><div class="section-head"><div><h2>Private-beta readiness</h2><p>Controls that must hold before action traffic.</p></div></div><ul class="clean-list" id="readiness-list"><li>Load the workspace to evaluate readiness.</li></ul></article>
+<article class="panel" id="alerts-section"><div class="section-head"><div><h2>Open alerts</h2><p><span id="open-alert-total">—</span> require review</p></div></div><ul class="clean-list" id="alert-list"><li>Load the workspace to review alerts.</li></ul><div class="two-col"><div class="metric"><small>Managed environments</small><strong id="environment-total">—</strong><span>development, staging, production, and custom</span></div><div class="metric"><small>Active API keys</small><strong id="api-key-total">—</strong><span>scoped tenant credentials</span></div></div></article></section>
+<section class="panel" id="decisions"><div class="section-head"><div><h2>Recent decisions</h2><p>No argument values are stored or shown.</p></div></div><div class="table-scroll"><table><thead><tr><th>Time</th><th>Outcome</th><th>Reason</th><th>Audit ID</th></tr></thead><tbody id="decision-rows"></tbody></table><p class="muted" id="decision-empty">Load the workspace to review decisions.</p></div></section>
+<details id="advanced-details"><summary id="advanced">Advanced controls and evidence</summary><section class="advanced">
+<p>These are exact API surfaces for trained operators. Read panels are value-free. Mutations require explicit confirmation and reject unresolved placeholders.</p>
+<div class="data-grid">
+<div class="data-card"><h3>Tenant lifecycle</h3><pre id="lifecycle">—</pre></div><div class="data-card"><h3>Usage</h3><pre id="usage">—</pre></div><div class="data-card"><h3>Audit chain</h3><pre id="chain">—</pre></div><div class="data-card"><h3>Alerts</h3><pre id="alerts">—</pre></div>
+<div class="data-card"><h3>Alert webhooks</h3><pre id="webhooks">—</pre></div><div class="data-card"><h3>Webhook deliveries</h3><pre id="deliveries">—</pre></div><div class="data-card"><h3>Action checkpoint</h3><pre id="actions">—</pre></div><div class="data-card"><h3>Reconciliation</h3><pre id="reconciliation">—</pre></div>
+<div class="data-card"><h3>Billing boundary</h3><pre id="billing">—</pre></div><div class="data-card"><h3>Control-plane integrity</h3><pre id="control-integrity">—</pre></div><div class="data-card"><h3>Latest ruleset</h3><pre id="rulesets">—</pre></div>
+<div class="data-card"><h3>API key inventory</h3><pre id="api-keys">—</pre></div>
+<div class="data-card"><h3>Organization policy</h3><pre id="policy">—</pre></div><div class="data-card"><h3>Schema registry</h3><pre id="schemas">—</pre></div>
+<div class="data-card"><h3>Action descriptors</h3><pre id="descriptors">—</pre></div><div class="data-card"><h3>Approval challenges</h3><pre id="challenges">—</pre></div>
+<div class="data-card"><h3>Environment schema releases</h3><pre id="releases">—</pre></div><div class="data-card"><h3>Compatibility intelligence</h3><pre id="intelligence">—</pre></div><div class="data-card"><h3>Recent audit payloads</h3><pre id="audits">—</pre></div>
 </div>
-<h2>Managed API workbench</h2><p>Exercise every managed workflow through this browser boundary. Presets are editable examples, not trusted defaults. Replace placeholders and review the exact request before execution.</p>
-<section class="workbench"><div class="workbench-grid">
+<h2>Managed API workbench</h2><p>Presets are editable examples, not trusted defaults. Replace placeholders and review the exact request before execution.</p>
+<section class="workbench" id="workbench"><div class="workbench-grid">
 <label for="operation">Preset</label><div><select id="operation">
 <option value="validate">Validate tool call</option><option value="compile_contract">Compile provider contract</option><option value="register_schema">Register schema</option><option value="release_schema">Release schema</option>
 <option value="create_environment">Create environment</option><option value="environment_policy">Update environment policy</option><option value="environment_enforcement">Update schema enforcement</option><option value="organization_policy">Update organization policy</option>
@@ -161,10 +293,8 @@ export function dashboardHtml(publicMode = false): string {
 <label for="operation-path">Path</label><input id="operation-path" autocomplete="off">
 <label for="operation-body">JSON body</label><textarea id="operation-body" spellcheck="false"></textarea>
 </div><p id="operation-help" class="muted"></p><label class="confirm"><input id="operation-confirm" type="checkbox">I reviewed this exact request and authorize this mutation.</label><div class="actions"><button id="operation-run" type="button">Execute request</button></div><pre id="operation-result">—</pre></section>
-<h2>Tenant export</h2><pre id="export-result">—</pre><small>Exports include tenant-owned configuration and evidence, but never API-key verifiers or encrypted webhook credentials.</small>
-<h2>Request tenant deletion</h2><p>Type the exact tenant ID. This locks operational access immediately; an operator must still verify a current export before deleting data.</p><input id="deletion-confirm" autocomplete="off" placeholder="Exact tenant ID"><button id="request-deletion" type="button">Request deletion</button><p id="deletion-result"></p>
-<h2>Environment schema releases</h2><pre id="releases">—</pre><small>Observation/enforcement mode, promoted versions, compatibility, and release-chain integrity.</small>
-<h2>Compatibility intelligence</h2><pre id="intelligence">—</pre><small>Value-free failure clusters, schema quality, compatibility results, and recommended actions.</small>
-<h2>Recent decisions</h2><pre id="audits">—</pre><small>No argument values are stored or shown.</small>
-<script type="module" src="/dashboard/app.js"></script></body></html>`;
+</section></details>
+<section class="panel" id="data-controls"><div class="section-head"><div><h2>Evidence and data controls</h2><p>Export first; deletion remains an offline verified operation.</p></div></div><h3>Tenant export</h3><pre id="export-result">—</pre><small>Exports include tenant-owned configuration and evidence, but never API-key verifiers or encrypted webhook credentials.</small>
+<div class="destructive"><h3>Request tenant deletion</h3><p>Type the exact tenant ID. This locks operational access immediately; an operator must still verify a current export before deleting data.</p><input id="deletion-confirm" autocomplete="off" placeholder="Exact tenant ID"><button class="btn danger" id="request-deletion" type="button">Request deletion</button><p id="deletion-result"></p></div></section>
+</main></div></div><script type="module" src="/dashboard/app.js"></script></body></html>`;
 }

@@ -7,3 +7,5 @@ name = "schema-guard-client"
 version = "0.2.0"
 description = "Thin Python client for the canonical Schema Guard engine"
 requires-python = ">=3.9"
+license = "MIT"
+license-files = ["LICENSE"]

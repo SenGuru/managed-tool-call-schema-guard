@@ -21,6 +21,8 @@ import type {
   SharedPendingActionReservation,
   SharedReservationMetadata,
   SharedReservationResult,
+  SharedActionChallengeSummary,
+  SharedActionDescriptorSummary,
 } from '../packages/shared-state/src/index.js';
 import { createManagedServer } from '../packages/managed/src/server.js';
 import { hmac } from '../packages/managed/src/crypto.js';
@@ -94,12 +96,49 @@ class MemoryActionState implements ActionState {
     if (!descriptor) throw new TypeError('descriptor missing');
     return Promise.resolve(descriptor);
   }
+  listActionDescriptors(tenantId: string): Promise<SharedActionDescriptorSummary[]> {
+    return Promise.resolve(
+      [...this.descriptors.entries()]
+        .filter(([key]) => key.startsWith(`${tenantId}\0`))
+        .map(([, descriptor]) => ({
+          tool_name_hash: 'sha256:test-tool-name',
+          environment: descriptor.environment,
+          risk_level: descriptor.risk_level,
+          side_effect: descriptor.side_effect,
+          created_at: new Date(0).toISOString(),
+          updated_at: new Date(0).toISOString(),
+        })),
+    );
+  }
   recordActionChallenge(tenantId: string, challenge: ApprovalChallenge): Promise<void> {
     this.approvals.set(`${tenantId}\0${challenge.challenge_id}`, {
       challenge: structuredClone(challenge),
       status: 'pending',
     });
     return Promise.resolve();
+  }
+  listActionChallenges(
+    tenantId: string,
+    status: SharedActionChallengeSummary['status'] | undefined,
+    limit: number,
+  ): Promise<SharedActionChallengeSummary[]> {
+    return Promise.resolve(
+      [...this.approvals.entries()]
+        .filter(
+          ([key, approval]) =>
+            key.startsWith(`${tenantId}\0`) && (!status || approval.status === status),
+        )
+        .slice(0, limit)
+        .map(([, approval]) => ({
+          challenge_id: approval.challenge.challenge_id,
+          status: approval.status,
+          challenge: structuredClone(approval.challenge),
+          evidence: approval.evidence ? structuredClone(approval.evidence) : null,
+          created_at: approval.challenge.created_at,
+          expires_at: approval.challenge.expires_at,
+          approved_at: approval.evidence?.approved_at ?? null,
+        })),
+    );
   }
   approveActionChallenge(
     tenantId: string,
@@ -455,11 +494,29 @@ describe('managed shared action-state boundary', () => {
       });
       expect(challengeResponse.status).toBe(201);
       const challenge = (await challengeResponse.json()) as { challenge_id: string };
+      const pendingChallenges = await fetch(
+        `${services[0]!.base}/v1/actions/challenges?status=pending&limit=10`,
+        { headers },
+      );
+      expect(pendingChallenges.status).toBe(200);
+      expect(await pendingChallenges.json()).toMatchObject({
+        challenges: [{ challenge_id: challenge.challenge_id, status: 'pending' }],
+      });
+      const descriptors = await fetch(`${services[1]!.base}/v1/admin/actions/descriptors`, {
+        headers,
+      });
+      expect(descriptors.status).toBe(200);
+      expect(await descriptors.json()).toMatchObject({
+        descriptors: [{ environment: 'production', risk_level: 'high' }],
+      });
       const approvalResponse = await fetch(
         `${services[0]!.base}/v1/actions/challenges/${challenge.challenge_id}/approve`,
         { method: 'POST', headers },
       );
       expect(approvalResponse.status).toBe(200);
+      expect(
+        await fetch(`${services[1]!.base}/v1/actions/challenges?status=not-a-status`, { headers }),
+      ).toMatchObject({ status: 400 });
       const approval = (await approvalResponse.json()) as Record<string, unknown>;
       const evaluation = await fetch(`${services[1]!.base}/v1/actions/evaluate`, {
         method: 'POST',

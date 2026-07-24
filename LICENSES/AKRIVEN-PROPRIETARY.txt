@@ -1,0 +1,9 @@
+Copyright (c) 2026 Akriven. All rights reserved.
+
+No permission is granted to copy, modify, distribute, sublicense, sell, host,
+or create derivative works from the proprietary portions of this repository
+except under a separate written agreement with Akriven.
+
+Evaluation and operation by authorized Akriven personnel and contractors are
+permitted solely for Akriven's internal product development and service
+delivery.

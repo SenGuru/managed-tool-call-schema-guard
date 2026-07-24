@@ -106,6 +106,75 @@ class SchemaGuardClient:
     def usage(self) -> Dict[str, Any]:
         return self._request("/v1/usage")
 
+    def plans(self) -> Dict[str, Any]:
+        payload = self._request("/v1/plans")
+        if not isinstance(payload, dict) or not isinstance(payload.get("plans"), list):
+            raise SchemaGuardServiceError(
+                "Schema Guard service returned an invalid plan catalog",
+                code="invalid_service_response",
+            )
+        return payload
+
+    def api_keys(self) -> Dict[str, Any]:
+        payload = self._request("/v1/admin/api-keys")
+        if not isinstance(payload, dict) or not isinstance(payload.get("api_keys"), list):
+            raise SchemaGuardServiceError(
+                "Schema Guard service returned an invalid API-key inventory",
+                code="invalid_service_response",
+            )
+        return payload
+
+    def policy(self) -> Dict[str, Any]:
+        payload = self._request("/v1/admin/policy")
+        if not isinstance(payload, dict) or not isinstance(payload.get("policy"), dict):
+            raise SchemaGuardServiceError(
+                "Schema Guard service returned an invalid managed policy",
+                code="invalid_service_response",
+            )
+        return payload["policy"]
+
+    def schemas(self) -> Dict[str, Any]:
+        payload = self._request("/v1/schemas")
+        if not isinstance(payload, dict) or not isinstance(payload.get("schemas"), list):
+            raise SchemaGuardServiceError(
+                "Schema Guard service returned an invalid schema inventory",
+                code="invalid_service_response",
+            )
+        return payload
+
+    def action_descriptors(self) -> Dict[str, Any]:
+        payload = self._request("/v1/admin/actions/descriptors")
+        if not isinstance(payload, dict) or not isinstance(
+            payload.get("descriptors"), list
+        ):
+            raise SchemaGuardServiceError(
+                "Schema Guard service returned an invalid action-descriptor inventory",
+                code="invalid_service_response",
+            )
+        return payload
+
+    def action_challenges(
+        self, status: Optional[str] = None, limit: int = 100
+    ) -> Dict[str, Any]:
+        if limit < 1 or limit > 500:
+            raise ValueError("limit must be between 1 and 500")
+        if status is not None and status not in ("pending", "approved", "revoked"):
+            raise ValueError("status must be pending, approved, or revoked")
+        query = {"limit": str(limit)}
+        if status is not None:
+            query["status"] = status
+        payload = self._request(
+            "/v1/actions/challenges?" + urllib.parse.urlencode(query)
+        )
+        if not isinstance(payload, dict) or not isinstance(
+            payload.get("challenges"), list
+        ):
+            raise SchemaGuardServiceError(
+                "Schema Guard service returned an invalid action-challenge inventory",
+                code="invalid_service_response",
+            )
+        return payload
+
     def tenant_lifecycle(self) -> Dict[str, Any]:
         payload = self._request("/v1/admin/tenant/lifecycle")
         lifecycle = payload.get("lifecycle") if isinstance(payload, dict) else None
@@ -161,6 +230,28 @@ class SchemaGuardClient:
 
     def alerts(self) -> Any:
         return self._request("/v1/alerts")
+
+    def acknowledge_alert(self, alert_id: int) -> Dict[str, Any]:
+        if (
+            not isinstance(alert_id, int)
+            or isinstance(alert_id, bool)
+            or alert_id < 1
+            or alert_id > 9007199254740991
+        ):
+            raise ValueError("alert_id must be a positive safe integer")
+        payload = self._request(
+            "/v1/alerts/" + str(alert_id) + "/acknowledge", "POST"
+        )
+        if (
+            not isinstance(payload, dict)
+            or payload.get("acknowledged") is not True
+            or payload.get("alert_id") != alert_id
+        ):
+            raise SchemaGuardServiceError(
+                "Schema Guard service returned an invalid alert acknowledgement",
+                code="invalid_service_response",
+            )
+        return payload
 
     def environments(self) -> Any:
         return self._request("/v1/environments")

@@ -102,6 +102,20 @@ class MemoryControlState implements ControlState {
     this.keyIds.set(keyId, apiKey);
     return Promise.resolve({ key_id: keyId, api_key: apiKey, scopes: [...scopes] });
   }
+  listApiKeys(tenantId: string, currentKeyId: string) {
+    return Promise.resolve(
+      [...this.keys.values()]
+        .filter((key) => key.tenantId === tenantId)
+        .map((key) => ({
+          key_id: key.keyId,
+          prefix: 'shared-key',
+          scopes: [...key.scopes],
+          created_at: new Date(0).toISOString(),
+          revoked_at: key.revoked ? new Date(0).toISOString() : null,
+          current: key.keyId === currentKeyId,
+        })),
+    );
+  }
   revokeApiKey(tenantId: string, currentKeyId: string, keyId: string): Promise<boolean> {
     if (currentKeyId === keyId) throw new TypeError('cannot revoke current API key');
     const apiKey = this.keyIds.get(keyId);
@@ -142,7 +156,7 @@ class MemoryControlState implements ControlState {
   updatePlan(tenantId: string, plan: SharedPlanId): Promise<void> {
     const tenant = this.tenants.get(tenantId)!;
     tenant.plan = plan;
-    tenant.monthlyLimit = plan === 'trial' ? 1_000 : 100_000;
+    tenant.monthlyLimit = plan === 'trial' ? 1_000 : 250_000;
     return Promise.resolve();
   }
   consumeRateLimit(
@@ -284,6 +298,21 @@ describe('managed shared control state', () => {
       expect(issuedResponse.status).toBe(201);
       const issued = (await issuedResponse.json()) as { key_id: string; api_key: string };
       expect(services[1]!.service.store.authenticate(issued.api_key)).toBeUndefined();
+      const keyInventory = await fetch(`${services[1]!.base}/v1/admin/api-keys`, {
+        headers: adminHeaders,
+      });
+      expect(keyInventory.status).toBe(200);
+      const keyInventoryBody = (await keyInventory.json()) as {
+        api_keys: Array<Record<string, unknown>>;
+      };
+      expect(keyInventoryBody.api_keys).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ key_id: issued.key_id, current: false }),
+          expect.objectContaining({ current: true }),
+        ]),
+      );
+      expect(JSON.stringify(keyInventoryBody)).not.toContain(issued.api_key);
+      expect(JSON.stringify(keyInventoryBody)).not.toContain('key_hash');
 
       expect(
         (

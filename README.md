@@ -2,10 +2,16 @@
 
 A deterministic compatibility and safety checkpoint between AI agents and tool execution. It validates raw tool arguments, applies only explicit typed repairs, revalidates, enforces narrowing policy, detects schema drift, and emits a privacy-minimized audit record.
 
-The repository contains two deliberately separated products:
+The repository contains two deliberately separated products. The
+machine-readable architecture and license map is
+[`product-boundary.json`](product-boundary.json); its rationale and enforcement
+rules are in [`docs/PRODUCT_BOUNDARY.md`](docs/PRODUCT_BOUNDARY.md).
 
 - **Schema Guard Core** is the offline, open-source enforcement layer. It runs in a developer process, CI job, agent sidecar, or local service and never requires a Schema Guard account or network connection.
-- **Schema Guard Managed** is the team workflow and intelligence layer. This repository implements its product spine as a local control plane; it is not yet a deployed SaaS or a production reliability claim.
+- **Schema Guard Managed** is the separately licensed team workflow and
+  intelligence layer. The repository implements both local and shared
+  PostgreSQL operation; the deployed environment remains internal staging, not
+  a customer-production reliability claim.
 
 The goal is a serious daily-use control point, not a dressed-up JSON Schema validator. Ordinary validation is useful and reproducible. The durable product advantage must come from continuously maintained cross-provider conformance knowledge, privacy-safe failure signatures, drift intelligence, trustworthy audit history, and the workflows teams use to investigate and govern agent actions. See [`docs/PRODUCT_DIRECTION.md`](docs/PRODUCT_DIRECTION.md).
 
@@ -167,6 +173,7 @@ intelligence, usage/billing statements, alerts and durable HTTPS webhook
 delivery, signed rulesets, API-key lifecycle, organization policy, plan control,
 tenant lifecycle/complete export/deletion request, and retention purge. See
 [`docs/MANAGED_LOCAL.md`](docs/MANAGED_LOCAL.md),
+[`docs/PRICING_AND_UNIT_ECONOMICS.md`](docs/PRICING_AND_UNIT_ECONOMICS.md),
 [`docs/BILLING_STRIPE_SANDBOX.md`](docs/BILLING_STRIPE_SANDBOX.md),
 [`docs/SCHEMA_RELEASES.md`](docs/SCHEMA_RELEASES.md),
 [`docs/CHECKPOINT_ANCHORS.md`](docs/CHECKPOINT_ANCHORS.md), and
@@ -183,10 +190,12 @@ npm run schemaguard -- managed \
   --resource usage
 ```
 
-Supported resources are `usage`, `audits`, `audit-verification`, `alerts`,
-`environments`, `intelligence`, `billing-statement`, `schema-releases`,
-`schema-release-verification`, `control-plane-integrity`, `tenant-lifecycle`,
-and `tenant-export`. `managed-request-deletion` requires an exact tenant ID.
+Supported resources are `plans`, `api-keys`, `policy`, `schemas`,
+`action-descriptors`, `action-challenges`, `usage`, `audits`,
+`audit-verification`, `alerts`, `environments`, `intelligence`,
+`billing-statement`, `schema-releases`, `schema-release-verification`,
+`control-plane-integrity`, `tenant-lifecycle`, and `tenant-export`.
+`managed-request-deletion` requires an exact tenant ID.
 The TypeScript SDK exposes the same daily read workflow plus schema
 registration, API-key issue/revoke, action controls, releases, webhook
 operations, sandbox billing Checkout/Portal, lifecycle/export, and deletion
@@ -398,4 +407,8 @@ chosen external infrastructure. They are labeled `integration_required`, not
 mocked as complete. The public-server decision and required evidence are tracked
 in [Enterprise launch gates](docs/ENTERPRISE_LAUNCH_GATES.md).
 
-License: MIT.
+License: the offline core, CLI, local API, and SDK packages are MIT licensed.
+Managed service, shared-state, and anchor packages are separately licensed.
+See [`docs/PRODUCT_BOUNDARY.md`](docs/PRODUCT_BOUNDARY.md) and
+[`product-boundary.json`](product-boundary.json). Earlier revisions retain the
+rights granted by the license shipped with those revisions.

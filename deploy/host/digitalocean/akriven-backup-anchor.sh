@@ -36,6 +36,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 bundle="$work/bundle"
 install -d -m 0700 "$bundle/config"
+install -m 0600 -o 65532 -g 65532 /dev/null "$bundle/anchor-data.tar"
 
 started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 start_epoch=$(date +%s)
@@ -44,10 +45,12 @@ name="akriven-anchor-$stamp.age"
 
 docker stop --time 30 "$RECEIVER_CONTAINER" >/dev/null
 receiver_stopped=1
-docker run --rm --network none --read-only --cap-drop ALL --cap-add DAC_READ_SEARCH \
+docker run --rm --network none --read-only --user 65532:65532 \
+  --cap-drop ALL \
   -v "$ANCHOR_VOLUME:/source:ro" \
-  -v "$bundle:/destination" \
+  -v "$bundle/anchor-data.tar:/destination/anchor-data.tar" \
   "$UTILITY_IMAGE" c -f /destination/anchor-data.tar -C /source .
+chown 0:0 "$bundle/anchor-data.tar"
 cp -a /etc/akriven/schema-guard-anchor "$bundle/config/"
 cp -a /opt/akriven/schema-guard-anchor "$bundle/config/"
 docker start "$RECEIVER_CONTAINER" >/dev/null

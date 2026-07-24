@@ -93,6 +93,12 @@ class MemoryAlertState implements AlertState {
   listAlerts(tenantId: string, limit = 100): Promise<SharedAlert[]> {
     return Promise.resolve(structuredClone(this.alerts.get(tenantId)!.slice(-limit).reverse()));
   }
+  acknowledgeAlert(tenantId: string, alertSequence: number): Promise<boolean> {
+    const alert = this.alerts.get(tenantId)?.find((item) => item.id === alertSequence);
+    if (!alert) return Promise.resolve(false);
+    alert.acknowledged_at ??= new Date().toISOString();
+    return Promise.resolve(true);
+  }
   createWebhook(
     tenantId: string,
     label: string,

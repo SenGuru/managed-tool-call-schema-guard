@@ -47,7 +47,7 @@ describe('managed CLI workflow', () => {
       response.end(
         JSON.stringify({
           plan: 'team',
-          monthly_limit: 100_000,
+          monthly_limit: 250_000,
           usage: { validation_count: 4 },
           payment_processing: 'not_configured_local_mode',
         }),
@@ -95,6 +95,101 @@ describe('managed CLI workflow', () => {
     expect(result.code).toBe(2);
     expect(result.stderr).toContain('must not be accessible by group or other users');
     expect(result.stderr).not.toContain('test-api-key');
+  });
+
+  it('reads plans and API-key inventory and acknowledges an alert without exposing the key', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'schema-guard-cli-managed-'));
+    temporaryDirectories.push(directory);
+    const keyFile = join(directory, 'api-key');
+    await writeFile(keyFile, 'alert-admin-key\n', { mode: 0o600 });
+    const observed: Array<{ method: string; path: string }> = [];
+    const server = createServer((request, response) => {
+      observed.push({ method: request.method ?? '', path: request.url ?? '' });
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(
+        request.url === '/v1/plans'
+          ? JSON.stringify({ plans: [{ id: 'team', display_name: 'Private-beta design partner' }] })
+          : request.url === '/v1/admin/api-keys'
+            ? JSON.stringify({
+                api_keys: [{ key_id: 'key_1', prefix: 'sg_live_1234', current: false }],
+              })
+            : request.url?.startsWith('/v1/actions/challenges')
+              ? JSON.stringify({
+                  challenges: [{ challenge_id: 'challenge_1', status: 'pending' }],
+                })
+              : JSON.stringify({ acknowledged: true, alert_id: 7 }),
+      );
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === 'string') throw new Error('missing CLI test address');
+      const base = `http://127.0.0.1:${address.port}`;
+      const plans = await runCli([
+        'managed',
+        '--base-url',
+        base,
+        '--api-key-file',
+        keyFile,
+        '--resource',
+        'plans',
+      ]);
+      const acknowledged = await runCli([
+        'managed-acknowledge-alert',
+        '--base-url',
+        base,
+        '--api-key-file',
+        keyFile,
+        '--alert-id',
+        '7',
+      ]);
+      const apiKeys = await runCli([
+        'managed',
+        '--base-url',
+        base,
+        '--api-key-file',
+        keyFile,
+        '--resource',
+        'api-keys',
+      ]);
+      const challenges = await runCli([
+        'managed',
+        '--base-url',
+        base,
+        '--api-key-file',
+        keyFile,
+        '--resource',
+        'action-challenges',
+        '--status',
+        'pending',
+        '--limit',
+        '25',
+      ]);
+      expect(plans).toMatchObject({ code: 0, stderr: '' });
+      expect(apiKeys).toMatchObject({ code: 0, stderr: '' });
+      expect(challenges).toMatchObject({ code: 0, stderr: '' });
+      expect(acknowledged).toMatchObject({ code: 0, stderr: '' });
+      expect(JSON.parse(apiKeys.stdout)).toMatchObject({
+        api_keys: [{ key_id: 'key_1', current: false }],
+      });
+      expect(JSON.parse(challenges.stdout)).toMatchObject({
+        challenges: [{ challenge_id: 'challenge_1', status: 'pending' }],
+      });
+      expect(JSON.parse(acknowledged.stdout)).toEqual({ acknowledged: true, alert_id: 7 });
+      expect(observed).toEqual([
+        { method: 'GET', path: '/v1/plans' },
+        { method: 'POST', path: '/v1/alerts/7/acknowledge' },
+        { method: 'GET', path: '/v1/admin/api-keys' },
+        { method: 'GET', path: '/v1/actions/challenges?status=pending&limit=25' },
+      ]);
+      expect(
+        `${plans.stdout}${apiKeys.stdout}${challenges.stdout}${acknowledged.stdout}`,
+      ).not.toContain('alert-admin-key');
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
   });
 
   it('reads lifecycle and export resources and submits an exact deletion request', async () => {

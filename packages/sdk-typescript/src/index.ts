@@ -175,9 +175,34 @@ export interface ManagedUsage {
 
 export interface ManagedUsageStatement {
   plan: 'trial' | 'team';
+  plan_name: string;
   monthly_limit: number;
+  entitlements: ManagedPlanEntitlements;
   usage: ManagedUsage;
   payment_processing: string;
+}
+
+export interface ManagedPlanEntitlements {
+  validations_per_month: number;
+  retention_days: number;
+  managed_workflows: 'evaluation' | 'full';
+  overage: 'disabled';
+}
+
+export interface ManagedPlan {
+  id: 'trial' | 'team';
+  display_name: string;
+  audience: string;
+  availability: 'internal_only' | 'invite_only';
+  price: {
+    amount_minor: number;
+    currency: 'USD';
+    term: 'not_for_sale' | '90_days_prepaid';
+    monthly_equivalent_minor: number;
+  };
+  entitlements: ManagedPlanEntitlements;
+  support: string;
+  payment_collection: 'disabled' | 'manual_provider_setup_required';
 }
 
 export interface ManagedAuditRecord {
@@ -197,7 +222,7 @@ export interface ManagedAlert {
   severity: string;
   detail: Record<string, unknown>;
   created_at: string;
-  acknowledged_at: null;
+  acknowledged_at: string | null;
 }
 
 export interface ManagedEnvironment {
@@ -213,6 +238,44 @@ export interface IssuedManagedApiKey {
   key_id: string;
   api_key: string;
   scopes: string[];
+}
+
+export interface ManagedApiKeySummary {
+  key_id: string;
+  prefix: string;
+  scopes: string[];
+  created_at: string;
+  revoked_at: string | null;
+  current: boolean;
+}
+
+export interface ManagedSchemaSummary {
+  tool_name_hash: string;
+  adapter: string;
+  version: string;
+  schema_hash: string;
+  schema: object | boolean;
+  drift: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface ManagedActionDescriptorSummary {
+  tool_name_hash: string;
+  environment: string;
+  risk_level: 'read' | 'low' | 'medium' | 'high' | 'critical';
+  side_effect: 'none' | 'reversible' | 'irreversible';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ManagedActionChallengeSummary {
+  challenge_id: string;
+  status: 'pending' | 'approved' | 'revoked';
+  challenge: Record<string, unknown>;
+  evidence: Record<string, unknown> | null;
+  created_at: string;
+  expires_at: string;
+  approved_at: string | null;
 }
 
 export interface ManagedBillingCheckoutSession {
@@ -894,6 +957,117 @@ export class SchemaGuardClient {
       );
     return record as unknown as ManagedUsageStatement;
   }
+  async listManagedPlans(callOptions: SchemaGuardValidateOptions = {}): Promise<ManagedPlan[]> {
+    const { payload, status } = await this.post('/v1/plans', undefined, callOptions, 'GET');
+    const plans =
+      payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+        ? (payload as Record<string, unknown>).plans
+        : undefined;
+    if (
+      !Array.isArray(plans) ||
+      plans.some(
+        (plan) =>
+          plan === null ||
+          typeof plan !== 'object' ||
+          Array.isArray(plan) ||
+          !['trial', 'team'].includes(String((plan as Record<string, unknown>).id)),
+      )
+    )
+      throw new SchemaGuardServiceError(
+        'Schema Guard service returned an invalid plan catalog',
+        status,
+        'invalid_service_response',
+      );
+    return plans as ManagedPlan[];
+  }
+  async getManagedPolicy(callOptions: SchemaGuardValidateOptions = {}): Promise<GuardPolicy> {
+    const { payload, status } = await this.post('/v1/admin/policy', undefined, callOptions, 'GET');
+    const policy =
+      payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+        ? (payload as Record<string, unknown>).policy
+        : undefined;
+    if (policy === null || typeof policy !== 'object' || Array.isArray(policy))
+      throw new SchemaGuardServiceError(
+        'Schema Guard service returned an invalid managed policy',
+        status,
+        'invalid_service_response',
+      );
+    return policy as GuardPolicy;
+  }
+  async listManagedSchemas(
+    callOptions: SchemaGuardValidateOptions = {},
+  ): Promise<ManagedSchemaSummary[]> {
+    const { payload, status } = await this.post('/v1/schemas', undefined, callOptions, 'GET');
+    const schemas =
+      payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+        ? (payload as Record<string, unknown>).schemas
+        : undefined;
+    if (!Array.isArray(schemas))
+      throw new SchemaGuardServiceError(
+        'Schema Guard service returned an invalid schema inventory',
+        status,
+        'invalid_service_response',
+      );
+    return schemas as ManagedSchemaSummary[];
+  }
+  async listManagedActionDescriptors(
+    callOptions: SchemaGuardValidateOptions = {},
+  ): Promise<ManagedActionDescriptorSummary[]> {
+    const { payload, status } = await this.post(
+      '/v1/admin/actions/descriptors',
+      undefined,
+      callOptions,
+      'GET',
+    );
+    const descriptors =
+      payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+        ? (payload as Record<string, unknown>).descriptors
+        : undefined;
+    if (!Array.isArray(descriptors))
+      throw new SchemaGuardServiceError(
+        'Schema Guard service returned an invalid action-descriptor inventory',
+        status,
+        'invalid_service_response',
+      );
+    return descriptors as ManagedActionDescriptorSummary[];
+  }
+  async listManagedActionChallenges(
+    options: {
+      status?: ManagedActionChallengeSummary['status'];
+      limit?: number;
+    } = {},
+    callOptions: SchemaGuardValidateOptions = {},
+  ): Promise<ManagedActionChallengeSummary[]> {
+    const limit = options.limit ?? 100;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500)
+      throw new SchemaGuardConfigurationError(
+        'challenge limit must be an integer between 1 and 500',
+      );
+    if (
+      options.status !== undefined &&
+      !['pending', 'approved', 'revoked'].includes(options.status)
+    )
+      throw new SchemaGuardConfigurationError('challenge status is invalid');
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (options.status) query.set('status', options.status);
+    const { payload, status } = await this.post(
+      `/v1/actions/challenges?${query}`,
+      undefined,
+      callOptions,
+      'GET',
+    );
+    const challenges =
+      payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+        ? (payload as Record<string, unknown>).challenges
+        : undefined;
+    if (!Array.isArray(challenges))
+      throw new SchemaGuardServiceError(
+        'Schema Guard service returned an invalid action-challenge inventory',
+        status,
+        'invalid_service_response',
+      );
+    return challenges as ManagedActionChallengeSummary[];
+  }
   async getManagedTenantLifecycle(
     callOptions: SchemaGuardValidateOptions = {},
   ): Promise<ManagedTenantLifecycle> {
@@ -1045,6 +1219,18 @@ export class SchemaGuardClient {
       );
     return alerts as ManagedAlert[];
   }
+  async acknowledgeManagedAlert(
+    alertId: number,
+    callOptions: SchemaGuardValidateOptions = {},
+  ): Promise<void> {
+    if (!Number.isSafeInteger(alertId) || alertId < 1)
+      throw new SchemaGuardConfigurationError('alertId must be a positive safe integer');
+    await this.post(
+      `/v1/alerts/${encodeURIComponent(alertId)}/acknowledge`,
+      undefined,
+      callOptions,
+    );
+  }
   async listManagedEnvironments(
     callOptions: SchemaGuardValidateOptions = {},
   ): Promise<ManagedEnvironment[]> {
@@ -1165,6 +1351,27 @@ export class SchemaGuardClient {
         'invalid_service_response',
       );
     return payload as IssuedManagedApiKey;
+  }
+  async listManagedApiKeys(
+    callOptions: SchemaGuardValidateOptions = {},
+  ): Promise<ManagedApiKeySummary[]> {
+    const { payload, status } = await this.post(
+      '/v1/admin/api-keys',
+      undefined,
+      callOptions,
+      'GET',
+    );
+    const apiKeys =
+      payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+        ? (payload as Record<string, unknown>).api_keys
+        : undefined;
+    if (!Array.isArray(apiKeys))
+      throw new SchemaGuardServiceError(
+        'Schema Guard service returned an invalid API-key inventory',
+        status,
+        'invalid_service_response',
+      );
+    return apiKeys as ManagedApiKeySummary[];
   }
   async revokeManagedApiKey(
     keyId: string,

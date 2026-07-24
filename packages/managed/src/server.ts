@@ -40,6 +40,7 @@ import {
 } from '@schema-guard/shared-state';
 import { dashboardHtml, dashboardScript, dashboardStyle } from './dashboard.js';
 import { environmentValue } from './environment.js';
+import { effectivePlanEntitlements, managedPlan, planCatalog } from './plans.js';
 import { FixedWindowRateLimiter } from './rate-limit.js';
 import { ManagedError, ManagedStore, normalizedPublicWebhookEndpoint } from './store.js';
 import {
@@ -69,6 +70,7 @@ import {
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 function privacySafeRoute(pathname: string): string {
+  if (/^\/v1\/alerts\/\d+\/acknowledge$/u.test(pathname)) return '/v1/alerts/:id/acknowledge';
   return pathname
     .split('/')
     .map((segment) =>
@@ -811,6 +813,14 @@ export function createManagedServer(
         });
         return;
       }
+      if (request.method === 'GET' && url.pathname === '/v1/plans') {
+        sendJson(response, 200, {
+          plans: planCatalog(),
+          checkout: 'disabled',
+          note: 'Private-beta enrollment is operator-led; no online purchase is available.',
+        });
+        return;
+      }
       if (request.method === 'GET' && url.pathname === '/dashboard') {
         response.writeHead(200, {
           'content-type': 'text/html; charset=utf-8',
@@ -1316,6 +1326,59 @@ export function createManagedServer(
             input.side_effect as 'none' | 'reversible' | 'irreversible',
           );
         sendJson(response, 200, descriptor);
+        return;
+      }
+      if (request.method === 'GET' && url.pathname === '/v1/admin/actions/descriptors') {
+        store.requireScope(principal, 'admin');
+        try {
+          sendJson(response, 200, {
+            descriptors: actionState
+              ? await actionState.listActionDescriptors(principal.tenantId)
+              : store.listActionDescriptors(principal),
+          });
+        } catch (error) {
+          if (error instanceof ManagedError) throw error;
+          throw sharedStateUnavailable(error);
+        }
+        return;
+      }
+      if (request.method === 'GET' && url.pathname === '/v1/actions/challenges') {
+        store.requireScope(principal, 'approve:action');
+        const requestedStatus = url.searchParams.get('status') ?? undefined;
+        if (
+          requestedStatus !== undefined &&
+          !['pending', 'approved', 'revoked'].includes(requestedStatus)
+        )
+          throw new ManagedError(
+            400,
+            'invalid_action_challenge_status',
+            'action challenge status is invalid',
+          );
+        const limit = Number(url.searchParams.get('limit') ?? 100);
+        if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500)
+          throw new ManagedError(
+            400,
+            'invalid_action_challenge_limit',
+            'action challenge limit must be 1-500',
+          );
+        try {
+          sendJson(response, 200, {
+            challenges: actionState
+              ? await actionState.listActionChallenges(
+                  principal.tenantId,
+                  requestedStatus as 'pending' | 'approved' | 'revoked' | undefined,
+                  limit,
+                )
+              : store.listActionChallenges(
+                  principal,
+                  requestedStatus as 'pending' | 'approved' | 'revoked' | undefined,
+                  limit,
+                ),
+          });
+        } catch (error) {
+          if (error instanceof ManagedError) throw error;
+          throw sharedStateUnavailable(error);
+        }
         return;
       }
       if (request.method === 'POST' && url.pathname === '/v1/actions/challenges') {
@@ -1946,6 +2009,20 @@ export function createManagedServer(
         sendJson(response, 201, registration);
         return;
       }
+      if (request.method === 'GET' && url.pathname === '/v1/schemas') {
+        store.requireScope(principal, 'read:environment');
+        try {
+          sendJson(response, 200, {
+            schemas: schemaState
+              ? await schemaState.listLatestSchemas(principal.tenantId)
+              : store.listLatestSchemas(principal),
+          });
+        } catch (error) {
+          if (error instanceof ManagedError) throw error;
+          throw sharedSchemaStateUnavailable(error);
+        }
+        return;
+      }
       if (request.method === 'POST' && url.pathname === '/v1/schema-releases') {
         store.requireScope(principal, 'promote:schema');
         const input = asRecord(await guardedBody());
@@ -2155,9 +2232,11 @@ export function createManagedServer(
           : store.usage(principal);
         sendJson(response, 200, {
           plan: principal.plan,
+          plan_name: managedPlan(principal.plan).display_name,
           monthly_limit: principal.monthlyLimit,
+          entitlements: effectivePlanEntitlements(principal.plan, principal.retentionDays),
           usage,
-          payment_processing: 'not_configured_local_mode',
+          payment_processing: managedPlan(principal.plan).payment_collection,
         });
         return;
       }
@@ -2246,7 +2325,10 @@ export function createManagedServer(
         sendJson(response, 200, {
           period: usage.month,
           plan: principal.plan,
+          plan_name: managedPlan(principal.plan).display_name,
           included_validations: principal.monthlyLimit,
+          entitlements: effectivePlanEntitlements(principal.plan, principal.retentionDays),
+          offer: managedPlan(principal.plan).price,
           usage,
           amount_due: null,
           currency: null,
@@ -2263,6 +2345,21 @@ export function createManagedServer(
               ? await alertState.listAlerts(principal.tenantId)
               : store.alerts(principal),
           });
+        } catch (error) {
+          if (error instanceof ManagedError) throw error;
+          throw sharedAlertStateUnavailable(error);
+        }
+        return;
+      }
+      if (request.method === 'POST' && /^\/v1\/alerts\/\d+\/acknowledge$/u.test(url.pathname)) {
+        store.requireScope(principal, 'admin');
+        const alertId = Number(url.pathname.split('/')[3]);
+        try {
+          const acknowledged = alertState
+            ? await alertState.acknowledgeAlert(principal.tenantId, alertId)
+            : store.acknowledgeAlert(principal, alertId);
+          if (!acknowledged) throw new ManagedError(404, 'alert_not_found', 'alert does not exist');
+          sendJson(response, 200, { acknowledged: true, alert_id: alertId });
         } catch (error) {
           if (error instanceof ManagedError) throw error;
           throw sharedAlertStateUnavailable(error);
@@ -2471,6 +2568,20 @@ export function createManagedServer(
         );
         return;
       }
+      if (request.method === 'GET' && url.pathname === '/v1/admin/api-keys') {
+        store.requireScope(principal, 'admin');
+        try {
+          sendJson(response, 200, {
+            api_keys: controlState
+              ? await controlState.listApiKeys(principal.tenantId, principal.keyId)
+              : store.listApiKeys(principal),
+          });
+        } catch (error) {
+          if (error instanceof ManagedError) throw error;
+          throw sharedControlStateUnavailable(error);
+        }
+        return;
+      }
       if (request.method === 'POST' && url.pathname === '/v1/admin/api-keys') {
         store.requireScope(principal, 'admin');
         const input = asRecord(await guardedBody());
@@ -2603,6 +2714,11 @@ export function createManagedServer(
           }
         } else store.updateTenantPolicy(principal, input);
         sendJson(response, 200, { updated: true, applies_on_next_request: true });
+        return;
+      }
+      if (request.method === 'GET' && url.pathname === '/v1/admin/policy') {
+        store.requireScope(principal, 'admin');
+        sendJson(response, 200, { policy: principal.policy });
         return;
       }
       if (request.method === 'PUT' && url.pathname === '/v1/admin/plan') {

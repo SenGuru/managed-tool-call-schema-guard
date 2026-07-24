@@ -224,7 +224,7 @@ describe('managed Stripe billing authority', () => {
     expect(await webhook.json()).toMatchObject({ received: true, event_status: 'ready' });
     expect(service.store.authenticate('billing-admin-key')).toMatchObject({
       plan: 'team',
-      monthlyLimit: 100_000,
+      monthlyLimit: 250_000,
     });
 
     const duplicate = await fetch(`${base}/v1/billing/stripe/webhook`, {

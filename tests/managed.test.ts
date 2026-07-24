@@ -19,6 +19,200 @@ async function database(): Promise<string> {
   return join(await mkdtemp(join(tmpdir(), 'schema-guard-managed-')), 'managed.db');
 }
 describe('managed local control plane', () => {
+  it('publishes an honest plan catalog and returns enforced tenant entitlements', async () => {
+    const service = createManagedServer({ databasePath: await database(), masterSecret: secret });
+    open.push(service);
+    service.store.bootstrapTenant({ id: 'plans', name: 'Plans', plan: 'team', apiKey: 'plan-key' });
+    await new Promise<void>((resolve) => service.server.listen(0, '127.0.0.1', resolve));
+    const address = service.server.address();
+    if (!address || typeof address === 'string') throw new Error('missing address');
+    const base = `http://127.0.0.1:${address.port}`;
+
+    const catalog = await fetch(`${base}/v1/plans`);
+    expect(catalog.status).toBe(200);
+    expect(await catalog.json()).toMatchObject({
+      checkout: 'disabled',
+      plans: [
+        { id: 'trial', availability: 'internal_only' },
+        {
+          id: 'team',
+          display_name: 'Private-beta design partner',
+          availability: 'invite_only',
+          price: { amount_minor: 225_000, term: '90_days_prepaid' },
+        },
+      ],
+    });
+
+    const usage = await fetch(`${base}/v1/usage`, {
+      headers: { authorization: 'Bearer plan-key' },
+    });
+    expect(usage.status).toBe(200);
+    expect(await usage.json()).toMatchObject({
+      plan: 'team',
+      plan_name: 'Private-beta design partner',
+      monthly_limit: 250_000,
+      entitlements: {
+        validations_per_month: 250_000,
+        retention_days: 30,
+        overage: 'disabled',
+      },
+      payment_processing: 'manual_provider_setup_required',
+    });
+  });
+
+  it('acknowledges tenant alerts idempotently without changing the alert event', async () => {
+    const service = createManagedServer({ databasePath: await database(), masterSecret: secret });
+    open.push(service);
+    service.store.bootstrapTenant({ id: 'alerts', name: 'Alerts', plan: 'team', apiKey: 'admin' });
+    const principal = service.store.authenticate('admin')!;
+    service.store.recordValidation(
+      principal,
+      validateToolCall({
+        tool_name: 'counter',
+        tool_schema: {
+          type: 'object',
+          required: ['count'],
+          properties: { count: { type: 'integer' } },
+        },
+        raw_arguments: {},
+      }),
+    );
+    await new Promise<void>((resolve) => service.server.listen(0, '127.0.0.1', resolve));
+    const address = service.server.address();
+    if (!address || typeof address === 'string') throw new Error('missing address');
+    const base = `http://127.0.0.1:${address.port}`;
+    const headers = { authorization: 'Bearer admin' };
+    const before = (await fetch(`${base}/v1/alerts`, { headers }).then((r) => r.json())) as {
+      alerts: Array<{ id: number; acknowledged_at: string | null; detail: unknown }>;
+    };
+    expect(before.alerts[0]).toMatchObject({ acknowledged_at: null });
+    const eventBefore = structuredClone(before.alerts[0]!.detail);
+
+    for (const expected of [200, 200]) {
+      const response = await fetch(`${base}/v1/alerts/${before.alerts[0]!.id}/acknowledge`, {
+        method: 'POST',
+        headers,
+      });
+      expect(response.status).toBe(expected);
+    }
+    const after = (await fetch(`${base}/v1/alerts`, { headers }).then((r) => r.json())) as {
+      alerts: Array<{ acknowledged_at: string | null; detail: unknown }>;
+    };
+    expect(after.alerts[0]!.acknowledged_at).toMatch(/Z$/u);
+    expect(after.alerts[0]!.detail).toEqual(eventBefore);
+    expect(
+      (
+        await fetch(`${base}/v1/alerts/999999/acknowledge`, {
+          method: 'POST',
+          headers,
+        })
+      ).status,
+    ).toBe(404);
+  });
+
+  it('lists only tenant-owned API-key metadata and never returns credentials', async () => {
+    const service = createManagedServer({ databasePath: await database(), masterSecret: secret });
+    open.push(service);
+    service.store.bootstrapTenant({
+      id: 'keys-a',
+      name: 'Keys A',
+      plan: 'team',
+      apiKey: 'admin-a',
+    });
+    service.store.bootstrapTenant({
+      id: 'keys-b',
+      name: 'Keys B',
+      plan: 'team',
+      apiKey: 'admin-b',
+    });
+    const principalA = service.store.authenticate('admin-a')!;
+    const principalB = service.store.authenticate('admin-b')!;
+    const issuedA = service.store.issueApiKey(principalA, ['validate']);
+    const issuedB = service.store.issueApiKey(principalB, ['read:usage']);
+    await new Promise<void>((resolve) => service.server.listen(0, '127.0.0.1', resolve));
+    const address = service.server.address();
+    if (!address || typeof address === 'string') throw new Error('missing address');
+    const response = await fetch(`http://127.0.0.1:${address.port}/v1/admin/api-keys`, {
+      headers: { authorization: 'Bearer admin-a' },
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { api_keys: Array<Record<string, unknown>> };
+    expect(body.api_keys).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key_id: issuedA.key_id, scopes: ['validate'], current: false }),
+        expect.objectContaining({ key_id: principalA.keyId, current: true }),
+      ]),
+    );
+    const serialized = JSON.stringify(body);
+    expect(serialized).not.toContain(issuedA.api_key);
+    expect(serialized).not.toContain(issuedB.key_id);
+    expect(serialized).not.toContain(issuedB.api_key);
+    expect(serialized).not.toContain('key_hash');
+  });
+
+  it('makes policy, schema, and action-descriptor state reachable through tenant-safe reads', async () => {
+    const service = createManagedServer({ databasePath: await database(), masterSecret: secret });
+    open.push(service);
+    service.store.bootstrapTenant({
+      id: 'workflow-state',
+      name: 'Workflow State',
+      plan: 'team',
+      apiKey: 'workflow-admin',
+    });
+    const principal = service.store.authenticate('workflow-admin')!;
+    service.store.registerSchema(principal, {
+      tool_name: 'charge',
+      adapter: 'mcp',
+      version: '1',
+      schema: { type: 'object', properties: { amount: { type: 'integer' } } },
+    });
+    service.store.registerActionDescriptor(
+      principal,
+      'charge',
+      'production',
+      'high',
+      'irreversible',
+    );
+    await new Promise<void>((resolve) => service.server.listen(0, '127.0.0.1', resolve));
+    const address = service.server.address();
+    if (!address || typeof address === 'string') throw new Error('missing address');
+    const base = `http://127.0.0.1:${address.port}`;
+    const headers = { authorization: 'Bearer workflow-admin' };
+    const [policy, schemas, descriptors] = await Promise.all(
+      ['/v1/admin/policy', '/v1/schemas', '/v1/admin/actions/descriptors'].map((path) =>
+        fetch(`${base}${path}`, { headers }),
+      ),
+    );
+    expect(policy.status).toBe(200);
+    expect(await policy.json()).toHaveProperty('policy');
+    expect(schemas.status).toBe(200);
+    const schemaBody = (await schemas.json()) as { schemas: Array<Record<string, unknown>> };
+    expect(schemaBody).toMatchObject({
+      schemas: [
+        {
+          adapter: 'mcp',
+          version: '1',
+          schema: { type: 'object' },
+        },
+      ],
+    });
+    expect(JSON.stringify(schemaBody)).not.toContain('charge');
+    expect(descriptors.status).toBe(200);
+    const descriptorBody = (await descriptors.json()) as {
+      descriptors: Array<Record<string, unknown>>;
+    };
+    expect(descriptorBody).toMatchObject({
+      descriptors: [
+        {
+          environment: 'production',
+          risk_level: 'high',
+          side_effect: 'irreversible',
+        },
+      ],
+    });
+    expect(JSON.stringify(descriptorBody)).not.toContain('charge');
+  });
+
   it('emits privacy-safe structured access logs and response correlation IDs', async () => {
     const service = createManagedServer({
       databasePath: await database(),
@@ -365,6 +559,19 @@ describe('managed local control plane', () => {
     store.bootstrapTenant({ id: 'a', name: 'A', plan: 'trial', apiKey: 'key-a' });
     const principal = store.authenticate('key-a')!;
     const issued = store.issueApiKey(principal, ['validate']);
+    expect(store.listApiKeys(principal)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key_id: issued.key_id,
+          scopes: ['validate'],
+          revoked_at: null,
+          current: false,
+        }),
+        expect.objectContaining({ key_id: principal.keyId, current: true }),
+      ]),
+    );
+    expect(JSON.stringify(store.listApiKeys(principal))).not.toContain('key_hash');
+    expect(JSON.stringify(store.listApiKeys(principal))).not.toContain(issued.api_key);
     expect(store.authenticate(issued.api_key)?.scopes).toEqual(['validate']);
     expect(store.revokeApiKey(principal, issued.key_id)).toBe(true);
     expect(store.authenticate(issued.api_key)).toBeUndefined();

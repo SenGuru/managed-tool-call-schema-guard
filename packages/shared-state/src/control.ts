@@ -81,6 +81,15 @@ export interface SharedUsage {
   drift_count: number;
 }
 
+export interface SharedApiKeySummary {
+  key_id: string;
+  prefix: string;
+  scopes: SharedScope[];
+  created_at: string;
+  revoked_at: string | null;
+  current: boolean;
+}
+
 export interface SharedAuditRecord {
   [key: string]: unknown;
   sequence: number;
@@ -125,6 +134,7 @@ export interface ControlState {
     tenantId: string,
     scopes: SharedScope[],
   ): Promise<{ key_id: string; api_key: string; scopes: SharedScope[] }>;
+  listApiKeys(tenantId: string, currentKeyId: string): Promise<SharedApiKeySummary[]>;
   revokeApiKey(tenantId: string, currentKeyId: string, keyId: string): Promise<boolean>;
   tenantLifecycle(tenantId: string): Promise<SharedTenantLifecycle>;
   updateTenantLifecycle(
@@ -227,7 +237,8 @@ type AuditManifestRow = {
 };
 
 const month = (): string => new Date().toISOString().slice(0, 7);
-const defaultLimits: Record<SharedPlanId, number> = { trial: 1_000, team: 100_000 };
+const defaultLimits: Record<SharedPlanId, number> = { trial: 1_000, team: 250_000 };
+const defaultRetentionDays: Record<SharedPlanId, number> = { trial: 7, team: 30 };
 const hmac = (secret: string, purpose: string, value: unknown): string =>
   `hmac-sha256:${createHmac('sha256', secret)
     .update(purpose)
@@ -864,7 +875,7 @@ export class PostgresControlState implements ControlState {
           existing.name !== input.name ||
           existing.plan !== input.plan ||
           existing.monthly_limit !== this.planLimits[input.plan] ||
-          existing.retention_days !== (input.retentionDays ?? 30) ||
+          existing.retention_days !== (input.retentionDays ?? defaultRetentionDays[input.plan]) ||
           existing.policy_json !== policyJson
         )
           throw new SharedStateIntegrityError(
@@ -876,7 +887,7 @@ export class PostgresControlState implements ControlState {
           name: input.name,
           plan: input.plan,
           monthly_limit: this.planLimits[input.plan],
-          retention_days: input.retentionDays ?? 30,
+          retention_days: input.retentionDays ?? defaultRetentionDays[input.plan],
           policy_json: policyJson,
           usage_month: month(),
           validation_count: 0,
@@ -1090,6 +1101,26 @@ export class PostgresControlState implements ControlState {
       );
     });
     return { key_id: unsigned.id, api_key: apiKey, scopes };
+  }
+
+  async listApiKeys(tenantId: string, currentKeyId: string): Promise<SharedApiKeySummary[]> {
+    const rows = (
+      await this.pool.query<ApiKeyRow>(
+        'SELECT * FROM sg_control_api_keys WHERE tenant_id=$1 ORDER BY created_at DESC,id',
+        [tenantId],
+      )
+    ).rows;
+    return rows.map((row) => {
+      this.assertApiKey(row);
+      return {
+        key_id: row.id,
+        prefix: row.prefix,
+        scopes: this.parseScopes(row.scopes_json),
+        created_at: row.created_at.toISOString(),
+        revoked_at: row.revoked_at?.toISOString() ?? null,
+        current: row.id === currentKeyId,
+      };
+    });
   }
 
   async revokeApiKey(tenantId: string, currentKeyId: string, keyId: string): Promise<boolean> {
