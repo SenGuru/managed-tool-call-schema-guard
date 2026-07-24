@@ -24,10 +24,34 @@ Deterministic evidence:
 - `tests/dashboard-ui.test.ts` requires every operator mutation to appear
   before the workbench fallback and exercises routing, stale-credential
   suppression, lifecycle lockout, and a dedicated validation workflow.
-- `tests/managed.test.ts` verifies all 13 routes, unique DOM IDs, CSP-safe
+- `tests/managed.test.ts` verifies all 14 routes, unique DOM IDs, CSP-safe
   assets, and the complete 29-operation advanced fallback.
-- `npm run check` passed with 220 JavaScript/TypeScript tests, 5 Python tests,
+- `npm run check` passed with 222 JavaScript/TypeScript tests, 5 Python tests,
   conformance, package-boundary, formatting, lint, type and script gates.
+
+### 2026-07-25 customer-value completion
+
+The exact-source completion pass added and exercised the pieces that were
+technically present but not adequately productized:
+
+- a direct Integration Guide covering SDK, CLI and the fail-closed
+  validate/approve/reserve/execute/complete protocol;
+- compact connected-workspace state, so the API-key entry mechanism does not
+  visually dominate the product after authentication;
+- outcome and text filters plus direct signed-record inspection in Decisions;
+- signed audit-envelope inspection in Evidence, including chain linkage,
+  hashes and explicit raw-argument withholding;
+- readiness remediation buttons that route the operator to the page where the
+  missing setup is resolved;
+- an exact paid-offer presentation covering the 90-day term, $2,250 prepaid
+  price, 250,000 validations/month, retention, included workflows, support and
+  manual-enrollment boundary.
+
+The first route-reachability test correctly failed because the Integration
+Guide had not been added to the server allowlist. The allowlist was corrected,
+then the dashboard tests (34/34) and complete `npm run check` gate (222
+TypeScript tests plus 5 Python tests) passed without weakening authentication
+or failure behavior.
 
 Production-like evidence:
 

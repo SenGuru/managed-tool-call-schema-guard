@@ -13,6 +13,14 @@ const operationalResponses: Record<string, unknown> = {
     usage: { validation_count: 3, repair_count: 1, rejection_count: 1 },
     monthly_limit: 100,
     plan_name: 'Private beta',
+    plan: 'trial',
+    payment_processing: 'manual_provider_setup_required',
+    entitlements: {
+      validations_per_month: 1_000,
+      retention_days: 7,
+      managed_workflows: 'evaluation',
+      overage: 'disabled',
+    },
   },
   '/v1/audits/verify': { valid: true },
   '/v1/audits?limit=25': { audits: [] },
@@ -32,11 +40,42 @@ const operationalResponses: Record<string, unknown> = {
   '/v1/actions/reconciliation/pending': { pending: [] },
   '/v1/actions/reconciliation/history': { reconciliations: [] },
   '/v1/actions/reconciliation/verify': { valid: true },
-  '/v1/billing/statement': {},
+  '/v1/billing/statement': { payment_processing: 'integration_required' },
   '/v1/admin/control-plane-integrity': { valid: true },
   '/v1/rulesets/latest': {},
   '/v1/admin/api-keys': { api_keys: [] },
-  '/v1/plans': { plans: [] },
+  '/v1/plans': {
+    plans: [
+      {
+        id: 'trial',
+        display_name: 'Internal evaluation',
+        audience: 'Akriven-operated evaluation tenants',
+        availability: 'internal_only',
+        price: { amount_minor: 0, monthly_equivalent_minor: 0 },
+        entitlements: {
+          validations_per_month: 1_000,
+          retention_days: 7,
+          managed_workflows: 'evaluation',
+        },
+        support: 'No service commitment',
+        payment_collection: 'disabled',
+      },
+      {
+        id: 'team',
+        display_name: 'Private-beta design partner',
+        audience: 'One invited team and one reviewed workflow',
+        availability: 'invite_only',
+        price: { amount_minor: 225_000, monthly_equivalent_minor: 75_000 },
+        entitlements: {
+          validations_per_month: 250_000,
+          retention_days: 30,
+          managed_workflows: 'full',
+        },
+        support: 'Founder-led onboarding and weekly evidence review',
+        payment_collection: 'manual_provider_setup_required',
+      },
+    ],
+  },
 };
 
 function dashboard(path = '/dashboard/overview') {
@@ -182,6 +221,11 @@ describe('managed dashboard interactions', () => {
     await new Promise((resolve) => window.setTimeout(resolve, 20));
     expect(document.getElementById('workspace')!.dataset.connected).toBe('true');
     expect(document.getElementById('usage-total')!.textContent).toBe('3');
+    expect((document.querySelector('.credential-editor') as HTMLElement).hidden).toBe(true);
+    expect((document.getElementById('credential-connected') as HTMLElement).hidden).toBe(false);
+    document.getElementById('change-key')!.click();
+    expect((document.querySelector('.credential-editor') as HTMLElement).hidden).toBe(false);
+    expect(document.activeElement).toBe(document.getElementById('key'));
 
     locked = true;
     document.getElementById('load')!.click();
@@ -255,6 +299,7 @@ describe('managed dashboard interactions', () => {
     const document = window.document;
     let validationCount = 3;
     let submitted: unknown;
+    let rejectNext = false;
     window.fetch = (input, init) => {
       const path = typeof input === 'string' ? input : input.url;
       if (path === '/v1/admin/tenant/lifecycle')
@@ -272,6 +317,18 @@ describe('managed dashboard interactions', () => {
         if (typeof init.body !== 'string') throw new TypeError('expected a JSON request body');
         submitted = JSON.parse(init.body);
         validationCount += 1;
+        if (rejectNext)
+          return Promise.resolve(
+            new window.Response(
+              JSON.stringify({
+                decision: 'rejected',
+                reason_code: 'SCHEMA_VALIDATION_FAILED',
+                audit_id: 'audit_browser_rejection',
+                repair_rules: [],
+              }),
+              { status: 422, headers: { 'content-type': 'application/json' } },
+            ),
+          );
         return Promise.resolve(
           new window.Response(
             JSON.stringify({
@@ -317,6 +374,118 @@ describe('managed dashboard interactions', () => {
     expect(document.getElementById('validate-status')!.textContent).toBe('Decision recorded');
     expect(document.getElementById('validate-result')!.textContent).toContain('valid_with_repair');
     expect(document.getElementById('usage-total')!.textContent).toBe('4');
+
+    rejectNext = true;
+    (document.getElementById('validate-arguments') as HTMLTextAreaElement).value = '{"count":"02"}';
+    document.querySelector<HTMLButtonElement>('#validate-form button[type="submit"]')!.click();
+    await new Promise((resolve) => window.setTimeout(resolve, 20));
+    expect(document.getElementById('validate-status')!.textContent).toBe('Decision recorded');
+    expect(document.getElementById('validate-result')!.textContent).toContain('rejected');
+    expect(document.getElementById('validate-result')!.textContent).toContain(
+      'SCHEMA_VALIDATION_FAILED',
+    );
+  });
+
+  it('makes signed audit evidence inspectable and explains the complete paid offer', async () => {
+    const window = dashboard('/dashboard/decisions');
+    const document = window.document;
+    const audits = [
+      {
+        sequence: 2,
+        audit_id: 'aud_rejected',
+        occurred_at: '2026-07-24T01:00:00.000Z',
+        decision: 'rejected',
+        reason_code: 'SCHEMA_VALIDATION_FAILED',
+        repair_rules: [],
+        event_hash: 'sha256:event-rejected',
+        previous_hash: 'sha256:event-valid',
+        signature: 'hmac:rejected',
+        envelope: {
+          audit_id: 'aud_rejected',
+          decision: 'rejected',
+          arguments_hash: 'sha256:value-free',
+        },
+      },
+      {
+        sequence: 1,
+        audit_id: 'aud_repaired',
+        occurred_at: '2026-07-24T00:00:00.000Z',
+        decision: 'valid_with_repair',
+        reason_code: null,
+        repair_rules: ['coerce.string_to_integer'],
+        event_hash: 'sha256:event-valid',
+        previous_hash: null,
+        signature: 'hmac:valid',
+        envelope: {
+          audit_id: 'aud_repaired',
+          decision: 'valid_with_repair',
+          arguments_hash: 'sha256:value-free',
+        },
+      },
+    ];
+    window.fetch = (input) => {
+      const path = typeof input === 'string' ? input : String(input.url);
+      const body =
+        path === '/v1/admin/tenant/lifecycle'
+          ? {
+              tenant_id: 'tenant_active',
+              tenant_name: 'Active tenant',
+              lifecycle: { status: 'active' },
+            }
+          : path === '/v1/audits?limit=25'
+            ? { audits }
+            : operationalResponses[path];
+      return Promise.resolve(
+        new window.Response(JSON.stringify(body), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+    };
+
+    (document.getElementById('key') as HTMLInputElement).value = 'test-only-key';
+    document.getElementById('load')!.click();
+    await new Promise((resolve) => window.setTimeout(resolve, 20));
+
+    const outcome = document.getElementById('decision-filter') as HTMLSelectElement;
+    outcome.value = 'rejected';
+    outcome.dispatchEvent(new window.Event('change', { bubbles: true }));
+    expect(document.getElementById('decision-filter-count')!.textContent).toBe('1 of 2 records');
+    expect(document.getElementById('decision-rows')!.textContent).toContain('aud_rejected');
+    expect(document.getElementById('decision-rows')!.textContent).not.toContain('aud_repaired');
+
+    const inspect = document.querySelector<HTMLButtonElement>('#decision-rows button')!;
+    inspect.focus();
+    inspect.click();
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    const dialog = document.getElementById('audit-dialog') as HTMLDialogElement;
+    expect(dialog.open).toBe(true);
+    expect(document.getElementById('audit-detail-grid')!.textContent).toContain(
+      'SCHEMA_VALIDATION_FAILED',
+    );
+    expect(document.getElementById('audit-dialog-json')!.textContent).toContain(
+      'sha256:event-rejected',
+    );
+    expect(document.getElementById('audit-dialog-json')!.textContent).not.toContain(
+      'raw_arguments',
+    );
+    document.getElementById('audit-dialog-close')!.click();
+    await new Promise((resolve) => window.setTimeout(resolve, 20));
+    expect(dialog.open).toBe(false);
+    expect(document.activeElement).toBe(inspect);
+
+    document.querySelector<HTMLAnchorElement>('[data-route="usage"]')!.click();
+    expect(document.getElementById('entitlement-list')!.textContent).toContain('1,000');
+    expect(document.getElementById('entitlement-list')!.textContent).toContain('7 days');
+    expect(document.getElementById('plan-grid')!.textContent).toContain('$2,250 / 90 days');
+    expect(document.getElementById('plan-grid')!.textContent).toContain(
+      '250,000 validations / month',
+    );
+    expect(document.getElementById('plan-grid')!.textContent).toContain(
+      'Founder-led onboarding and weekly evidence review',
+    );
+    expect((document.getElementById('billing-checkout') as HTMLButtonElement).disabled).toBe(true);
+    expect((document.getElementById('billing-portal') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('acknowledges alerts through an accessible in-product dialog and honors cancellation', async () => {

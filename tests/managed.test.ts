@@ -828,6 +828,7 @@ describe('managed local control plane', () => {
     const dashboardIds = [...dashboardBody.matchAll(/\sid="([^"]+)"/gu)].map((match) => match[1]);
     expect(new Set(dashboardIds).size).toBe(dashboardIds.length);
     expect(dashboardBody).toContain('data-route-view="overview"');
+    expect(dashboardBody).toContain('data-route-view="integrate"');
     expect(dashboardBody).toContain('data-route-view="decisions"');
     expect(dashboardBody).toContain('data-route-view="schemas"');
     expect(dashboardBody).toContain('data-route-view="environments"');
@@ -843,6 +844,7 @@ describe('managed local control plane', () => {
     expect(dashboardBody).not.toMatch(/\s(?:style|onclick)=/u);
     for (const route of [
       'overview',
+      'integrate',
       'decisions',
       'schemas',
       'environments',
@@ -861,6 +863,7 @@ describe('managed local control plane', () => {
       expect(routedDashboard.status, route).toBe(200);
       expect(await routedDashboard.text(), route).toContain(`data-route-view="${route}"`);
     }
+    expect(dashboardBody).toContain('decision.valid_arguments');
     expect((await fetch(`${base}/dashboard/not-a-route`)).status).toBe(401);
     const workbenchOptions =
       dashboardBody.match(/<select id="operation">([\s\S]*?)<\/select>/u)?.[1] ?? '';

@@ -97,7 +97,7 @@ documentation:
    PostgreSQL-backed audit, control, action, schema, billing and alert state are
    implemented and exercised. SQLite remains a bounded local projection.
 3. The dashboard is no longer called a complete customer account product. It
-   is a complete operator/API-key workflow surface with 13 direct workflow
+   is a complete operator/API-key workflow surface with 14 direct workflow
    routes, structured state, raw evidence disclosures and a 29-operation
    advanced workbench. Human sessions, memberships and recovery are external
    gates.
@@ -115,26 +115,26 @@ documentation:
 
 ## Exact provider-independent test inventory
 
-| Command                                                                                                    | Observed result                                                                                                                                                                                             | Boundary                                          |
-| ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| `npm run check`                                                                                            | Final rerun passed in 13.58 s: format, build, lint, script syntax, dry provider probe, package boundary, typecheck, conformance, 211 TypeScript tests, 16 PostgreSQL tests skipped, and 5 Python tests      | Local/SQLite/in-memory                            |
-| credentialed `npm run test:coverage` against disposable PostgreSQL 16                                      | Final rerun: 39/39 files and 227/227 tests passed in 5.73 s; statements 79.48%, branches 73.43%, functions 80.62%, lines 81.33%                                                                             | Loopback PostgreSQL                               |
-| `npm run audit:extreme`                                                                                    | Final rerun passed in 46.64 s                                                                                                                                                                               | Severe local gate                                 |
-| managed load inside `audit:extreme`                                                                        | 2,000/2,000 HTTP 200; zero errors; 554.08 req/s; p50 53.85 ms, p95 68.22 ms, p99 278.18 ms; unique audits and valid chain                                                                                   | Short local load, not SLO                         |
-| core benchmark inside `audit:extreme`                                                                      | 10,000 operations; p50 58.250 µs, p95 164.042 µs, p99 580.416 µs                                                                                                                                            | Local CPU                                         |
-| `npm run audit:container-e2e`                                                                              | Final rerun passed in 24.64 s; fresh PostgreSQL, TLS anchor, two tenants, all decision paths, promotion/admission, approval/idempotency, outage/redrive, restarts, persistence, hardening and log redaction | Exact-source production images on one Docker host |
-| `npm run audit:framework-integrations`                                                                     | Passed with automatic Python 3.13 selection; MCP 1.29.0, OpenAI Agents 0.13.5, PydanticAI 2.13.0, Google ADK 2.5.0; no model API or external repository code                                                | Real framework packages                           |
-| `npm run audit:release-candidate -- --output .codex-work/release-candidate-current.json`                   | Preflight blocked as designed on absent PostgreSQL URL and live OpenAI, Anthropic and Gemini model credentials; Docker 29.5.2 was reachable                                                                 | External-provider release gate                    |
-| `npm run audit:five-repos`                                                                                 | 5 static repositories, 9 fixtures, 20 source calls, 35 derived calls, zero failures                                                                                                                         | Commit-pinned static source reads                 |
-| `npm run audit:benchmarks`                                                                                 | 7,699 recorded calls; 7,575 conforming; 124 visible source conflicts; 30,203/30,203 mutations matched                                                                                                       | Static benchmark data; no downloaded code         |
-| `npm run audit:real-data`                                                                                  | 2,501 rows; 3,302 expected calls; 3,266 baseline pass; 36 visible conflicts; 15,702/15,702 mutations matched                                                                                                | BFCL static data; no downloaded code              |
-| `npm audit --audit-level=moderate`                                                                         | 0 vulnerabilities across 370 dependencies                                                                                                                                                                   | Current npm advisory database                     |
-| `npm run audit:images`                                                                                     | Managed, anchor and PostgreSQL images: 0 High/Critical vulnerabilities and 0 secrets                                                                                                                        | Local image contents                              |
-| exact-source CycloneDX generation plus `trivy sbom --scanners vuln --severity HIGH,CRITICAL --exit-code 1` | SBOMs retained for managed, anchor and PostgreSQL images; all three SBOM scans passed                                                                                                                       | Local image contents                              |
-| `trivy fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL --exit-code 1 .`                       | 0 vulnerabilities, 0 secrets and 0 High/Critical misconfigurations after non-root deployment fixes                                                                                                          | Local checkout                                    |
-| non-root backup-reader archive exercise                                                                    | UID/GID 65532, no network, read-only root filesystem and all capabilities dropped; archive of same-UID anchor volume succeeded                                                                              | Disposable local Docker volumes                   |
-| private website `npm run lint`, `npm run build`, and render tests                                          | Passed; 17 routes including `/pricing`; 3/3 render tests                                                                                                                                                    | Nested private website repository                 |
-| private website in-app-browser inspection                                                                  | Desktop and mobile layouts, pricing copy, navigation and no horizontal overflow verified                                                                                                                    | Local browser only                                |
+| Command                                                                                                    | Observed result                                                                                                                                                                                                                                     | Boundary                                          |
+| ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `npm run check`                                                                                            | 2026-07-25 exact-source rerun passed in approximately 30.0 s: format, build, lint, script syntax, dry provider probe, package boundary, typecheck, conformance, 222 TypeScript tests passed, 16 PostgreSQL tests skipped, and 5 Python tests passed | Local/SQLite/in-memory                            |
+| credentialed `npm run test:coverage` against disposable PostgreSQL 16                                      | Final rerun: 39/39 files and 227/227 tests passed in 5.73 s; statements 79.48%, branches 73.43%, functions 80.62%, lines 81.33%                                                                                                                     | Loopback PostgreSQL                               |
+| `npm run audit:extreme`                                                                                    | Final rerun passed in 46.64 s                                                                                                                                                                                                                       | Severe local gate                                 |
+| managed load inside `audit:extreme`                                                                        | 2,000/2,000 HTTP 200; zero errors; 554.08 req/s; p50 53.85 ms, p95 68.22 ms, p99 278.18 ms; unique audits and valid chain                                                                                                                           | Short local load, not SLO                         |
+| core benchmark inside `audit:extreme`                                                                      | 10,000 operations; p50 58.250 µs, p95 164.042 µs, p99 580.416 µs                                                                                                                                                                                    | Local CPU                                         |
+| `npm run audit:container-e2e`                                                                              | 2026-07-25 final exact-source rerun passed in 52.043 s; fresh PostgreSQL, TLS anchor, two tenants, all decision paths, promotion/admission, approval/idempotency, outage/redrive, restarts, persistence, hardening and log redaction                | Exact-source production images on one Docker host |
+| `npm run audit:framework-integrations`                                                                     | Passed with automatic Python 3.13 selection; MCP 1.29.0, OpenAI Agents 0.13.5, PydanticAI 2.13.0, Google ADK 2.5.0; no model API or external repository code                                                                                        | Real framework packages                           |
+| `npm run audit:release-candidate -- --output .codex-work/release-candidate-current.json`                   | Preflight blocked as designed on absent PostgreSQL URL and live OpenAI, Anthropic and Gemini model credentials; Docker 29.5.2 was reachable                                                                                                         | External-provider release gate                    |
+| `npm run audit:five-repos`                                                                                 | 5 static repositories, 9 fixtures, 20 source calls, 35 derived calls, zero failures                                                                                                                                                                 | Commit-pinned static source reads                 |
+| `npm run audit:benchmarks`                                                                                 | 7,699 recorded calls; 7,575 conforming; 124 visible source conflicts; 30,203/30,203 mutations matched                                                                                                                                               | Static benchmark data; no downloaded code         |
+| `npm run audit:real-data`                                                                                  | 2,501 rows; 3,302 expected calls; 3,266 baseline pass; 36 visible conflicts; 15,702/15,702 mutations matched                                                                                                                                        | BFCL static data; no downloaded code              |
+| `npm audit --audit-level=moderate`                                                                         | 0 vulnerabilities across 370 dependencies                                                                                                                                                                                                           | Current npm advisory database                     |
+| `npm run audit:images`                                                                                     | Managed, anchor and PostgreSQL images: 0 High/Critical vulnerabilities and 0 secrets                                                                                                                                                                | Local image contents                              |
+| exact-source CycloneDX generation plus `trivy sbom --scanners vuln --severity HIGH,CRITICAL --exit-code 1` | SBOMs retained for managed, anchor and PostgreSQL images; all three SBOM scans passed                                                                                                                                                               | Local image contents                              |
+| `trivy fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL --exit-code 1 .`                       | 0 vulnerabilities, 0 secrets and 0 High/Critical misconfigurations after non-root deployment fixes                                                                                                                                                  | Local checkout                                    |
+| non-root backup-reader archive exercise                                                                    | UID/GID 65532, no network, read-only root filesystem and all capabilities dropped; archive of same-UID anchor volume succeeded                                                                                                                      | Disposable local Docker volumes                   |
+| private website `npm run lint`, `npm run build`, and render tests                                          | Passed; 17 routes including `/pricing`; 3/3 render tests                                                                                                                                                                                            | Nested private website repository                 |
+| private website in-app-browser inspection                                                                  | Desktop and mobile layouts, pricing copy, navigation and no horizontal overflow verified                                                                                                                                                            | Local browser only                                |
 
 The final regression rerun and commit identifiers are appended during release
 checkpointing. Generated test outputs are evidence artifacts, not
@@ -164,6 +164,14 @@ implementation proof by themselves.
   build later succeeded, and the complete container E2E passed.
 - The image audit masked a missing Trivy report with an `ENOENT` exception. It
   now reports the scanner/output failure directly.
+- The first new Integration Guide test found that its page was present in the
+  HTML but omitted from the server route allowlist, returning 401 on direct
+  navigation. The server route was added and the complete route loop passed.
+- A real in-app-browser rejection returned the correct HTTP 422 but left the
+  previous `valid_with_repair` card visible. The validation workflow now treats
+  a structured 422 `rejected` response as a first-class checkpoint decision,
+  clears stale output before submission, and has deterministic browser-DOM
+  regression coverage.
 - The filesystem scan identified root defaults in the PostgreSQL and backup
   utility images. PostgreSQL now declares UID/GID 999 and the one-shot backup
   reader uses UID/GID 65532 with a pre-owned output file, no network, read-only
@@ -172,6 +180,37 @@ implementation proof by themselves.
 
 These are evidence that the gates detected defects; the initial failures are
 not counted as passes.
+
+## 2026-07-25 customer-browser evidence
+
+The exact local dashboard was exercised through the in-app browser with the
+real loopback HTTP boundary and persisted SQLite tenant database. The browser
+journey—not direct API calls—completed:
+
+1. API-key workspace connection and compact connected state;
+2. SDK/CLI integration guidance and the
+   validate/approve/reserve/execute/complete protocol;
+3. `valid`, `valid_with_repair`, and fail-closed `rejected` decisions;
+4. decision filtering and signed audit-envelope inspection with event hash,
+   previous hash, signature, and no sensitive raw argument values;
+5. immutable schema registration and exact-hash promotion;
+6. high-risk irreversible action classification, approval challenge, guarded
+   approval, idempotent reservation, execution completion, and checkpoint
+   comparison reporting `same`;
+7. validate-only API-key issue, one-time secret presentation without DOM
+   capture, guarded revocation, and revoked inventory state;
+8. in-product alert acknowledgement and rejection of a loopback/private
+   webhook destination;
+9. signed ruleset publication, organization-policy save, and cancellation of
+   an irreversible retention purge;
+10. complete design-partner offer review with provider-dependent checkout and
+    portal controls disabled;
+11. collapsible navigation at a 1,440 × 1,000 viewport with zero horizontal
+    page overflow.
+
+This is customer-workflow evidence on a local service boundary. It does not
+prove public TLS, real identity/email/payment/paging delivery, multi-host
+DreamHost/DigitalOcean operation, or customer willingness to pay.
 
 ## External blockers
 

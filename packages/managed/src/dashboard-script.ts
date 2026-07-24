@@ -3,6 +3,7 @@ const q=id=>document.getElementById(id);
 const reduceMotion=matchMedia('(prefers-reduced-motion:reduce)').matches;
 const routeMeta={
   overview:{title:'Protection overview',description:'Current readiness, usage, decisions, and open operational work.'},
+  integrate:{title:'Integration guide',description:'Connect the SDK or CLI, validate before dispatch, and bind side effects to accountable execution.'},
   decisions:{title:'Tool-call decisions',description:'Validate calls and inspect accountable valid, repaired, and rejected outcomes.'},
   schemas:{title:'Schemas & releases',description:'Register contracts, review drift, and control runtime admission by environment.'},
   environments:{title:'Environments',description:'Create isolated runtime boundaries and control policy and schema admission.'},
@@ -23,6 +24,8 @@ let loadGeneration=0;
 let activeLoadController=null;
 let workspaceData=null;
 let challengeFilter='pending';
+let auditRecords=[];
+let auditDialogOpener=null;
 const routeViews=Array.from(document.querySelectorAll('[data-route-view]'));
 const routeLinks=Array.from(document.querySelectorAll('.nav-link[data-route]'));
 const allRouteTriggers=Array.from(document.querySelectorAll('[data-route]'));
@@ -132,6 +135,24 @@ actionDialog.addEventListener('click',event=>{if(event.target===actionDialog)set
 q('action-dialog-input').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();q('action-dialog-confirm').click()}});
 const confirmAction=async options=>(await askAction(options))===true;
 
+const auditDialog=q('audit-dialog');
+function closeAuditDialog(){
+  if(auditDialog.open)auditDialog.close();
+  const opener=auditDialogOpener;auditDialogOpener=null;
+  if(opener instanceof HTMLElement)requestAnimationFrame(()=>opener.focus({preventScroll:true}));
+}
+q('audit-dialog-close').onclick=()=>closeAuditDialog();
+auditDialog.addEventListener('cancel',event=>{event.preventDefault();closeAuditDialog()});
+auditDialog.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();closeAuditDialog()}});
+auditDialog.addEventListener('click',event=>{if(event.target===auditDialog)closeAuditDialog()});
+
+function setCredentialMode(mode){
+  workspace.dataset.credential=mode;
+  const connected=mode==='connected';
+  q('credential-connected').hidden=!connected;q('change-key').hidden=!connected;
+  q('key').closest('.credential-editor').hidden=connected;
+}
+
 const panelIds=['lifecycle','usage','chain','alerts','releases','schemas','policy','descriptors','challenges','intelligence','audits','webhooks','deliveries','actions','reconciliation','billing','control-integrity','rulesets','api-keys','export-result'];
 const clearPanels=()=>{for(const id of panelIds)q(id).textContent='—'};
 function resetDerivedViews(){
@@ -148,6 +169,10 @@ function resetDerivedViews(){
   resetList('readiness-list','Load the workspace to evaluate readiness.');
   resetList('alert-list','Load the workspace to review alerts.');
   resetList('alerts-page-list','Load the workspace to review alerts.');
+  auditRecords=[];
+  text('decision-filter-count','0 records');
+  for(const id of ['integration-key-state','integration-decision-state','integration-action-state']){text(id,'Waiting');q(id).className=''}
+  q('integration-state').className='status-pill warn';text('integration-state-text','Connect a tenant');
 }
 const parseBody=async response=>{const body=await response.text();if(!body)return null;try{return JSON.parse(body)}catch{return {unparsed_response:true}}};
 async function requestRaw(path,options={},key=q('key').value){
@@ -199,23 +224,70 @@ function renderChecklist(items){
     const row=document.createElement('li');
     const icon=document.createElement('span');icon.className='check'+(item.ready?'':' open');icon.textContent=item.ready?'✓':'!';
     const copy=document.createElement('span');const title=document.createElement('b');title.textContent=item.label;const note=document.createElement('small');note.textContent=item.note;copy.append(title,note);
-    const state=document.createElement('small');state.textContent=item.ready?'Ready':'Needs attention';
+    let state;
+    if(!item.ready&&item.route){
+      state=document.createElement('button');state.type='button';state.className='btn secondary readiness-action';state.textContent='Resolve';state.onclick=()=>navigate(item.route);
+    }else{state=document.createElement('small');state.textContent=item.ready?'Ready':'Needs attention'}
     row.append(icon,copy,state);list.append(row);
   }
 }
+function auditEvidence(item){
+  return {
+    sequence:item.sequence,
+    audit_id:item.audit_id,
+    occurred_at:item.occurred_at,
+    decision:item.decision,
+    reason_code:item.reason_code??null,
+    repair_rules:Array.isArray(item.repair_rules)?item.repair_rules:[],
+    event_hash:item.event_hash,
+    previous_hash:item.previous_hash,
+    signature:item.signature,
+    envelope:item.envelope
+  };
+}
+function openAudit(item,opener){
+  auditDialogOpener=opener;
+  text('audit-dialog-title',item.audit_id||'Audit record');
+  text('audit-dialog-summary',formatTime(item.occurred_at)+' · '+item.decision);
+  const grid=q('audit-detail-grid');grid.replaceChildren();
+  for(const [label,detail] of [['Outcome',item.decision],['Reason',item.reason_code||'None'],['Sequence',item.sequence],['Repair rules',Array.isArray(item.repair_rules)&&item.repair_rules.length?item.repair_rules.join(', '):'None'],['Event hash',item.event_hash||'—'],['Previous hash',item.previous_hash||'Genesis anchor']]){
+    const wrap=document.createElement('div');const term=document.createElement('dt');term.textContent=label;const valueNode=document.createElement('dd');valueNode.textContent=String(detail??'—');wrap.append(term,valueNode);grid.append(wrap);
+  }
+  q('audit-dialog-json').textContent=JSON.stringify(auditEvidence(item),null,2);
+  q('audit-dialog').showModal();
+  requestAnimationFrame(()=>q('audit-dialog-close').focus());
+}
+function auditDetailButton(item){
+  const button=document.createElement('button');button.type='button';button.className='btn secondary';button.textContent='Inspect';button.onclick=()=>openAudit(item,button);return button;
+}
 function renderDecisions(items){
+  auditRecords=items;
+  const selected=q('decision-filter').value;
+  const query=q('decision-search').value.trim().toLowerCase();
+  const filtered=items.filter(item=>{
+    if(selected!=='all'&&item.decision!==selected)return false;
+    if(!query)return true;
+    const searchable=[item.audit_id,item.reason_code,...(Array.isArray(item.repair_rules)?item.repair_rules:[])].join(' ').toLowerCase();
+    return searchable.includes(query);
+  });
   const body=q('decision-rows');body.replaceChildren();
-  for(const item of items.slice(0,12)){
+  for(const item of filtered.slice(0,25)){
     const row=document.createElement('tr');
     const time=document.createElement('td');time.textContent=new Date(item.occurred_at).toLocaleString();
     const decision=document.createElement('td');decision.className='decision '+item.decision;decision.textContent=item.decision;
     const reason=document.createElement('td');reason.textContent=item.reason_code||'—';
     const repairs=document.createElement('td');repairs.textContent=Array.isArray(item.repair_rules)?item.repair_rules.join(', ')||'None':String(item.repaired_fields_count??'None');
     const audit=document.createElement('td');const code=document.createElement('code');code.textContent=String(item.audit_id).slice(0,18)+'…';audit.append(code);
-    row.append(time,decision,reason,repairs,audit);body.append(row);
+    const action=document.createElement('td');action.append(auditDetailButton(item));
+    row.append(time,decision,reason,repairs,audit,action);body.append(row);
   }
-  q('decision-empty').hidden=items.length>0;
+  text('decision-filter-count',filtered.length+' of '+items.length+' records');
+  q('decision-empty').textContent=items.length?'No decisions match these filters.':'No retained decisions yet.';
+  q('decision-empty').hidden=filtered.length>0;
 }
+q('decision-filter').onchange=()=>renderDecisions(auditRecords);
+q('decision-search').oninput=()=>renderDecisions(auditRecords);
+q('decision-filter-clear').onclick=()=>{q('decision-filter').value='all';q('decision-search').value='';renderDecisions(auditRecords);q('decision-search').focus()};
 function renderAlerts(items){
   for(const list of [q('alert-list'),q('alerts-page-list')]){
     list.replaceChildren();
@@ -369,8 +441,8 @@ function renderEvidence(data){
   for(const [label,valid] of entries){const card=document.createElement('div');const title=document.createElement('span');title.textContent=label;const result=tag(valid?'Verified':'Attention',valid?'good':'bad');card.append(title,result);integrity.append(card)}
   const audits=data.audits.audits||[];
   const body=q('evidence-audit-rows');body.replaceChildren();
-  for(const item of audits){const row=document.createElement('tr');appendCells(row,[formatTime(item.occurred_at),tag(item.decision),value(item,'reason_code'),Array.isArray(item.repair_rules)?item.repair_rules.join(', ')||'None':'None',codeValue(item.audit_id)]);body.append(row)}
-  if(!audits.length)tableEmpty('evidence-audit-rows',5,'No retained audit records yet.');
+  for(const item of audits){const row=document.createElement('tr');appendCells(row,[formatTime(item.occurred_at),tag(item.decision),value(item,'reason_code'),Array.isArray(item.repair_rules)?item.repair_rules.join(', ')||'None':'None',codeValue(item.audit_id),auditDetailButton(item)]);body.append(row)}
+  if(!audits.length)tableEmpty('evidence-audit-rows',6,'No retained audit records yet.');
   text('audit-chain-label',data.chain.valid?'Audit chain verified':'Audit chain requires attention');
   q('audit-chain-label').className='integrity-label '+(data.chain.valid?'good':'bad');
 }
@@ -395,13 +467,38 @@ function renderUsage(data){
   text('retention-days',value(usage.entitlements,'retention_days'));
   text('payment-state',value(usage,'payment_processing','billing_status'));
   const entitlements=q('entitlement-list');entitlements.replaceChildren();
-  for(const [name,enabled] of Object.entries(usage.entitlements||{})){const row=document.createElement('div');const title=document.createElement('dt');title.textContent=name.replaceAll('_',' ');const result=document.createElement('dd');result.append(tag(enabled?'Included':'Unavailable',enabled?'good':''));row.append(title,result);entitlements.append(row)}
+  const entitlementValues=[
+    ['Validations per month',number(usage.entitlements?.validations_per_month).toLocaleString()],
+    ['Retention',number(usage.entitlements?.retention_days)+' days'],
+    ['Managed workflows',usage.entitlements?.managed_workflows==='full'?'Complete managed control plane':'Evaluation workflows'],
+    ['Overage',usage.entitlements?.overage==='disabled'?'Disabled — quota fails closed':value(usage.entitlements,'overage')]
+  ];
+  for(const [name,detail] of entitlementValues){const row=document.createElement('div');const title=document.createElement('dt');title.textContent=name;const result=document.createElement('dd');result.textContent=String(detail);row.append(title,result);entitlements.append(row)}
   if(!entitlements.children.length){const row=document.createElement('div');const title=document.createElement('dt');title.textContent='Status';const result=document.createElement('dd');result.textContent='No entitlements reported.';row.append(title,result);entitlements.append(row)}
   const plans=q('plan-grid');plans.replaceChildren();
-  for(const plan of data.plans.plans||[]){const card=document.createElement('article');const name=document.createElement('h4');name.textContent=value(plan,'display_name','name','id');const price=document.createElement('strong');const monthly=number(plan.price?.monthly_equivalent_minor);price.textContent=monthly?'$'+(monthly/100).toLocaleString()+' / month equivalent':'Not for sale';const detail=document.createElement('p');detail.textContent=String(value(plan,'audience','description','summary'));card.append(name,price,detail);plans.append(card)}
+  for(const plan of data.plans.plans||[]){
+    const card=document.createElement('article');card.className='plan-option';
+    const name=document.createElement('h4');name.textContent=value(plan,'display_name','name','id');
+    const price=document.createElement('strong');price.className='price';const amount=number(plan.price?.amount_minor);price.textContent=amount?'$'+(amount/100).toLocaleString()+' / 90 days':'Not for sale';
+    const equivalent=document.createElement('p');const monthly=number(plan.price?.monthly_equivalent_minor);equivalent.textContent=monthly?'$'+(monthly/100).toLocaleString()+' monthly equivalent · invite only':String(value(plan,'availability'));
+    const detail=document.createElement('p');detail.textContent=String(value(plan,'audience','description','summary'));
+    const facts=document.createElement('dl');
+    for(const [label,fact] of [['Usage',number(plan.entitlements?.validations_per_month).toLocaleString()+' validations / month'],['Retention',number(plan.entitlements?.retention_days)+' days'],['Workflows',plan.entitlements?.managed_workflows==='full'?'Complete managed control plane':'Evaluation only'],['Support',value(plan,'support')],['Collection',plan.payment_collection==='manual_provider_setup_required'?'Manual during private beta':'Disabled']]){const row=document.createElement('div');const term=document.createElement('dt');term.textContent=label;const result=document.createElement('dd');result.textContent=String(fact);row.append(term,result);facts.append(row)}
+    card.append(name,price,equivalent,detail,facts);plans.append(card)
+  }
   const summary=q('billing-summary');summary.replaceChildren();
   for(const [label,item] of [['Period',value(data.billing,'period')],['Amount due',data.billing.amount_due??'Not calculated'],['Plan',value(usage,'plan_name','plan')],['Payment automation',value(data.billing,'payment_processing')]]){const wrap=document.createElement('div');const term=document.createElement('span');term.textContent=label;const result=document.createElement('strong');result.textContent=String(item);wrap.append(term,result);summary.append(wrap)}
-  text('billing-boundary-copy',data.billing.payment_processing==='integration_required'?'External billing is intentionally blocked until a provider is configured and tested.':'Billing provider state returned by the managed service.');
+  const billingBlocked=data.billing.payment_processing==='integration_required'||usage.payment_processing==='manual_provider_setup_required';
+  q('billing-checkout').disabled=billingBlocked;q('billing-portal').disabled=billingBlocked;
+  text('billing-boundary-copy',billingBlocked?'Enrollment is operator-led and manually invoiced. Checkout and the billing portal remain disabled until the real provider sandbox passes.':'Billing provider state returned by the managed service.');
+}
+function renderIntegration(data){
+  const validations=number(data.usage?.usage?.validation_count);
+  const actionReady=(data.descriptors?.descriptors||[]).length>0&&data.checkpoint?.revision!==undefined;
+  text('integration-key-state','Connected');text('integration-decision-state',validations>0?'Observed':'Run first call');text('integration-action-state',actionReady?'Configured':'Configure');
+  q('integration-key-state').className='good';q('integration-decision-state').className=validations>0?'good':'bad';q('integration-action-state').className=actionReady?'good':'bad';
+  const active=validations>0&&actionReady;
+  q('integration-state').className='status-pill '+(active?'':'warn');text('integration-state-text',active?'Execution path configured':'Setup in progress');
 }
 function renderSettings(data){
   const lifecycle=data.lifecycle.lifecycle||{};
@@ -444,18 +541,19 @@ function renderOverview(data){
   q('protection-state').className='status-pill '+(integrityValid?'':'bad');
   text('protection-state-text',integrityValid?'Protection healthy':'Integrity attention required');
   renderChecklist([
-    {label:'Managed service readiness',ready:data.serviceHealth.status==='ok'&&data.serviceReadiness.status==='ready',note:'Liveness and dependency readiness are observed through the same service boundary'},
-    {label:'Control-plane integrity',ready:integrityValid,note:integrityValid?'Signed state verified':'Open integrity details before action traffic'},
-    {label:'Production schema admission',ready:Boolean(production&&production.schema_enforcement==='enforce'&&productionReleased),note:productionReleased?'Production has a reviewed release':'Promote and enforce a reviewed schema'},
-    {label:'Schema registry',ready:schemas.length>0,note:schemas.length+' latest registered contract(s) are reachable'},
-    {label:'Action classification',ready:descriptors.length>0,note:descriptors.length+' signed action descriptor(s) are reachable'},
-    {label:'Approval queue',ready:pendingChallenges.length===0,note:pendingChallenges.length+' pending approval challenge(s)'},
-    {label:'Independent checkpoint',ready:Boolean(data.checkpoint&&data.checkpoint.revision!==undefined),note:'Latest idempotency checkpoint is available for comparison'},
-    {label:'Alert delivery',ready:(data.webhooks.webhooks||[]).some(item=>item.disabled_at===null||item.enabled===true),note:'Configure and exercise a customer-owned HTTPS receiver'},
-    {label:'Audit chain',ready:Boolean(data.chain.valid),note:data.chain.valid?'Retained decisions verify':'Stop and investigate chain integrity'}
+    {label:'Managed service readiness',ready:data.serviceHealth.status==='ok'&&data.serviceReadiness.status==='ready',note:'Liveness and dependency readiness are observed through the same service boundary',route:'evidence'},
+    {label:'Control-plane integrity',ready:integrityValid,note:integrityValid?'Signed state verified':'Open integrity details before action traffic',route:'evidence'},
+    {label:'Production schema admission',ready:Boolean(production&&production.schema_enforcement==='enforce'&&productionReleased),note:productionReleased?'Production has a reviewed release':'Promote and enforce a reviewed schema',route:'schemas'},
+    {label:'Schema registry',ready:schemas.length>0,note:schemas.length+' latest registered contract(s) are reachable',route:'schemas'},
+    {label:'Action classification',ready:descriptors.length>0,note:descriptors.length+' signed action descriptor(s) are reachable',route:'actions'},
+    {label:'Approval queue',ready:pendingChallenges.length===0,note:pendingChallenges.length+' pending approval challenge(s)',route:'approvals'},
+    {label:'Independent checkpoint',ready:Boolean(data.checkpoint&&data.checkpoint.revision!==undefined),note:'Latest idempotency checkpoint is available for comparison',route:'actions'},
+    {label:'Alert delivery',ready:(data.webhooks.webhooks||[]).some(item=>item.disabled_at===null||item.enabled===true),note:'Configure and exercise a customer-owned HTTPS receiver',route:'alerts'},
+    {label:'Audit chain',ready:Boolean(data.chain.valid),note:data.chain.valid?'Retained decisions verify':'Stop and investigate chain integrity',route:'evidence'}
   ]);
   renderDecisions(data.audits.audits||[]);
   renderAlerts(data.alerts.alerts||[]);
+  renderIntegration(data);
 }
 q('load').onclick=async()=>{
   const generation=++loadGeneration;
@@ -465,14 +563,14 @@ q('load').onclick=async()=>{
   const options={signal:controller.signal};
   const loadGet=path=>get(path,options,key);
   const loadGetOptional=path=>getOptional(path,options,key);
-  clearPanels();q('status').className='';q('status').textContent='Loading…';resetDerivedViews();workspace.dataset.connected='false';text('connection-label','Connecting');
+  clearPanels();q('status').className='';q('status').textContent='Loading…';resetDerivedViews();workspace.dataset.connected='false';setCredentialMode('editing');text('connection-label','Connecting');
   try{
     const [serviceHealth,serviceReadiness,lifecycle]=await Promise.all([loadGet('/healthz'),loadGet('/readyz'),loadGet('/v1/admin/tenant/lifecycle')]);
     if(generation!==loadGeneration)return;
     q('lifecycle').textContent=JSON.stringify(lifecycle,null,2);
     text('tenant-name',lifecycle.tenant_name||lifecycle.tenant_id||'Tenant');
     text('tenant-avatar',String(lifecycle.tenant_name||lifecycle.tenant_id||'Tenant').slice(0,1).toUpperCase());
-    if(lifecycle.lifecycle.status!=='active'){workspace.dataset.connected='false';text('connection-label','Access locked');q('protection-state').className='status-pill bad';text('protection-state-text','Tenant '+lifecycle.lifecycle.status);q('status').className='bad';q('status').textContent='Loaded — operational access is locked';return}
+    if(lifecycle.lifecycle.status!=='active'){workspace.dataset.connected='false';setCredentialMode('editing');text('connection-label','Access locked');q('protection-state').className='status-pill bad';text('protection-state-text','Tenant '+lifecycle.lifecycle.status);q('status').className='bad';q('status').textContent='Loaded — operational access is locked';return}
     const [usage,chain,audits,alerts,intelligence,environments,releases,releaseChain,schemas,policy,descriptors,challenges,webhooks,deliveries,checkpoint,anchorDeliveries,reconciliationPending,reconciliationHistory,reconciliationChain,billing,integrity,ruleset,apiKeys,plans]=await Promise.all([
       loadGet('/v1/usage'),loadGet('/v1/audits/verify'),loadGet('/v1/audits?limit=25'),loadGet('/v1/alerts'),loadGet('/v1/intelligence'),loadGet('/v1/environments'),loadGet('/v1/schema-releases?limit=25'),loadGet('/v1/schema-releases/verify'),
       loadGet('/v1/schemas'),loadGet('/v1/admin/policy'),loadGet('/v1/admin/actions/descriptors'),loadGet('/v1/actions/challenges?limit=100'),
@@ -500,11 +598,12 @@ q('load').onclick=async()=>{
     q('api-keys').textContent=JSON.stringify(apiKeys,null,2);
     workspaceData={serviceHealth,serviceReadiness,lifecycle,usage,chain,audits,alerts,intelligence,environments,releases,releaseChain,schemas,policy,descriptors,challenges,webhooks,deliveries,checkpoint,anchorDeliveries,reconciliationPending,reconciliationHistory,reconciliationChain,billing,integrity,ruleset,apiKeys,plans};
     renderOverview(workspaceData);renderSchemas(workspaceData);renderEnvironments(workspaceData);renderActions(workspaceData);renderChallenges(workspaceData);renderAlertOperations(workspaceData);renderIntelligence(workspaceData);renderEvidence(workspaceData);renderAccess(workspaceData);renderUsage(workspaceData);renderSettings(workspaceData);
-    workspace.dataset.connected='true';text('connection-label','Connected');q('status').className='good';q('status').textContent='Workspace loaded';
-  }catch(error){if(generation!==loadGeneration||error?.name==='AbortError')return;workspace.dataset.connected='false';text('connection-label','Not connected');clearPanels();resetDerivedViews();q('status').className='bad';q('status').textContent=error instanceof Error?error.message:'Request failed'}
+    workspace.dataset.connected='true';setCredentialMode('connected');text('connection-label','Connected');q('status').className='good';q('status').textContent='Workspace loaded';
+  }catch(error){if(generation!==loadGeneration||error?.name==='AbortError')return;workspace.dataset.connected='false';setCredentialMode('editing');text('connection-label','Not connected');clearPanels();resetDerivedViews();q('status').className='bad';q('status').textContent=error instanceof Error?error.message:'Request failed'}
   finally{if(generation===loadGeneration)activeLoadController=null}
 };
 q('key').addEventListener('keydown',event=>{if(event.key==='Enter')q('load').click()});
+q('change-key').onclick=()=>{setCredentialMode('editing');q('key').focus();q('key').select()};
 async function refreshSchemas(){
   const [schemas,releases,releaseChain]=await Promise.all([get('/v1/schemas'),get('/v1/schema-releases?limit=25'),get('/v1/schema-releases/verify')]);
   Object.assign(workspaceData,{schemas,releases,releaseChain});q('schemas').textContent=JSON.stringify(schemas,null,2);q('releases').textContent=JSON.stringify({chain:releaseChain,releases:releases.releases},null,2);renderSchemas(workspaceData);
@@ -548,9 +647,12 @@ function showSecret(id,label,secret){
   node.append(copy,button);
 }
 bindForm('validate-form','validate-status',async()=>{
-  const result=await request('/v1/validate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({tool_name:q('validate-tool').value,tool_schema:parseJson('validate-schema'),raw_arguments:parseJson('validate-arguments'),context:{environment:q('validate-environment').value,adapter:'json_schema'}})});
+  const node=q('validate-result');node.hidden=true;node.replaceChildren();
+  const response=await requestRaw('/v1/validate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({tool_name:q('validate-tool').value,tool_schema:parseJson('validate-schema'),raw_arguments:parseJson('validate-arguments'),context:{environment:q('validate-environment').value,adapter:'json_schema'}})});
+  const result=response.body;
+  if(!response.ok&&!(response.status===422&&result?.decision==='rejected'))throw new Error(result?.message||result?.error||('HTTP '+response.status));
   await refreshDecisions();
-  const node=q('validate-result');node.hidden=false;node.replaceChildren();const outcome=document.createElement('strong');outcome.textContent=value(result,'decision','outcome');const reason=document.createElement('span');reason.textContent='Reason: '+value(result,'reason_code','reason');const audit=document.createElement('code');audit.textContent='Audit '+value(result,'audit_id');node.append(outcome,reason,audit);
+  node.hidden=false;const outcome=document.createElement('strong');outcome.textContent=value(result,'decision','outcome');const reason=document.createElement('span');reason.textContent='Reason: '+value(result,'reason_code','reason');const audit=document.createElement('code');audit.textContent='Audit '+value(result,'audit_id');node.append(outcome,reason,audit);
   q('challenge-decision').value=JSON.stringify(result,null,2);q('action-decision').value=JSON.stringify(result,null,2);return 'Decision recorded';
 });
 bindForm('compile-form','compile-status',async()=>{const result=await request('/v1/contracts/compile',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({target:q('compile-target').value,tool_name:q('compile-tool').value,tool_schema:parseJson('compile-schema')})});showJson('compile-result',result);return 'Contract compiled'});
@@ -603,7 +705,7 @@ q('request-deletion').onclick=async()=>{
     const result=await request('/v1/admin/tenant/deletion-request',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({confirm_tenant_id:q('deletion-confirm').value})});
     q('lifecycle').textContent=JSON.stringify({lifecycle:result.lifecycle},null,2);
     q('deletion-result').textContent='Deletion requested. An operator must verify the export before execution.';
-    workspace.dataset.connected='false';text('connection-label','Access locked');
+    workspace.dataset.connected='false';setCredentialMode('editing');text('connection-label','Access locked');
     q('status').className='bad';
     q('status').textContent='Loaded — operational access is locked';
   }catch(error){q('deletion-result').textContent=error instanceof Error?error.message:'Deletion request failed'}

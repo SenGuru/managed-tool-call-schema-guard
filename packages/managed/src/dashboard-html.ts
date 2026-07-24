@@ -1,6 +1,8 @@
 const icons: Record<string, string> = {
   overview:
     '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>',
+  integrate:
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 12h8M12 8v8"/><path d="M5 5h4V2M19 5h-4V2M5 19h4v3M19 19h-4v3"/><rect x="5" y="5" width="14" height="14" rx="2"/></svg>',
   decisions:
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h10M4 19h7"/><circle cx="18" cy="16" r="3"/></svg>',
   schemas:
@@ -32,6 +34,7 @@ const navigation = [
     label: 'Workspace',
     items: [
       ['overview', 'Overview'],
+      ['integrate', 'Integration guide'],
       ['decisions', 'Tool-call decisions'],
     ],
   },
@@ -102,16 +105,20 @@ export function dashboardHtml(publicMode = false): string {
 </aside>
 <button class="mobile-backdrop" id="mobile-backdrop" type="button" aria-label="Close navigation"></button>
 
-<section class="workspace" id="workspace" data-connected="false">
+<section class="workspace" id="workspace" data-connected="false" data-credential="editing">
   <header class="workspace-bar">
     <button class="mobile-nav-toggle" id="mobile-nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
     <div class="workspace-heading"><h1 id="page-title">Protection overview</h1><p id="page-description">Current readiness, usage, decisions, and open operational work.</p></div>
     <div class="workspace-actions"><span class="connection-dot"></span><span class="connection-label" id="connection-label">Not connected</span><button class="icon-button" type="button" data-route-target="settings" aria-label="Open tenant settings">${icons.settings}</button></div>
   </header>
   <section class="credential" aria-label="Workspace connection">
-    <label class="sr-only" for="key">Tenant API key</label>
-    <input id="key" type="password" autocomplete="off" aria-describedby="credential-help" placeholder="Tenant API key — held only in this tab">
-    <button class="btn" id="load" type="button">Load workspace</button>
+    <div class="credential-editor">
+      <label class="sr-only" for="key">Tenant API key</label>
+      <input id="key" type="password" autocomplete="off" aria-describedby="credential-help" placeholder="Tenant API key — held only in this tab">
+      <button class="btn" id="load" type="button">Load workspace</button>
+    </div>
+    <div class="credential-connected" id="credential-connected" hidden><span class="connection-dot"></span><div><strong>Workspace connected</strong><small>The tenant key remains only in this tab’s memory.</small></div></div>
+    <button class="btn secondary" id="change-key" type="button" hidden>Change key</button>
     <button class="btn secondary" id="export" type="button">Download tenant export</button>
     <small class="credential-help" id="credential-help">${description}</small>
     <p id="status" role="status" aria-live="polite"></p>
@@ -134,6 +141,52 @@ export function dashboardHtml(publicMode = false): string {
           <article class="panel"><div class="panel-head"><div><h3>Workspace inventory</h3><p>Reachable tenant authority.</p></div></div><div class="panel-body inline-stat"><div><strong id="environment-total">—</strong><span>Environments</span></div><div><strong id="api-key-total">—</strong><span>Active API keys</span></div><div><strong id="service-state">—</strong><span>Service readiness</span></div></div></article>
         </div>
       </div>
+    </section>
+
+    <section class="route-view" data-route-view="integrate" hidden>
+      <div class="page-head"><div class="page-head-copy"><span class="page-kicker">Workspace / Activation</span><h2>Put the checkpoint on the execution path.</h2><p>Connect one real tool call, verify all three deterministic outcomes, then bind side effects to approval, reservation, and completion evidence.</p></div><span class="status-pill warn" id="integration-state"><i class="dot"></i><span id="integration-state-text">Connect a tenant</span></span></div>
+      <div class="activation-strip">
+        <article><span>1</span><div><strong>Authenticate safely</strong><small>Use a scoped key from an owner-only file or secret manager.</small></div><b id="integration-key-state">Waiting</b></article>
+        <article><span>2</span><div><strong>Validate before dispatch</strong><small>Only valid or proof-carrying repaired calls may continue.</small></div><b id="integration-decision-state">Waiting</b></article>
+        <article><span>3</span><div><strong>Account for execution</strong><small>High-risk actions require authority, reservation, and a terminal ledger state.</small></div><b id="integration-action-state">Waiting</b></article>
+      </div>
+      <article class="panel top-gap integration-panel">
+        <div class="panel-head"><div><h3>Managed SDK boundary</h3><p>The key is read from the environment; rejected calls never reach the tool dispatcher.</p></div><span class="method-badge">@schema-guard/sdk</span></div>
+        <div class="integration-layout">
+          <ol class="integration-steps">
+            <li><strong>Create a least-privilege key</strong><span>Start with <code>validate</code>, then add action scopes only for workers that execute side effects.</span><button class="btn secondary" type="button" data-route-target="access">Open access keys</button></li>
+            <li><strong>Validate the exact raw arguments</strong><span>Keep the original provider payload and canonical schema together at the checkpoint.</span><button class="btn secondary" type="button" data-route-target="decisions">Try validation</button></li>
+            <li><strong>Fail closed before the tool call</strong><span>Stop on rejection, approval requirements, duplicate reservations, timeout, or unavailable authority.</span><button class="btn secondary" type="button" data-route-target="actions">Open execution controls</button></li>
+          </ol>
+          <pre class="integration-code"><code>import { SchemaGuardClient } from "@schema-guard/sdk";
+
+const guard = new SchemaGuardClient({
+  baseUrl: process.env.AKRIVEN_BASE_URL,
+  apiKey: process.env.AKRIVEN_API_KEY
+});
+
+const decision = await guard.validate({
+  tool_name: "counter",
+  tool_schema: schema,
+  raw_arguments: modelArguments,
+  context: { environment: "production" }
+});
+
+if (decision.decision === "rejected") {
+  throw new Error("Tool execution blocked");
+}
+
+await dispatchTool(decision.valid_arguments);</code></pre>
+        </div>
+      </article>
+      <div class="content-grid equal top-gap">
+        <article class="panel"><div class="panel-head"><div><h3>CLI verification</h3><p>Keep the API key in a mode-0600 file and inspect managed state without exposing it in process arguments.</p></div></div><pre class="compact-code"><code>schemaguard managed \\
+  --base-url https://api.akriven.com \\
+  --api-key-file /owner-only/akriven.key \\
+  --resource audit-verification</code></pre></article>
+        <article class="panel"><div class="panel-head"><div><h3>Side-effect protocol</h3><p>The execution sequence is an enforceable protocol, not an advisory checklist.</p></div></div><div class="protocol-flow"><span>Validate</span><i>→</i><span>Approve</span><i>→</i><span>Reserve</span><i>→</i><span>Execute</span><i>→</i><span>Complete</span></div><div class="panel-body"><p class="muted">Unknown outcomes enter reconciliation and remain blocked until checked against the authoritative downstream ledger.</p></div></article>
+      </div>
+      <p class="raw-note">Package publication is not claimed by this private-beta build. The reviewed SDK, CLI, and source artifacts are delivered through operator onboarding until release provenance is certified.</p>
     </section>
 
     <section class="route-view" data-route-view="decisions" hidden>
@@ -161,7 +214,7 @@ export function dashboardHtml(publicMode = false): string {
           </div>
         </form>
       </div>
-      <article class="panel top-gap"><div class="panel-head"><div><h3>Decision explorer</h3><p>Recent valid, safely repaired, and rejected outcomes.</p></div><span class="integrity-label" id="audit-chain-label">Chain not loaded</span></div><div class="panel-body flush"><div class="table-scroll"><table><thead><tr><th>Time</th><th>Outcome</th><th>Reason</th><th>Repairs</th><th>Audit ID</th></tr></thead><tbody id="decision-rows"></tbody></table><p class="muted empty-copy" id="decision-empty">Load the workspace to review decisions.</p></div></div></article>
+      <article class="panel top-gap"><div class="panel-head"><div><h3>Decision explorer</h3><p>Filter retained outcomes and open the signed, value-free record behind any decision.</p></div><span class="integrity-label" id="audit-chain-label">Chain not loaded</span></div><div class="table-tools"><label>Outcome<select class="field" id="decision-filter"><option value="all">All outcomes</option><option value="valid">Valid</option><option value="valid_with_repair">Safely repaired</option><option value="rejected">Rejected</option></select></label><label>Search<input class="field" id="decision-search" type="search" autocomplete="off" placeholder="Audit ID, reason, or repair rule"></label><button class="btn secondary" id="decision-filter-clear" type="button">Clear filters</button><span class="muted" id="decision-filter-count" aria-live="polite"></span></div><div class="panel-body flush"><div class="table-scroll"><table><thead><tr><th>Time</th><th>Outcome</th><th>Reason</th><th>Repairs</th><th>Audit ID</th><th></th></tr></thead><tbody id="decision-rows"></tbody></table><p class="muted empty-copy" id="decision-empty">Load the workspace to review decisions.</p></div></div></article>
     </section>
 
     <section class="route-view" data-route-view="schemas" hidden>
@@ -320,7 +373,7 @@ export function dashboardHtml(publicMode = false): string {
     <section class="route-view" data-route-view="evidence" hidden>
       <div class="page-head"><div class="page-head-copy"><span class="page-kicker">Operate / Verifiable state</span><h2>Evidence that survives review.</h2><p>Verify every control-plane chain and export tenant-owned evidence without credential verifiers or encrypted secrets.</p></div><div class="page-actions"><button class="btn secondary" id="evidence-audit-csv" type="button">Export audit CSV</button><button class="btn" id="export-secondary" type="button">Download tenant export</button></div></div>
       <div class="integrity-grid" id="integrity-components"><p>Load the workspace to verify component integrity.</p></div>
-      <article class="panel top-gap"><div class="panel-head"><div><h3>Recent audit evidence</h3><p>Value-free decision records.</p></div></div><div class="panel-body flush table-scroll"><table><thead><tr><th>Time</th><th>Decision</th><th>Reason</th><th>Repairs</th><th>Audit ID</th></tr></thead><tbody id="evidence-audit-rows"></tbody></table></div></article>
+      <article class="panel top-gap"><div class="panel-head"><div><h3>Recent audit evidence</h3><p>Open any record to inspect its signed envelope and chain linkage.</p></div></div><div class="panel-body flush table-scroll"><table><thead><tr><th>Time</th><th>Decision</th><th>Reason</th><th>Repairs</th><th>Audit ID</th><th></th></tr></thead><tbody id="evidence-audit-rows"></tbody></table></div></article>
       <div class="evidence-grid top-gap">${evidenceBlock('control-integrity', 'Control-plane integrity')}${evidenceBlock('chain', 'Audit chain')}${evidenceBlock('audits', 'Audit payloads', true)}${evidenceBlock('export-result', 'Tenant export result', true)}</div>
       <p class="raw-note">Raw evidence is value-free. API keys, webhook credentials, and sensitive arguments are excluded.</p>
     </section>
@@ -384,6 +437,13 @@ export function dashboardHtml(publicMode = false): string {
   </main>
 </section>
 </div>
+<dialog class="evidence-dialog" id="audit-dialog" aria-labelledby="audit-dialog-title">
+  <div class="evidence-dialog-surface">
+    <div class="evidence-dialog-head"><div><span class="dialog-kicker">Signed decision evidence</span><h2 id="audit-dialog-title">Audit record</h2><p id="audit-dialog-summary"></p></div><button class="icon-button" id="audit-dialog-close" type="button" aria-label="Close audit record">×</button></div>
+    <dl class="audit-detail-grid" id="audit-detail-grid"></dl>
+    <details class="evidence-block" open><summary><span>Value-free signed envelope</span><small>Raw evidence</small></summary><pre id="audit-dialog-json">—</pre></details>
+  </div>
+</dialog>
 <dialog class="action-dialog" id="action-dialog" aria-labelledby="action-dialog-title" aria-describedby="action-dialog-copy">
   <div class="dialog-surface">
     <div class="dialog-mark" id="action-dialog-mark" aria-hidden="true">?</div>

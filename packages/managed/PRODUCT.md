@@ -46,6 +46,14 @@ the same authority through release and execution coordination.
 ## Capabilities and Constraints
 
 - Preserve all existing 19 read panels and 29 guarded operation presets.
+- Give a new operator an activation path from SDK or CLI installation through
+  validation and the approval/reservation execution protocol without implying
+  that an unpublished package or external provider has been proven.
+- Keep the signed audit envelope inspectable from both the decision explorer
+  and evidence route, while withholding sensitive raw arguments.
+- State the complete paid design-partner offer in-product: term, prepaid
+  amount, usage allowance, retention, included workflows, support, and manual
+  enrollment boundary.
 - API keys remain in tab memory and must never be persisted by the dashboard.
 - Raw secrets and sensitive tool arguments must not appear in UI logs or
   cross-tenant intelligence.
