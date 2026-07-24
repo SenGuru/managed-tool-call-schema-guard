@@ -5,9 +5,14 @@ const routeMeta={
   overview:{title:'Protection overview',description:'Current readiness, usage, decisions, and open operational work.'},
   decisions:{title:'Tool-call decisions',description:'Validate calls and inspect accountable valid, repaired, and rejected outcomes.'},
   schemas:{title:'Schemas & releases',description:'Register contracts, review drift, and control runtime admission by environment.'},
-  actions:{title:'Actions & approvals',description:'Govern high-risk execution through approval, idempotency, anchors, and reconciliation.'},
+  environments:{title:'Environments',description:'Create isolated runtime boundaries and control policy and schema admission.'},
+  actions:{title:'Action execution',description:'Classify and execute side effects through idempotency, anchors, and reconciliation.'},
+  approvals:{title:'Approval inbox',description:'Create, approve, and cancel time-bounded authorization challenges.'},
   alerts:{title:'Alerts & delivery',description:'Review incidents and operate signed webhook delivery, retry, dead-letter, and redrive.'},
+  intelligence:{title:'Compatibility intelligence',description:'Review privacy-safe failure patterns and publish verified compatibility evidence.'},
   evidence:{title:'Evidence & integrity',description:'Verify audit chains, signed control state, rulesets, and tenant exports.'},
+  access:{title:'Access keys',description:'Create scoped tenant credentials, copy secrets once, and revoke access deliberately.'},
+  usage:{title:'Usage & billing',description:'Inspect entitlements, quota, plan boundaries, and billing-provider readiness.'},
   workbench:{title:'Managed API workbench',description:'Use editable, guarded requests for the complete managed API surface.'},
   settings:{title:'Tenant settings',description:'Inspect lifecycle, policy, keys, billing boundaries, retention, and deletion controls.'}
 };
@@ -16,6 +21,8 @@ const workspace=q('workspace');
 let mobileNavOpener=null;
 let loadGeneration=0;
 let activeLoadController=null;
+let workspaceData=null;
+let challengeFilter='pending';
 const routeViews=Array.from(document.querySelectorAll('[data-route-view]'));
 const routeLinks=Array.from(document.querySelectorAll('.nav-link[data-route]'));
 const allRouteTriggers=Array.from(document.querySelectorAll('[data-route]'));
@@ -87,10 +94,15 @@ navigate(routeFromPath(),{replace:true});
 const panelIds=['lifecycle','usage','chain','alerts','releases','schemas','policy','descriptors','challenges','intelligence','audits','webhooks','deliveries','actions','reconciliation','billing','control-integrity','rulesets','api-keys','export-result'];
 const clearPanels=()=>{for(const id of panelIds)q(id).textContent='—'};
 function resetDerivedViews(){
-  for(const id of ['usage-total','usage-limit','accept-rate','repair-total','rejection-total','plan-name','open-alert-total','environment-total','api-key-total'])text(id,'—');
+  for(const id of ['usage-total','usage-limit','accept-rate','repair-total','rejection-total','plan-name','open-alert-total','environment-total','api-key-total','service-state'])text(id,'—');
   text('tenant-name','Tenant workspace');text('tenant-avatar','A');text('protection-state-text','Awaiting tenant');
   q('protection-state').className='status-pill';q('quota-meter').style.removeProperty('--quota-scale');q('quota-meter-track').setAttribute('aria-valuenow','0');
-  q('decision-rows').replaceChildren();q('decision-empty').hidden=false;
+  for(const id of ['decision-rows','schema-rows','release-rows','environment-rows','descriptor-rows','anchor-delivery-rows','reconciliation-pending-rows','reconciliation-history-rows','challenge-rows','webhook-rows','delivery-rows','compatibility-rows','quality-rows','evidence-audit-rows','api-key-rows'])q(id)?.replaceChildren();
+  q('decision-empty').hidden=false;
+  for(const id of ['validate-result','compile-result','action-evaluate-result','checkpoint-compare-result','webhook-secret','api-key-secret']){const node=q(id);if(node){node.hidden=true;node.replaceChildren()}}
+  for(const id of ['release-chain-label','checkpoint-label','reconciliation-chain-label','audit-chain-label','privacy-threshold-label']){if(q(id))text(id,'Not loaded')}
+  for(const id of ['failure-cluster-total','compatibility-total','recommendation-total','network-cluster-total','usage-period','usage-current','usage-cap','retention-days','payment-state','lifecycle-status','lifecycle-reason','lifecycle-deletion-time','lifecycle-updated'])if(q(id))text(id,'—');
+  for(const id of ['entitlement-list','plan-grid','billing-summary','integrity-components','recommendation-list','failure-cluster-list'])q(id)?.replaceChildren();
   const resetList=(id,message)=>{const list=q(id);list.replaceChildren();const row=document.createElement('li');row.textContent=message;list.append(row)};
   resetList('readiness-list','Load the workspace to evaluate readiness.');
   resetList('alert-list','Load the workspace to review alerts.');
@@ -113,6 +125,33 @@ const compactAlerts=items=>items.map(({id,kind,severity,created_at,acknowledged_
 const text=(id,value)=>{q(id).textContent=String(value)};
 const number=value=>Number.isFinite(Number(value))?Number(value):0;
 const percent=value=>Math.max(0,Math.min(100,value));
+const value=(object,...keys)=>{for(const key of keys)if(object&&object[key]!==undefined&&object[key]!==null)return object[key];return '—'};
+const formatTime=input=>input&&input!=='—'?new Date(input).toLocaleString():'—';
+const short=(input,length=20)=>{const output=String(input??'—');return output.length>length?output.slice(0,length)+'…':output};
+const status=(id,message,tone='')=>{const node=q(id);node.className='form-status '+tone;node.textContent=message};
+const parseJson=id=>{try{return JSON.parse(q(id).value)}catch{throw new Error('Enter valid JSON in the highlighted field')}};
+function tableEmpty(id,columns,message){
+  const body=q(id);body.replaceChildren();const row=document.createElement('tr');const cell=document.createElement('td');
+  cell.colSpan=columns;cell.className='empty-row';cell.textContent=message;row.append(cell);body.append(row);
+}
+function appendCells(row,items){
+  for(const item of items){const cell=document.createElement('td');if(item instanceof Node)cell.append(item);else cell.textContent=String(item??'—');row.append(cell)}
+}
+function codeValue(input){const code=document.createElement('code');code.textContent=short(input,24);code.title=String(input??'');return code}
+function tag(input,tone=''){const node=document.createElement('span');node.className='tag '+tone;node.textContent=String(input??'—');return node}
+function actionButton(label,handler,tone='secondary'){
+  const button=document.createElement('button');button.type='button';button.className='btn '+tone;button.textContent=label;
+  button.onclick=async()=>{button.disabled=true;try{await handler()}catch(error){q('status').className='bad';q('status').textContent=error instanceof Error?error.message:'Action failed'}finally{button.disabled=false}};
+  return button;
+}
+function syncEnvironmentSelects(environments){
+  const ids=['release-environment','environment-select','descriptor-environment','action-environment','challenge-environment'];
+  for(const id of ids){
+    const select=q(id);if(!select)continue;const selected=select.value;select.replaceChildren();
+    for(const environment of environments){const option=document.createElement('option');option.value=environment.id||environment.name;option.textContent=environment.name;option.dataset.name=environment.name;select.append(option)}
+    if(Array.from(select.options).some(option=>option.value===selected))select.value=selected;
+  }
+}
 function renderChecklist(items){
   const list=q('readiness-list');list.replaceChildren();
   for(const item of items){
@@ -130,8 +169,9 @@ function renderDecisions(items){
     const time=document.createElement('td');time.textContent=new Date(item.occurred_at).toLocaleString();
     const decision=document.createElement('td');decision.className='decision '+item.decision;decision.textContent=item.decision;
     const reason=document.createElement('td');reason.textContent=item.reason_code||'—';
+    const repairs=document.createElement('td');repairs.textContent=Array.isArray(item.repair_rules)?item.repair_rules.join(', ')||'None':String(item.repaired_fields_count??'None');
     const audit=document.createElement('td');const code=document.createElement('code');code.textContent=String(item.audit_id).slice(0,18)+'…';audit.append(code);
-    row.append(time,decision,reason,audit);body.append(row);
+    row.append(time,decision,reason,repairs,audit);body.append(row);
   }
   q('decision-empty').hidden=items.length>0;
 }
@@ -151,6 +191,182 @@ function renderAlerts(items){
     }
     if(list.children.length===0){const row=document.createElement('li');row.textContent='No open alerts.';list.append(row)}
   }
+}
+function renderSchemas(data){
+  const schemas=data.schemas.schemas||[];
+  const releases=data.releases.releases||[];
+  const schemaBody=q('schema-rows');schemaBody.replaceChildren();
+  for(const item of schemas){
+    const row=document.createElement('tr');
+    appendCells(row,[codeValue(value(item,'tool_name_hash','tool_name','tool')),value(item,'adapter'),value(item,'version'),codeValue(value(item,'schema_hash','hash')),item.drift?.classification??item.drift?.status??item.drift_status??'none',formatTime(value(item,'registered_at','created_at'))]);
+    schemaBody.append(row);
+  }
+  if(!schemas.length)tableEmpty('schema-rows',6,'No schemas registered yet.');
+  const releaseBody=q('release-rows');releaseBody.replaceChildren();
+  for(const item of releases){
+    const row=document.createElement('tr');
+    appendCells(row,[value(item,'environment_name','environment'),codeValue(value(item,'tool_name_hash','tool_name','tool')),value(item,'version'),codeValue(value(item,'schema_hash','expected_schema_hash')),formatTime(value(item,'promoted_at','released_at','created_at'))]);
+    releaseBody.append(row);
+  }
+  if(!releases.length)tableEmpty('release-rows',5,'No schema releases yet.');
+  const valid=Boolean(data.releaseChain.valid);
+  text('release-chain-label',valid?'Release chain verified':'Release chain requires attention');
+  q('release-chain-label').className='integrity-label '+(valid?'good':'bad');
+}
+function renderEnvironments(data){
+  const environments=data.environments.environments||[];
+  syncEnvironmentSelects(environments);
+  const body=q('environment-rows');body.replaceChildren();
+  for(const item of environments){
+    const row=document.createElement('tr');
+    const open=actionButton('Configure',()=>{q('environment-select').value=item.id||item.name;q('environment-enforcement').value=item.schema_enforcement||'observe';q('environment-policy-editor').value=JSON.stringify(item.policy||{},null,2);q('environment-update-form').scrollIntoView({behavior:reduceMotion?'auto':'smooth'})});
+    appendCells(row,[item.name,tag(item.schema_enforcement||'observe'),short(JSON.stringify(item.policy||{}),52),formatTime(item.updated_at),open]);body.append(row);
+  }
+  if(!environments.length)tableEmpty('environment-rows',5,'No environments configured.');
+  const selected=environments.find(item=>(item.id||item.name)===q('environment-select').value);
+  if(selected){q('environment-enforcement').value=selected.schema_enforcement||'observe';q('environment-policy-editor').value=JSON.stringify(selected.policy||{},null,2)}
+}
+function renderActions(data){
+  const descriptors=data.descriptors.descriptors||[];
+  const body=q('descriptor-rows');body.replaceChildren();
+  for(const item of descriptors){const row=document.createElement('tr');appendCells(row,[codeValue(value(item,'tool_name_hash','tool_name','tool')),value(item,'environment_name','environment'),tag(value(item,'risk_level','risk')),value(item,'side_effect'),formatTime(value(item,'updated_at','created_at'))]);body.append(row)}
+  if(!descriptors.length)tableEmpty('descriptor-rows',5,'No action descriptors configured.');
+  const checkpoint=data.checkpoint||{};
+  text('checkpoint-label',checkpoint.revision!==undefined?'Revision '+checkpoint.revision:'Checkpoint unavailable');
+  q('checkpoint-label').className='integrity-label '+(checkpoint.revision!==undefined?'good':'bad');
+  q('checkpoint-input').value=JSON.stringify(checkpoint,null,2);
+  const deliveries=data.anchorDeliveries.deliveries||[];
+  const deliveryBody=q('anchor-delivery-rows');deliveryBody.replaceChildren();
+  for(const item of deliveries){
+    const row=document.createElement('tr');const controls=document.createElement('div');controls.className='row-actions';
+    if(item.status==='dead')controls.append(actionButton('Redrive',async()=>{await request('/v1/actions/idempotency/anchors/deliveries/'+encodeURIComponent(item.delivery_id)+'/redrive',{method:'POST'});await refreshActions()}));
+    appendCells(row,[value(item,'revision'),tag(item.status),number(item.attempt_count),formatTime(value(item,'last_attempt_at','next_attempt_at','created_at')),controls]);deliveryBody.append(row);
+  }
+  if(!deliveries.length)tableEmpty('anchor-delivery-rows',5,'No anchor deliveries recorded.');
+  const pending=data.reconciliationPending.pending||[];
+  const pendingBody=q('reconciliation-pending-rows');pendingBody.replaceChildren();
+  for(const item of pending){
+    const row=document.createElement('tr');const controls=document.createElement('div');controls.className='row-actions';
+    controls.append(actionButton('Executed',async()=>{const reservation=item.reservation_id||item.id;const reference=prompt('Authoritative execution-ledger evidence reference');if(!reference)return;if(!confirm('Record reservation '+reservation+' as CONFIRMED EXECUTED? This authoritative outcome cannot be changed.'))return;await request('/v1/actions/reconciliation/'+encodeURIComponent(reservation),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({outcome:'confirmed_executed',evidence_reference:reference})});await refreshActions()}));
+    controls.append(actionButton('Not executed',async()=>{const reservation=item.reservation_id||item.id;const reference=prompt('Authoritative execution-ledger evidence reference');if(!reference)return;if(!confirm('Record reservation '+reservation+' as CONFIRMED NOT EXECUTED? This authoritative outcome cannot be changed.'))return;await request('/v1/actions/reconciliation/'+encodeURIComponent(reservation),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({outcome:'confirmed_not_executed',evidence_reference:reference})});await refreshActions()}));
+    appendCells(row,[codeValue(item.reservation_id||item.id),codeValue(value(item,'tool_name_hash','tool_name','tool')),codeValue(value(item,'execution_fingerprint')),formatTime(value(item,'updated_at','created_at')),codeValue(value(item,'audit_id')),controls]);pendingBody.append(row);
+  }
+  if(!pending.length)tableEmpty('reconciliation-pending-rows',6,'No reservations await reconciliation.');
+  const history=data.reconciliationHistory.reconciliations||[];
+  const historyBody=q('reconciliation-history-rows');historyBody.replaceChildren();
+  for(const item of history){const row=document.createElement('tr');appendCells(row,[codeValue(item.reservation_id||item.id),tag(item.outcome),codeValue(value(item,'evidence_hash','evidence_reference')),formatTime(value(item,'reconciled_at','created_at')),codeValue(value(item,'audit_id','record_hash'))]);historyBody.append(row)}
+  if(!history.length)tableEmpty('reconciliation-history-rows',5,'No reconciliation history yet.');
+  const chainValid=Boolean(data.reconciliationChain.valid);
+  text('reconciliation-chain-label',chainValid?'Reconciliation chain verified':'Reconciliation chain requires attention');
+  q('reconciliation-chain-label').className='integrity-label '+(chainValid?'good':'bad');
+}
+function renderChallenges(data){
+  const items=data.challenges.challenges||[];
+  const filtered=challengeFilter==='all'?items:items.filter(item=>item.status===challengeFilter);
+  const body=q('challenge-rows');body.replaceChildren();
+  for(const item of filtered){
+    const challenge=item.challenge||item;
+    const row=document.createElement('tr');const controls=document.createElement('div');controls.className='row-actions';
+    if(item.status==='pending'){
+      controls.append(actionButton('Approve',async()=>{if(!confirm('Approve challenge '+challenge.challenge_id+' for tool hash '+challenge.tool_name_hash+' in '+challenge.environment+'?'))return;const approved=await request('/v1/actions/challenges/'+encodeURIComponent(challenge.challenge_id)+'/approve',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});q('action-approval').value=JSON.stringify(approved.approval||approved,null,2);await refreshChallenges()}));
+      controls.append(actionButton('Cancel',async()=>{if(!confirm('Cancel challenge '+challenge.challenge_id+'?'))return;await request('/v1/actions/challenges/'+encodeURIComponent(challenge.challenge_id),{method:'DELETE'});await refreshChallenges()},'danger'));
+    }
+    appendCells(row,[codeValue(value(challenge,'tool_name_hash','tool_name','tool')),value(challenge,'environment'),value(challenge,'risk_level','risk'),tag(item.status),formatTime(challenge.expires_at),codeValue(challenge.challenge_id),controls]);body.append(row);
+  }
+  if(!filtered.length)tableEmpty('challenge-rows',7,'No challenges match this filter.');
+}
+function renderAlertOperations(data){
+  renderAlerts(data.alerts.alerts||[]);
+  const webhooks=data.webhooks.webhooks||[];
+  const webhookBody=q('webhook-rows');webhookBody.replaceChildren();
+  for(const item of webhooks){
+    const row=document.createElement('tr');const controls=document.createElement('div');controls.className='row-actions';
+    if(!item.disabled_at)controls.append(actionButton('Disable',async()=>{if(!confirm('Disable alert receiver '+item.label+'?'))return;await request('/v1/alert-webhooks/'+encodeURIComponent(item.webhook_id),{method:'DELETE'});await refreshAlerts()},'danger'));
+    appendCells(row,[item.label,codeValue(item.endpoint_hash),tag(item.disabled_at?'disabled':'active'),formatTime(item.created_at),controls]);webhookBody.append(row);
+  }
+  if(!webhooks.length)tableEmpty('webhook-rows',5,'No alert receivers configured.');
+  const deliveries=data.deliveries.deliveries||[];
+  const deliveryBody=q('delivery-rows');deliveryBody.replaceChildren();
+  for(const item of deliveries){
+    const row=document.createElement('tr');const controls=document.createElement('div');controls.className='row-actions';
+    if(item.status==='dead')controls.append(actionButton('Redrive',async()=>{await request('/v1/alert-webhooks/deliveries/'+encodeURIComponent(item.delivery_id)+'/redrive',{method:'POST'});await refreshAlerts()}));
+    appendCells(row,[value(item,'webhook_id'),tag(item.status),number(item.attempt_count),formatTime(item.next_attempt_at),short(value(item,'error_code'),36),controls]);deliveryBody.append(row);
+  }
+  if(!deliveries.length)tableEmpty('delivery-rows',6,'No webhook deliveries recorded.');
+}
+function renderIntelligence(data){
+  const intel=data.intelligence||{};
+  const failures=intel.failure_clusters||intel.failures||[];
+  const compatibility=intel.compatibility_matrix||intel.compatibility||intel.conformance_runs||[];
+  const recommendations=intel.recommendations||[];
+  const networks=intel.network_failure_clusters||intel.network_clusters||[];
+  text('failure-cluster-total',failures.length);text('compatibility-total',compatibility.length);text('recommendation-total',recommendations.length);text('network-cluster-total',networks.length);
+  text('privacy-threshold-label',intel.privacy_threshold!==undefined?'Network threshold '+intel.privacy_threshold:value(intel,'privacy_threshold_status','privacy_status'));
+  const recommendationList=q('recommendation-list');recommendationList.replaceChildren();
+  for(const item of recommendations.slice(0,12)){const row=document.createElement('li');const title=document.createElement('b');title.textContent=String(value(item,'code','title','recommendation','kind'));const note=document.createElement('small');note.textContent=String(value(item,'message','detail','description','reason'));row.append(title,note);recommendationList.append(row)}
+  if(!recommendations.length){const row=document.createElement('li');row.textContent='No privacy-safe recommendations available.';recommendationList.append(row)}
+  const failureList=q('failure-cluster-list');failureList.replaceChildren();
+  for(const item of failures.slice(0,12)){const row=document.createElement('li');const title=document.createElement('b');title.textContent=String(value(item,'category','reason_code','kind','cluster'));const note=document.createElement('small');note.textContent=number(value(item,'event_count','count','occurrences'))+' observations';row.append(title,note);failureList.append(row)}
+  if(!failures.length){const row=document.createElement('li');row.textContent='No clusters meet the privacy threshold.';failureList.append(row)}
+  const compatibilityBody=q('compatibility-rows');compatibilityBody.replaceChildren();
+  for(const item of compatibility){const row=document.createElement('tr');appendCells(row,[value(item,'provider')+' '+value(item,'latest_provider_version','provider_version'),value(item,'framework')+' '+value(item,'latest_framework_version','framework_version'),value(item,'adapter'),value(item,'latest_suite_version','suite_version','suite'),number(item.passed),number(item.failed),formatTime(value(item,'last_tested_at','executed_at','created_at'))]);compatibilityBody.append(row)}
+  if(!compatibility.length)tableEmpty('compatibility-rows',7,'No conformance runs recorded.');
+  const quality=intel.schema_quality||intel.quality||[];
+  const qualityBody=q('quality-rows');qualityBody.replaceChildren();
+  for(const item of quality){const row=document.createElement('tr');appendCells(row,[codeValue(value(item,'tool_name_hash','tool_name','tool')),value(item,'adapter'),value(item,'version'),item.quality?.score??item.quality?.classification??item.quality_score??'—',item.drift?.classification??item.drift?.status??item.drift_status??'none']);qualityBody.append(row)}
+  if(!quality.length)tableEmpty('quality-rows',5,'No schema-quality observations available.');
+}
+function renderEvidence(data){
+  const integrity=q('integrity-components');integrity.replaceChildren();
+  const entries=[
+    ['Control plane',Boolean(data.integrity.valid??data.integrity.control_plane_valid)],
+    ['Audit chain',Boolean(data.chain.valid)],
+    ['Release chain',Boolean(data.releaseChain.valid)],
+    ['Reconciliation',Boolean(data.reconciliationChain.valid)],
+    ['Ruleset',data.ruleset.status==='not_configured'||Boolean(data.ruleset.valid??data.ruleset.signature_valid)]
+  ];
+  for(const [label,valid] of entries){const card=document.createElement('div');const title=document.createElement('span');title.textContent=label;const result=tag(valid?'Verified':'Attention',valid?'good':'bad');card.append(title,result);integrity.append(card)}
+  const audits=data.audits.audits||[];
+  const body=q('evidence-audit-rows');body.replaceChildren();
+  for(const item of audits){const row=document.createElement('tr');appendCells(row,[formatTime(item.occurred_at),tag(item.decision),value(item,'reason_code'),Array.isArray(item.repair_rules)?item.repair_rules.join(', ')||'None':'None',codeValue(item.audit_id)]);body.append(row)}
+  if(!audits.length)tableEmpty('evidence-audit-rows',5,'No retained audit records yet.');
+  text('audit-chain-label',data.chain.valid?'Audit chain verified':'Audit chain requires attention');
+  q('audit-chain-label').className='integrity-label '+(data.chain.valid?'good':'bad');
+}
+const scopeNames=['validate','compile','evaluate:action','approve:action','reconcile:action','manage:webhooks','promote:schema','read:audit','read:alerts','read:billing','read:environment','read:intelligence','read:ruleset','read:usage','write:schema','admin'];
+function renderAccess(data){
+  const picker=q('scope-picker');
+  if(!picker.querySelector('input'))for(const scope of scopeNames){const label=document.createElement('label');const input=document.createElement('input');input.type='checkbox';input.value=scope;input.checked=scope!=='admin';label.append(input,document.createTextNode(scope));picker.append(label)}
+  const keys=data.apiKeys.api_keys||[];
+  const body=q('api-key-rows');body.replaceChildren();
+  for(const item of keys){
+    const row=document.createElement('tr');const controls=document.createElement('div');controls.className='row-actions';
+    if(!item.revoked_at&&!item.current)controls.append(actionButton('Revoke',async()=>{if(!confirm('Revoke this API key? Existing clients will immediately lose access.'))return;await request('/v1/admin/api-keys/'+encodeURIComponent(item.key_id||item.id),{method:'DELETE'});await refreshAccess()},'danger'));
+    appendCells(row,[codeValue(value(item,'key_prefix','prefix')),Array.isArray(item.scopes)?item.scopes.join(', '):'—',formatTime(item.created_at),tag(item.revoked_at?'revoked':item.current?'current':'active'),controls]);body.append(row);
+  }
+  if(!keys.length)tableEmpty('api-key-rows',5,'No API keys found.');
+}
+function renderUsage(data){
+  const usage=data.usage;const counts=usage.usage||{};
+  text('usage-period',value(counts,'month'));
+  text('usage-current',number(counts.validation_count).toLocaleString());
+  text('usage-cap','of '+number(usage.monthly_limit).toLocaleString());
+  text('retention-days',value(usage.entitlements,'retention_days'));
+  text('payment-state',value(usage,'payment_processing','billing_status'));
+  const entitlements=q('entitlement-list');entitlements.replaceChildren();
+  for(const [name,enabled] of Object.entries(usage.entitlements||{})){const row=document.createElement('div');const title=document.createElement('dt');title.textContent=name.replaceAll('_',' ');const result=document.createElement('dd');result.append(tag(enabled?'Included':'Unavailable',enabled?'good':''));row.append(title,result);entitlements.append(row)}
+  if(!entitlements.children.length){const row=document.createElement('div');const title=document.createElement('dt');title.textContent='Status';const result=document.createElement('dd');result.textContent='No entitlements reported.';row.append(title,result);entitlements.append(row)}
+  const plans=q('plan-grid');plans.replaceChildren();
+  for(const plan of data.plans.plans||[]){const card=document.createElement('article');const name=document.createElement('h4');name.textContent=value(plan,'display_name','name','id');const price=document.createElement('strong');const monthly=number(plan.price?.monthly_equivalent_minor);price.textContent=monthly?'$'+(monthly/100).toLocaleString()+' / month equivalent':'Not for sale';const detail=document.createElement('p');detail.textContent=String(value(plan,'audience','description','summary'));card.append(name,price,detail);plans.append(card)}
+  const summary=q('billing-summary');summary.replaceChildren();
+  for(const [label,item] of [['Period',value(data.billing,'period')],['Amount due',data.billing.amount_due??'Not calculated'],['Plan',value(usage,'plan_name','plan')],['Payment automation',value(data.billing,'payment_processing')]]){const wrap=document.createElement('div');const term=document.createElement('span');term.textContent=label;const result=document.createElement('strong');result.textContent=String(item);wrap.append(term,result);summary.append(wrap)}
+  text('billing-boundary-copy',data.billing.payment_processing==='integration_required'?'External billing is intentionally blocked until a provider is configured and tested.':'Billing provider state returned by the managed service.');
+}
+function renderSettings(data){
+  const lifecycle=data.lifecycle.lifecycle||{};
+  text('lifecycle-status',value(lifecycle,'status'));text('lifecycle-reason',value(lifecycle,'reason'));text('lifecycle-deletion-time',value(lifecycle,'deletion_requested_at'));text('lifecycle-updated',formatTime(value(lifecycle,'updated_at')));
+  text('lifecycle-state',value(lifecycle,'status'));
+  q('policy-editor').value=JSON.stringify(data.policy.policy||data.policy,null,2);
 }
 function renderOverview(data){
   const usage=data.usage.usage||{};
@@ -181,11 +397,13 @@ function renderOverview(data){
   text('environment-total',environments.length.toLocaleString());
   text('open-alert-total',openAlerts.length.toLocaleString());
   text('api-key-total',(data.apiKeys.api_keys||[]).filter(item=>item.revoked_at===null).length.toLocaleString());
+  text('service-state',data.serviceReadiness.status==='ready'?'Ready':data.serviceReadiness.status);
   q('quota-meter').style.setProperty('--quota-scale',(quotaPercent/100).toFixed(3));
   q('quota-meter-track').setAttribute('aria-valuenow',quotaPercent.toFixed(1));
   q('protection-state').className='status-pill '+(integrityValid?'':'bad');
   text('protection-state-text',integrityValid?'Protection healthy':'Integrity attention required');
   renderChecklist([
+    {label:'Managed service readiness',ready:data.serviceHealth.status==='ok'&&data.serviceReadiness.status==='ready',note:'Liveness and dependency readiness are observed through the same service boundary'},
     {label:'Control-plane integrity',ready:integrityValid,note:integrityValid?'Signed state verified':'Open integrity details before action traffic'},
     {label:'Production schema admission',ready:Boolean(production&&production.schema_enforcement==='enforce'&&productionReleased),note:productionReleased?'Production has a reviewed release':'Promote and enforce a reviewed schema'},
     {label:'Schema registry',ready:schemas.length>0,note:schemas.length+' latest registered contract(s) are reachable'},
@@ -208,17 +426,17 @@ q('load').onclick=async()=>{
   const loadGetOptional=path=>getOptional(path,options,key);
   clearPanels();q('status').className='';q('status').textContent='Loading…';resetDerivedViews();workspace.dataset.connected='false';text('connection-label','Connecting');
   try{
-    const lifecycle=await loadGet('/v1/admin/tenant/lifecycle');
+    const [serviceHealth,serviceReadiness,lifecycle]=await Promise.all([loadGet('/healthz'),loadGet('/readyz'),loadGet('/v1/admin/tenant/lifecycle')]);
     if(generation!==loadGeneration)return;
     q('lifecycle').textContent=JSON.stringify(lifecycle,null,2);
     text('tenant-name',lifecycle.tenant_name||lifecycle.tenant_id||'Tenant');
     text('tenant-avatar',String(lifecycle.tenant_name||lifecycle.tenant_id||'Tenant').slice(0,1).toUpperCase());
     if(lifecycle.lifecycle.status!=='active'){workspace.dataset.connected='false';text('connection-label','Access locked');q('protection-state').className='status-pill bad';text('protection-state-text','Tenant '+lifecycle.lifecycle.status);q('status').className='bad';q('status').textContent='Loaded — operational access is locked';return}
-    const [usage,chain,audits,alerts,intelligence,environments,releases,releaseChain,schemas,policy,descriptors,challenges,webhooks,deliveries,checkpoint,anchorDeliveries,reconciliationPending,reconciliationHistory,reconciliationChain,billing,integrity,ruleset,apiKeys]=await Promise.all([
+    const [usage,chain,audits,alerts,intelligence,environments,releases,releaseChain,schemas,policy,descriptors,challenges,webhooks,deliveries,checkpoint,anchorDeliveries,reconciliationPending,reconciliationHistory,reconciliationChain,billing,integrity,ruleset,apiKeys,plans]=await Promise.all([
       loadGet('/v1/usage'),loadGet('/v1/audits/verify'),loadGet('/v1/audits?limit=25'),loadGet('/v1/alerts'),loadGet('/v1/intelligence'),loadGet('/v1/environments'),loadGet('/v1/schema-releases?limit=25'),loadGet('/v1/schema-releases/verify'),
       loadGet('/v1/schemas'),loadGet('/v1/admin/policy'),loadGet('/v1/admin/actions/descriptors'),loadGet('/v1/actions/challenges?limit=100'),
       loadGet('/v1/alert-webhooks'),loadGet('/v1/alert-webhooks/deliveries?limit=100'),loadGet('/v1/actions/idempotency/checkpoint'),loadGet('/v1/actions/idempotency/anchors/deliveries?limit=100'),
-      loadGet('/v1/actions/reconciliation/pending'),loadGet('/v1/actions/reconciliation/history'),loadGet('/v1/actions/reconciliation/verify'),loadGet('/v1/billing/statement'),loadGet('/v1/admin/control-plane-integrity'),loadGetOptional('/v1/rulesets/latest'),loadGet('/v1/admin/api-keys')
+      loadGet('/v1/actions/reconciliation/pending'),loadGet('/v1/actions/reconciliation/history'),loadGet('/v1/actions/reconciliation/verify'),loadGet('/v1/billing/statement'),loadGet('/v1/admin/control-plane-integrity'),loadGetOptional('/v1/rulesets/latest'),loadGet('/v1/admin/api-keys'),loadGet('/v1/plans')
     ]);
     if(generation!==loadGeneration)return;
     q('usage').textContent=JSON.stringify(usage,null,2);
@@ -234,17 +452,99 @@ q('load').onclick=async()=>{
     q('webhooks').textContent=JSON.stringify(webhooks,null,2);
     q('deliveries').textContent=JSON.stringify(deliveries,null,2);
     q('actions').textContent=JSON.stringify({checkpoint,anchor_deliveries:anchorDeliveries.deliveries},null,2);
-    q('reconciliation').textContent=JSON.stringify({pending:reconciliationPending.pending,history:reconciliationHistory.history,chain:reconciliationChain},null,2);
+    q('reconciliation').textContent=JSON.stringify({pending:reconciliationPending.pending,reconciliations:reconciliationHistory.reconciliations,chain:reconciliationChain},null,2);
     q('billing').textContent=JSON.stringify(billing,null,2);
     q('control-integrity').textContent=JSON.stringify(integrity,null,2);
     q('rulesets').textContent=JSON.stringify(ruleset,null,2);
     q('api-keys').textContent=JSON.stringify(apiKeys,null,2);
-    renderOverview({lifecycle,usage,chain,audits,alerts,intelligence,environments,releases,releaseChain,schemas,policy,descriptors,challenges,webhooks,deliveries,checkpoint,anchorDeliveries,reconciliationPending,reconciliationHistory,reconciliationChain,billing,integrity,ruleset,apiKeys});
+    workspaceData={serviceHealth,serviceReadiness,lifecycle,usage,chain,audits,alerts,intelligence,environments,releases,releaseChain,schemas,policy,descriptors,challenges,webhooks,deliveries,checkpoint,anchorDeliveries,reconciliationPending,reconciliationHistory,reconciliationChain,billing,integrity,ruleset,apiKeys,plans};
+    renderOverview(workspaceData);renderSchemas(workspaceData);renderEnvironments(workspaceData);renderActions(workspaceData);renderChallenges(workspaceData);renderAlertOperations(workspaceData);renderIntelligence(workspaceData);renderEvidence(workspaceData);renderAccess(workspaceData);renderUsage(workspaceData);renderSettings(workspaceData);
     workspace.dataset.connected='true';text('connection-label','Connected');q('status').className='good';q('status').textContent='Workspace loaded';
   }catch(error){if(generation!==loadGeneration||error?.name==='AbortError')return;workspace.dataset.connected='false';text('connection-label','Not connected');clearPanels();resetDerivedViews();q('status').className='bad';q('status').textContent=error instanceof Error?error.message:'Request failed'}
   finally{if(generation===loadGeneration)activeLoadController=null}
 };
 q('key').addEventListener('keydown',event=>{if(event.key==='Enter')q('load').click()});
+async function refreshSchemas(){
+  const [schemas,releases,releaseChain]=await Promise.all([get('/v1/schemas'),get('/v1/schema-releases?limit=25'),get('/v1/schema-releases/verify')]);
+  Object.assign(workspaceData,{schemas,releases,releaseChain});q('schemas').textContent=JSON.stringify(schemas,null,2);q('releases').textContent=JSON.stringify({chain:releaseChain,releases:releases.releases},null,2);renderSchemas(workspaceData);
+}
+async function refreshDecisions(){
+  const [usage,chain,audits,alerts,intelligence]=await Promise.all([get('/v1/usage'),get('/v1/audits/verify'),get('/v1/audits?limit=25'),get('/v1/alerts'),get('/v1/intelligence')]);
+  Object.assign(workspaceData,{usage,chain,audits,alerts,intelligence});q('usage').textContent=JSON.stringify(usage,null,2);q('chain').textContent=JSON.stringify(chain,null,2);q('audits').textContent=JSON.stringify(compactAudits(audits.audits),null,2);q('alerts').textContent=JSON.stringify(compactAlerts(alerts.alerts),null,2);q('intelligence').textContent=JSON.stringify(intelligence,null,2);renderOverview(workspaceData);renderAlertOperations(workspaceData);renderIntelligence(workspaceData);renderEvidence(workspaceData);renderUsage(workspaceData);
+}
+async function refreshEnvironments(){
+  const environments=await get('/v1/environments');workspaceData.environments=environments;q('releases').textContent=JSON.stringify({environments:environments.environments,chain:workspaceData.releaseChain,releases:workspaceData.releases.releases},null,2);renderEnvironments(workspaceData);
+}
+async function refreshActions(){
+  const [descriptors,checkpoint,anchorDeliveries,reconciliationPending,reconciliationHistory,reconciliationChain]=await Promise.all([get('/v1/admin/actions/descriptors'),get('/v1/actions/idempotency/checkpoint'),get('/v1/actions/idempotency/anchors/deliveries?limit=100'),get('/v1/actions/reconciliation/pending'),get('/v1/actions/reconciliation/history'),get('/v1/actions/reconciliation/verify')]);
+  Object.assign(workspaceData,{descriptors,checkpoint,anchorDeliveries,reconciliationPending,reconciliationHistory,reconciliationChain});q('descriptors').textContent=JSON.stringify(descriptors,null,2);q('actions').textContent=JSON.stringify({checkpoint,anchor_deliveries:anchorDeliveries.deliveries},null,2);q('reconciliation').textContent=JSON.stringify({pending:reconciliationPending.pending,reconciliations:reconciliationHistory.reconciliations,chain:reconciliationChain},null,2);renderActions(workspaceData);
+}
+async function refreshChallenges(){const challenges=await get('/v1/actions/challenges?limit=100');workspaceData.challenges=challenges;q('challenges').textContent=JSON.stringify(challenges,null,2);renderChallenges(workspaceData)}
+async function refreshAlerts(){
+  const [alerts,webhooks,deliveries]=await Promise.all([get('/v1/alerts'),get('/v1/alert-webhooks'),get('/v1/alert-webhooks/deliveries?limit=100')]);
+  Object.assign(workspaceData,{alerts,webhooks,deliveries});q('alerts').textContent=JSON.stringify(compactAlerts(alerts.alerts),null,2);q('webhooks').textContent=JSON.stringify(webhooks,null,2);q('deliveries').textContent=JSON.stringify(deliveries,null,2);renderAlertOperations(workspaceData);
+}
+async function refreshIntelligence(){
+  const [intelligence,ruleset]=await Promise.all([get('/v1/intelligence'),getOptional('/v1/rulesets/latest')]);Object.assign(workspaceData,{intelligence,ruleset});q('intelligence').textContent=JSON.stringify(intelligence,null,2);q('rulesets').textContent=JSON.stringify(ruleset,null,2);renderIntelligence(workspaceData);
+}
+async function refreshAccess(){const apiKeys=await get('/v1/admin/api-keys');workspaceData.apiKeys=apiKeys;q('api-keys').textContent=JSON.stringify(apiKeys,null,2);renderAccess(workspaceData)}
+async function refreshUsage(){
+  const [usage,billing,plans]=await Promise.all([get('/v1/usage'),get('/v1/billing/statement'),get('/v1/plans')]);Object.assign(workspaceData,{usage,billing,plans});q('usage').textContent=JSON.stringify(usage,null,2);q('billing').textContent=JSON.stringify(billing,null,2);renderUsage(workspaceData);
+}
+async function refreshSettings(){
+  const [lifecycle,policy]=await Promise.all([get('/v1/admin/tenant/lifecycle'),get('/v1/admin/policy')]);Object.assign(workspaceData,{lifecycle,policy});q('lifecycle').textContent=JSON.stringify(lifecycle,null,2);q('policy').textContent=JSON.stringify(policy,null,2);renderSettings(workspaceData);
+}
+function bindForm(id,statusId,handler){
+  q(id).addEventListener('submit',async event=>{
+    event.preventDefault();const submit=q(id).querySelector('[type="submit"]');submit.disabled=true;status(statusId,'Working…');
+    try{const message=await handler();status(statusId,message||'Saved','good')}catch(error){status(statusId,error instanceof Error?error.message:'Request failed','bad')}finally{submit.disabled=false}
+  });
+}
+function showJson(id,result){const node=q(id);node.hidden=false;node.textContent=JSON.stringify(result,null,2)}
+function showSecret(id,label,secret){
+  const node=q(id);node.replaceChildren();node.hidden=false;const copy=document.createElement('p');copy.textContent=label+' is shown once. Copy it into a secret manager now.';
+  const button=actionButton('Copy secret',async()=>{await navigator.clipboard.writeText(secret);button.textContent='Copied'});
+  node.append(copy,button);
+}
+bindForm('validate-form','validate-status',async()=>{
+  const result=await request('/v1/validate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({tool_name:q('validate-tool').value,tool_schema:parseJson('validate-schema'),raw_arguments:parseJson('validate-arguments'),context:{environment:q('validate-environment').value,adapter:'json_schema'}})});
+  await refreshDecisions();
+  const node=q('validate-result');node.hidden=false;node.replaceChildren();const outcome=document.createElement('strong');outcome.textContent=value(result,'decision','outcome');const reason=document.createElement('span');reason.textContent='Reason: '+value(result,'reason_code','reason');const audit=document.createElement('code');audit.textContent='Audit '+value(result,'audit_id');node.append(outcome,reason,audit);
+  q('challenge-decision').value=JSON.stringify(result,null,2);q('action-decision').value=JSON.stringify(result,null,2);return 'Decision recorded';
+});
+bindForm('compile-form','compile-status',async()=>{const result=await request('/v1/contracts/compile',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({target:q('compile-target').value,tool_name:q('compile-tool').value,tool_schema:parseJson('compile-schema')})});showJson('compile-result',result);return 'Contract compiled'});
+bindForm('schema-register-form','schema-register-status',async()=>{await request('/v1/schemas',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({tool_name:q('schema-tool').value,adapter:q('schema-adapter').value,version:q('schema-version').value,schema:parseJson('schema-body')})});await refreshSchemas();return 'Schema version registered'});
+bindForm('schema-release-form','schema-release-status',async()=>{
+  const environment=q('release-environment');await request('/v1/schema-releases',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({environment:environment.selectedOptions[0]?.dataset.name||environment.value,tool_name:q('release-tool').value,adapter:q('release-adapter').value,version:q('release-version').value,expected_schema_hash:q('release-hash').value})});await refreshSchemas();return 'Schema release promoted';
+});
+bindForm('environment-create-form','environment-create-status',async()=>{await request('/v1/admin/environments',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name:q('environment-name').value,policy:parseJson('environment-policy-initial')})});await refreshEnvironments();return 'Environment created'});
+bindForm('environment-update-form','environment-update-status',async()=>{
+  const id=q('environment-select').value;await request('/v1/admin/environments/'+encodeURIComponent(id)+'/policy',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(parseJson('environment-policy-editor'))});await request('/v1/admin/environments/'+encodeURIComponent(id)+'/schema-enforcement',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({mode:q('environment-enforcement').value})});await refreshEnvironments();return 'Environment policy and enforcement saved';
+});
+q('environment-select').onchange=()=>{if(!workspaceData)return;const item=(workspaceData.environments.environments||[]).find(environment=>(environment.id||environment.name)===q('environment-select').value);if(item){q('environment-enforcement').value=item.schema_enforcement||'observe';q('environment-policy-editor').value=JSON.stringify(item.policy||{},null,2)}};
+bindForm('descriptor-form','descriptor-status',async()=>{const environment=q('descriptor-environment');await request('/v1/admin/actions/descriptors',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({tool_name:q('descriptor-tool').value,environment:environment.selectedOptions[0]?.dataset.name||environment.value,risk_level:q('descriptor-risk').value,side_effect:q('descriptor-side-effect').value})});await refreshActions();return 'Action descriptor saved'});
+bindForm('action-evaluate-form','action-evaluate-status',async()=>{const environment=q('action-environment');const result=await request('/v1/actions/evaluate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({tool_name:q('action-tool').value,environment:environment.selectedOptions[0]?.dataset.name||environment.value,idempotency_key:q('action-idempotency-key').value,decision:parseJson('action-decision'),approval:parseJson('action-approval')})});showJson('action-evaluate-result',result);await refreshActions();return 'Action evaluation recorded'});
+bindForm('reservation-form','reservation-status',async()=>{await request('/v1/actions/idempotency/'+q('reservation-transition').value,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({idempotency_key:q('reservation-key').value,execution_fingerprint:q('reservation-fingerprint').value})});await refreshActions();return 'Reservation transition recorded'});
+bindForm('checkpoint-compare-form','checkpoint-compare-status',async()=>{const result=await request('/v1/actions/idempotency/checkpoint/compare',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({checkpoint:parseJson('checkpoint-input')})});showJson('checkpoint-compare-result',result);return 'Checkpoint compared'});
+for(const button of document.querySelectorAll('[data-challenge-filter]'))button.onclick=()=>{challengeFilter=button.dataset.challengeFilter||'all';for(const peer of document.querySelectorAll('[data-challenge-filter]'))peer.classList.toggle('active',peer===button);if(workspaceData)renderChallenges(workspaceData)};
+bindForm('challenge-form','challenge-status',async()=>{const environment=q('challenge-environment');await request('/v1/actions/challenges',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({tool_name:q('challenge-tool').value,environment:environment.selectedOptions[0]?.dataset.name||environment.value,decision:parseJson('challenge-decision'),expires_in_seconds:number(q('challenge-expires').value)})});await refreshChallenges();return 'Approval challenge created'});
+bindForm('webhook-create-form','webhook-create-status',async()=>{const result=await request('/v1/alert-webhooks',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({label:q('webhook-label').value,endpoint:q('webhook-endpoint').value})});const secret=value(result,'signing_secret','secret','webhook_secret');if(secret!=='—')showSecret('webhook-secret','Webhook signing secret',String(secret));try{await refreshAlerts();return 'Alert receiver created'}catch{return 'Alert receiver created; copy the secret now, then reload inventory'}});
+bindForm('conformance-form','conformance-status',async()=>{await request('/v1/conformance-runs',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({provider:q('conformance-provider').value,provider_version:q('conformance-provider-version').value,framework:q('conformance-framework').value,framework_version:q('conformance-framework-version').value,adapter:q('conformance-adapter').value,suite_version:q('conformance-suite').value,executed_at:new Date().toISOString(),passed:number(q('conformance-passed').value),failed:number(q('conformance-failed').value),repaired:0,rejected:0})});await refreshIntelligence();return 'Conformance run recorded'});
+bindForm('ruleset-form','ruleset-status',async()=>{const issued=new Date();await request('/v1/admin/rulesets',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({version:q('ruleset-version').value,issued_at:issued.toISOString(),expires_at:new Date(issued.getTime()+number(q('ruleset-days').value)*86400000).toISOString(),rules:parseJson('ruleset-body')})});await refreshIntelligence();return 'Signed ruleset published'});
+bindForm('api-key-form','api-key-status',async()=>{const scopes=Array.from(q('scope-picker').querySelectorAll('input:checked')).map(input=>input.value);if(!scopes.length)throw new Error('Select at least one scope');const result=await request('/v1/admin/api-keys',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({scopes})});showSecret('api-key-secret','Tenant API key',result.api_key);try{await refreshAccess();return 'API key created'}catch{return 'API key created; copy the key now, then reload inventory'}});
+async function billingAction(path){
+  const result=await request(path,{method:'POST'});const target=value(result,'url','checkout_url','portal_url');
+  if(target!=='—'){const link=document.createElement('a');link.href=String(target);link.target='_blank';link.rel='noopener';link.textContent='Continue to billing provider';q('billing-action-status').replaceChildren(link)}else status('billing-action-status','Provider returned no destination','bad');
+}
+q('billing-checkout').onclick=async()=>{status('billing-action-status','Creating checkout…');try{await billingAction('/v1/billing/checkout-session')}catch(error){status('billing-action-status',error instanceof Error?error.message:'Checkout unavailable','bad')}};
+q('billing-portal').onclick=async()=>{status('billing-action-status','Opening portal…');try{await billingAction('/v1/billing/portal-session')}catch(error){status('billing-action-status',error instanceof Error?error.message:'Portal unavailable','bad')}};
+q('local-plan-change').onclick=async()=>{if(!q('local-plan-confirm').checked){status('billing-action-status','Confirm the local-only plan change first','bad');return}status('billing-action-status','Applying plan…');try{await request('/v1/admin/plan',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({plan:q('local-plan-select').value})});await refreshUsage();status('billing-action-status','Local evaluation plan applied','good')}catch(error){status('billing-action-status',error instanceof Error?error.message:'Plan change blocked','bad')}};
+bindForm('policy-form','policy-status',async()=>{await request('/v1/admin/policy',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(parseJson('policy-editor'))});await refreshSettings();return 'Organization policy saved'});
+q('retention-purge').onclick=async()=>{if(!q('retention-confirm').checked){status('retention-status','Confirm the irreversible purge first','bad');return}if(!confirm('Permanently purge audits older than the tenant retention window?'))return;status('retention-status','Purging…');try{const result=await request('/v1/admin/retention/purge',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({before:new Date(Date.now()-number(workspaceData?.usage?.entitlements?.retention_days||30)*86400000).toISOString()})});status('retention-status','Purged '+number(value(result,'deleted','purged','deleted_count'))+' audit records','good')}catch(error){status('retention-status',error instanceof Error?error.message:'Purge failed','bad')}};
+async function downloadAuditCsv(){
+  const response=await fetch('/v1/audits?format=csv',{headers:{authorization:'Bearer '+q('key').value},cache:'no-store'});if(!response.ok){const body=await parseBody(response);throw new Error(body?.message||body?.error||'Audit CSV export failed')}const blob=await response.blob();const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download='akriven-audits.csv';link.click();URL.revokeObjectURL(link.href);
+}
+for(const id of ['audit-csv','evidence-audit-csv'])q(id).onclick=async()=>{try{await downloadAuditCsv();q('status').className='good';q('status').textContent='Audit CSV downloaded'}catch(error){q('status').className='bad';q('status').textContent=error instanceof Error?error.message:'Audit CSV failed'}};
 q('export').onclick=async()=>{
   q('export-result').textContent='Preparing export…';
   try{
@@ -255,6 +555,7 @@ q('export').onclick=async()=>{
   }catch(error){q('export-result').textContent=error instanceof Error?error.message:'Export failed'}
 };
 q('export-secondary').onclick=()=>q('export').click();
+q('settings-export').onclick=()=>q('export').click();
 q('request-deletion').onclick=async()=>{
   q('deletion-result').textContent='Submitting request…';
   try{

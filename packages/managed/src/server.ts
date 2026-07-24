@@ -839,7 +839,7 @@ export function createManagedServer(
       if (
         request.method === 'GET' &&
         (url.pathname === '/dashboard' ||
-          /^\/dashboard\/(?:overview|decisions|schemas|actions|alerts|evidence|workbench|settings)$/u.test(
+          /^\/dashboard\/(?:overview|decisions|schemas|environments|actions|approvals|alerts|intelligence|evidence|access|usage|workbench|settings)$/u.test(
             url.pathname,
           ))
       ) {

@@ -825,12 +825,19 @@ describe('managed local control plane', () => {
     expect(dashboardBody).toContain('Control-plane integrity');
     expect(dashboardBody).toContain('I reviewed this exact request and authorize this mutation.');
     expect(dashboardBody).toContain('id="sidebar-toggle"');
+    const dashboardIds = [...dashboardBody.matchAll(/\sid="([^"]+)"/gu)].map((match) => match[1]);
+    expect(new Set(dashboardIds).size).toBe(dashboardIds.length);
     expect(dashboardBody).toContain('data-route-view="overview"');
     expect(dashboardBody).toContain('data-route-view="decisions"');
     expect(dashboardBody).toContain('data-route-view="schemas"');
+    expect(dashboardBody).toContain('data-route-view="environments"');
     expect(dashboardBody).toContain('data-route-view="actions"');
+    expect(dashboardBody).toContain('data-route-view="approvals"');
     expect(dashboardBody).toContain('data-route-view="alerts"');
+    expect(dashboardBody).toContain('data-route-view="intelligence"');
     expect(dashboardBody).toContain('data-route-view="evidence"');
+    expect(dashboardBody).toContain('data-route-view="access"');
+    expect(dashboardBody).toContain('data-route-view="usage"');
     expect(dashboardBody).toContain('data-route-view="workbench"');
     expect(dashboardBody).toContain('data-route-view="settings"');
     expect(dashboardBody).not.toMatch(/\s(?:style|onclick)=/u);
@@ -838,9 +845,14 @@ describe('managed local control plane', () => {
       'overview',
       'decisions',
       'schemas',
+      'environments',
       'actions',
+      'approvals',
       'alerts',
+      'intelligence',
       'evidence',
+      'access',
+      'usage',
       'workbench',
       'settings',
     ]) {
@@ -850,7 +862,9 @@ describe('managed local control plane', () => {
       expect(await routedDashboard.text(), route).toContain(`data-route-view="${route}"`);
     }
     expect((await fetch(`${base}/dashboard/not-a-route`)).status).toBe(401);
-    expect(dashboardBody.match(/<option value=/gu)).toHaveLength(29);
+    const workbenchOptions =
+      dashboardBody.match(/<select id="operation">([\s\S]*?)<\/select>/u)?.[1] ?? '';
+    expect(workbenchOptions.match(/<option value=/gu)).toHaveLength(29);
     for (const label of [
       'Validate tool call',
       'Compile provider contract',
