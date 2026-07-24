@@ -824,6 +824,32 @@ describe('managed local control plane', () => {
     expect(dashboardBody).toContain('Managed API workbench');
     expect(dashboardBody).toContain('Control-plane integrity');
     expect(dashboardBody).toContain('I reviewed this exact request and authorize this mutation.');
+    expect(dashboardBody).toContain('id="sidebar-toggle"');
+    expect(dashboardBody).toContain('data-route-view="overview"');
+    expect(dashboardBody).toContain('data-route-view="decisions"');
+    expect(dashboardBody).toContain('data-route-view="schemas"');
+    expect(dashboardBody).toContain('data-route-view="actions"');
+    expect(dashboardBody).toContain('data-route-view="alerts"');
+    expect(dashboardBody).toContain('data-route-view="evidence"');
+    expect(dashboardBody).toContain('data-route-view="workbench"');
+    expect(dashboardBody).toContain('data-route-view="settings"');
+    expect(dashboardBody).not.toMatch(/\s(?:style|onclick)=/u);
+    for (const route of [
+      'overview',
+      'decisions',
+      'schemas',
+      'actions',
+      'alerts',
+      'evidence',
+      'workbench',
+      'settings',
+    ]) {
+      expect(dashboardBody).toContain(`href="/dashboard/${route}"`);
+      const routedDashboard = await fetch(`${base}/dashboard/${route}`);
+      expect(routedDashboard.status, route).toBe(200);
+      expect(await routedDashboard.text(), route).toContain(`data-route-view="${route}"`);
+    }
+    expect((await fetch(`${base}/dashboard/not-a-route`)).status).toBe(401);
     expect(dashboardBody.match(/<option value=/gu)).toHaveLength(29);
     for (const label of [
       'Validate tool call',
@@ -862,18 +888,26 @@ describe('managed local control plane', () => {
     const dashboardJavaScript = await dashboardScript.text();
     expect(() => new Script(dashboardJavaScript)).not.toThrow();
     expect(dashboardJavaScript).toContain("clearPanels();q('status').className=''");
-    expect(dashboardJavaScript).toContain("get('/v1/admin/tenant/lifecycle')");
+    expect(dashboardJavaScript).toContain("loadGet('/v1/admin/tenant/lifecycle')");
     expect(dashboardJavaScript).toContain("get('/v1/admin/tenant/export')");
-    expect(dashboardJavaScript).toContain("get('/v1/admin/control-plane-integrity')");
-    expect(dashboardJavaScript).toContain("get('/v1/actions/reconciliation/verify')");
-    expect(dashboardJavaScript).toContain("get('/v1/alert-webhooks/deliveries?limit=100')");
-    expect(dashboardJavaScript).toContain("getOptional('/v1/rulesets/latest')");
+    expect(dashboardJavaScript).toContain("loadGet('/v1/admin/control-plane-integrity')");
+    expect(dashboardJavaScript).toContain("loadGet('/v1/actions/reconciliation/verify')");
+    expect(dashboardJavaScript).toContain("loadGet('/v1/alert-webhooks/deliveries?limit=100')");
+    expect(dashboardJavaScript).toContain("loadGetOptional('/v1/rulesets/latest')");
+    expect(dashboardJavaScript).toContain("localStorage.setItem('akriven-sidebar'");
+    expect(dashboardJavaScript).toContain("history.pushState({route},'',path)");
     expect(dashboardJavaScript).toContain(
       "throw new Error('Confirm this mutation before executing')",
     );
     expect(dashboardJavaScript).toContain(
       "throw new Error('Replace every JSON placeholder before execution')",
     );
+    for (const font of ['geist-sans.woff2', 'geist-mono.woff2']) {
+      const response = await fetch(`${base}/dashboard/fonts/${font}`);
+      expect(response.status, font).toBe(200);
+      expect(response.headers.get('content-type'), font).toBe('font/woff2');
+      expect((await response.arrayBuffer()).byteLength, font).toBeGreaterThan(10_000);
+    }
     for (const endpoint of [
       '/v1/validate',
       '/v1/contracts/compile',

@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import {
   assertJsonSafety,
   compileToolContract,
@@ -38,6 +39,7 @@ import {
   type SharedStatePool,
   type BillingState,
 } from '@schema-guard/shared-state';
+
 import { dashboardHtml, dashboardScript, dashboardStyle } from './dashboard.js';
 import { environmentValue } from './environment.js';
 import { effectivePlanEntitlements, managedPlan, planCatalog } from './plans.js';
@@ -66,6 +68,19 @@ import {
   type Scope,
   type SignedRuleSet,
 } from './types.js';
+
+const dashboardGeistSans = readFileSync(
+  new URL(
+    '../../../node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2',
+    import.meta.url,
+  ),
+);
+const dashboardGeistMono = readFileSync(
+  new URL(
+    '../../../node_modules/@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2',
+    import.meta.url,
+  ),
+);
 
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -821,12 +836,18 @@ export function createManagedServer(
         });
         return;
       }
-      if (request.method === 'GET' && url.pathname === '/dashboard') {
+      if (
+        request.method === 'GET' &&
+        (url.pathname === '/dashboard' ||
+          /^\/dashboard\/(?:overview|decisions|schemas|actions|alerts|evidence|workbench|settings)$/u.test(
+            url.pathname,
+          ))
+      ) {
         response.writeHead(200, {
           'content-type': 'text/html; charset=utf-8',
           'cache-control': 'no-store',
           'content-security-policy':
-            "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+            "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
           'x-content-type-options': 'nosniff',
           ...publicResponseHeaders,
         });
@@ -853,6 +874,23 @@ export function createManagedServer(
           ...publicResponseHeaders,
         });
         response.end(dashboardStyle);
+        return;
+      }
+      if (
+        request.method === 'GET' &&
+        (url.pathname === '/dashboard/fonts/geist-sans.woff2' ||
+          url.pathname === '/dashboard/fonts/geist-mono.woff2')
+      ) {
+        response.writeHead(200, {
+          'content-type': 'font/woff2',
+          'cache-control': 'public, max-age=31536000, immutable',
+          'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+          'x-content-type-options': 'nosniff',
+          ...publicResponseHeaders,
+        });
+        response.end(
+          url.pathname.endsWith('geist-mono.woff2') ? dashboardGeistMono : dashboardGeistSans,
+        );
         return;
       }
       if (request.method === 'POST' && url.pathname === '/v1/billing/stripe/webhook') {

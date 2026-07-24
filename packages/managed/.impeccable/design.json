@@ -1,0 +1,156 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-24T00:00:00.000Z",
+  "title": "Design System: Akriven Managed Control Plane",
+  "extensions": {
+    "colorMeta": {
+      "ink": {
+        "role": "neutral",
+        "displayName": "Near-black ink",
+        "canonical": "#11131a",
+        "tonalRamp": [
+          "#11131a",
+          "#242731",
+          "#3b3f49",
+          "#5a5e66",
+          "#7c7f85",
+          "#a4a6aa",
+          "#d0d1d2",
+          "#f1f1f0"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Warm paper",
+        "canonical": "#f5f4ee",
+        "tonalRamp": [
+          "#24231f",
+          "#44423b",
+          "#646159",
+          "#858178",
+          "#aaa69d",
+          "#cfccc4",
+          "#ebe9e2",
+          "#f8f7f3"
+        ]
+      },
+      "acid": {
+        "role": "primary",
+        "displayName": "Signal acid",
+        "canonical": "#ddfe52",
+        "tonalRamp": [
+          "#222900",
+          "#3f4a00",
+          "#607000",
+          "#829800",
+          "#a7c22a",
+          "#c9e84a",
+          "#e5ff72",
+          "#f4ffbe"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Product headline",
+        "purpose": "Page titles and primary workflow headings."
+      },
+      "body": {
+        "displayName": "Operator body",
+        "purpose": "Dense product copy and controls."
+      },
+      "label": {
+        "displayName": "Evidence label",
+        "purpose": "Identifiers, methods, paths, and measurements only."
+      }
+    },
+    "shadows": [
+      {
+        "name": "floating-drawer",
+        "value": "12px 0 36px rgba(17,19,26,0.18)",
+        "purpose": "Mobile navigation drawer only."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(0.23, 1, 0.32, 1)",
+        "purpose": "Sidebar, drawer, disclosure, and feedback transitions."
+      },
+      {
+        "name": "duration-state",
+        "value": "180ms",
+        "purpose": "Occasional UI state changes."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "mobile-shell",
+        "value": "900px"
+      },
+      {
+        "name": "compact-content",
+        "value": "1120px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Ink action with immediate tactile feedback.",
+      "html": "<button class=\"ds-btn-primary\">Run check</button>",
+      "css": ".ds-btn-primary{height:42px;padding:10px 14px;border:1px solid #11131a;border-radius:6px;background:#11131a;color:#f5f4ee;font:600 14px Geist,Arial,sans-serif;transition:transform 140ms cubic-bezier(.23,1,.32,1)}.ds-btn-primary:hover{background:#242731}.ds-btn-primary:active{transform:scale(.97)}.ds-btn-primary:focus-visible{outline:2px solid #11131a;outline-offset:3px;box-shadow:0 0 0 5px #ddfe52}"
+    },
+    {
+      "name": "Product Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Warm white field with explicit focus.",
+      "html": "<input class=\"ds-input\" value=\"Tenant API key\" aria-label=\"Tenant API key\">",
+      "css": ".ds-input{height:42px;padding:10px 12px;border:1px solid rgba(17,19,26,.42);border-radius:6px;background:#fffefa;color:#11131a;font:400 14px Geist,Arial,sans-serif}.ds-input:hover{border-color:#11131a}.ds-input:focus-visible{outline:2px solid #11131a;outline-offset:2px;box-shadow:0 0 0 5px #ddfe52}"
+    },
+    {
+      "name": "Active Navigation",
+      "kind": "nav",
+      "description": "Paper current-route treatment against the ink sidebar with acid state marker.",
+      "html": "<a class=\"ds-nav-active\" href=\"#\">Overview</a>",
+      "css": ".ds-nav-active{display:flex;align-items:center;min-height:42px;padding:0 12px;border-radius:6px;background:#f5f4ee;color:#11131a;font:600 13px Geist,Arial,sans-serif;text-decoration:none;box-shadow:inset 3px 0 0 #ddfe52}.ds-nav-active:focus-visible{outline:2px solid #f5f4ee;outline-offset:3px;box-shadow:inset 3px 0 0 #ddfe52,0 0 0 5px #ddfe52}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Evidence Console",
+    "overview": "The control plane is the operational side of Akriven: warm paper, precise ink, compact technical metadata, and rare acid-lime state emphasis. Focused product pages replace the single scrolling workbench.",
+    "keyCharacteristics": [
+      "Focused route-like pages instead of anchor scrolling.",
+      "Collapsible navigation with persistent operator context.",
+      "Edge-to-edge evidence lists inside restrained paper surfaces.",
+      "Compact, explicit state labels and quiet technical metadata."
+    ],
+    "rules": [
+      {
+        "name": "The Rare Acid Rule",
+        "body": "Acid lime identifies current selection, primary action, focus, or a protection state. It is never ambient decoration.",
+        "section": "colors"
+      },
+      {
+        "name": "The Rules Before Shadows Rule",
+        "body": "If a border or tonal surface can explain the hierarchy, do not add elevation.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do reveal product depth through task-focused pages.",
+      "Do keep frequent page changes immediate and sidebar motion under 220ms.",
+      "Do retain explicit mutation confirmation and placeholder rejection.",
+      "Do honor reduced motion and keyboard focus."
+    ],
+    "donts": [
+      "Don't turn navigation into anchor links on one long page.",
+      "Don't expose every raw evidence block at the same time.",
+      "Don't persist API keys in local storage or browser storage.",
+      "Don't use decorative charts, gradients, glass, or motion."
+    ]
+  }
+}
