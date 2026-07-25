@@ -221,22 +221,22 @@ active tab.
 
 ## Exact commands and observed results
 
-| Command                                           | Result                                                                                                                                                |
-| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run check`                                   | format, lint, scripts, package boundary, types, dry provider boundary, conformance; 241 JS/TS passed, 18 PostgreSQL skipped; 5 Python passed          |
-| credentialed PostgreSQL shared-state regression   | 18/18 passed against disposable PostgreSQL 16, including checked-out client error handling                                                            |
-| credentialed `npm run test:coverage`              | 40 files, 239/239 tests passed; 79.51% statements, 73.46% branches, 80.66% functions, 81.36% lines                                                    |
-| `npx vitest run tests/dashboard-ui.test.ts`       | 15/15 focused dashboard tests passed                                                                                                                  |
-| `npm run audit:container-e2e`                     | passed, 137.416 seconds, fresh PostgreSQL, hardened managed/anchor containers, action controls, restart/outage/isolation/secret/log checks            |
-| `npm run audit:extreme`                           | passed, 53.992 seconds; includes check, dependency audit, conformance, benchmark, recovery, load, managed HTTP                                        |
-| `npm run audit:framework-integrations`            | MCP, OpenAI Agents, PydanticAI and Google ADK runtime boundary passed; rejected calls executed zero tools                                             |
-| `npm run audit:five-repos`                        | 5 repositories, 9 fixtures, 35 derived calls, zero failures; downloaded code not executed                                                             |
-| `npm run audit:benchmarks`                        | 7,699 recorded calls, 30,203 mutations, zero mismatches                                                                                               |
-| `npm run audit:real-data`                         | 2,501 rows, 3,302 expected calls, 15,702 mutations, zero mismatches                                                                                   |
-| `npm run audit:real-repos`                        | 20 repositories, 106 extracted fixtures; source was inspected only, never executed                                                                    |
-| `npm run audit:images`                            | 3 images, zero HIGH/CRITICAL vulnerabilities, zero embedded secrets                                                                                   |
-| `trivy fs --scanners vuln,secret,misconfig ... .` | zero HIGH/CRITICAL vulnerabilities, secrets, or misconfigurations                                                                                     |
-| private website `npm run lint && npm test`        | lint and production build passed at website commit `2e7a0df`; 18 routes built including `/start`; 3/3 rendered HTML and trust/non-claim suites passed |
+| Command                                           | Result                                                                                                                                                                                 |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run check`                                   | current identity/email revision passed format, lint, scripts, package boundary, types, dry provider boundary and conformance; 257 JS/TS passed, 18 PostgreSQL skipped; 5 Python passed |
+| credentialed PostgreSQL shared-state regression   | 18/18 passed against disposable PostgreSQL 16, including checked-out client error handling                                                                                             |
+| credentialed `npm run test:coverage`              | disposable PostgreSQL 16; 45 files, 275/275 tests passed; 79.69% statements, 73.60% branches, 81.64% functions, 81.53% lines                                                           |
+| `npx vitest run tests/dashboard-ui.test.ts`       | 15/15 focused dashboard tests passed                                                                                                                                                   |
+| `npm run audit:container-e2e`                     | passed, 137.416 seconds, fresh PostgreSQL, hardened managed/anchor containers, action controls, restart/outage/isolation/secret/log checks                                             |
+| `npm run audit:extreme`                           | passed, 53.992 seconds; includes check, dependency audit, conformance, benchmark, recovery, load, managed HTTP                                                                         |
+| `npm run audit:framework-integrations`            | MCP, OpenAI Agents, PydanticAI and Google ADK runtime boundary passed; rejected calls executed zero tools                                                                              |
+| `npm run audit:five-repos`                        | 5 repositories, 9 fixtures, 35 derived calls, zero failures; downloaded code not executed                                                                                              |
+| `npm run audit:benchmarks`                        | 7,699 recorded calls, 30,203 mutations, zero mismatches                                                                                                                                |
+| `npm run audit:real-data`                         | 2,501 rows, 3,302 expected calls, 15,702 mutations, zero mismatches                                                                                                                    |
+| `npm run audit:real-repos`                        | 20 repositories, 106 extracted fixtures; source was inspected only, never executed                                                                                                     |
+| `npm run audit:images`                            | 3 images, zero HIGH/CRITICAL vulnerabilities, zero embedded secrets                                                                                                                    |
+| `trivy fs --scanners vuln,secret,misconfig ... .` | zero HIGH/CRITICAL vulnerabilities, secrets, or misconfigurations                                                                                                                      |
+| private website `npm run lint && npm test`        | lint and production build passed at website commit `2e7a0df`; 18 routes built including `/start`; 3/3 rendered HTML and trust/non-claim suites passed                                  |
 
 Additional measurements produced inside the extreme audit:
 
@@ -271,10 +271,14 @@ and anchor persistence, and independent HTTPS checkpoint acknowledgement.
    and pinned model choices.
 2. Stripe Checkout, Portal, and webhook delivery require a Stripe test-mode
    account and products/prices.
-3. Human identity, organization membership, invitations, MFA, and recovery
-   require the selected identity provider.
-4. Transactional email and bounce/retry evidence require the selected email
-   provider and verified sender/domain.
+3. The WorkOS-compatible session, organization-to-tenant, RBAC, CSRF and outage
+   boundary is locally proven. Live invitation, membership, MFA, recovery,
+   revocation and public-TLS evidence still require the selected identity
+   provider account.
+4. The provider-neutral Postmark send and privacy-safe delivery/bounce
+   normalization contract is locally proven. A durable application outbox,
+   selected provider account, verified sender/domain and external delivery,
+   retry/dead-letter/redrive and outage evidence remain blocked.
 5. Independent second-responder acknowledgement and paid call/SMS/push
    escalation require the selected on-call provider; the existing uptime and
    backup-heartbeat email incident path is proven.

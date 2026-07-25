@@ -250,6 +250,15 @@ unavailable identity/email/billing/model providers.
 
 ### Before first design-partner action traffic
 
+Current provider-independent identity/email checkpoint: `npm run check` passed
+with 257 JS/TS tests, 18 credentialed-PostgreSQL tests skipped by the
+uncredentialed default run, and 5 Python tests. The 16 new deterministic tests
+cover WorkOS-compatible session/RBAC/CSRF/BOLA/outage behavior and Postmark
+send/webhook normalization. They are not live-provider evidence.
+The credentialed coverage gate then passed all 275 tests against disposable
+PostgreSQL 16 at 79.69% statements, 73.60% branches, 81.64% functions, and
+81.53% lines.
+
 1. Add a second independently owned responder and exercise acknowledgement and
    escalation. Better Stack email incident delivery and recovery are proven,
    but the free plan does not provide the required paid call/SMS/push route.
@@ -264,11 +273,15 @@ unavailable identity/email/billing/model providers.
 
 ### Before self-service or automated charging
 
-1. Select and exercise hosted human identity: verified email, organizations,
-   membership/role binding, invitations, sessions, MFA, recovery, and future
-   SSO/SCIM.
-2. Select and exercise transactional email, including bounce, retry, and outage
-   behavior.
+1. Configure and externally exercise the implemented WorkOS-compatible human
+   identity boundary: verified email, organizations, membership/role binding,
+   invitations, sessions, MFA, recovery, revocation, and future SSO/SCIM. The
+   local server/session/CSRF/BOLA contract is proven; live WorkOS behavior is
+   not.
+2. Configure and externally exercise the implemented Postmark adapter and
+   webhook normalizer. Add the still-missing durable application notification
+   outbox, then prove external delivery, bounce, duplicate/reordering, retry,
+   dead-letter/redrive and outage behavior.
 3. Rotate the previously exposed Stripe test credential outside chat. Supply
    the replacement only through a secret manager or owner-only file, then
    exercise test-mode Checkout, Portal, signed webhook, replay, duplicate,

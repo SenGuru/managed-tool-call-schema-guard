@@ -1,0 +1,21 @@
+services:
+  schema-guard-managed:
+    environment:
+      SCHEMA_GUARD_WORKOS_API_KEY_FILE: /run/secrets/schema_guard_workos_api_key
+      SCHEMA_GUARD_WORKOS_CLIENT_ID: ${SCHEMA_GUARD_WORKOS_CLIENT_ID}
+      SCHEMA_GUARD_WORKOS_COOKIE_PASSWORD_FILE: /run/secrets/schema_guard_workos_cookie_password
+      SCHEMA_GUARD_WORKOS_REDIRECT_URI: ${SCHEMA_GUARD_WORKOS_REDIRECT_URI}
+      SCHEMA_GUARD_WORKOS_LOGOUT_RETURN_URL: ${SCHEMA_GUARD_WORKOS_LOGOUT_RETURN_URL}
+      SCHEMA_GUARD_WORKOS_ORGANIZATION_TENANT_MAP_FILE: /run/secrets/schema_guard_workos_organization_tenant_map
+    secrets:
+      - schema_guard_workos_api_key
+      - schema_guard_workos_cookie_password
+      - schema_guard_workos_organization_tenant_map
+
+secrets:
+  schema_guard_workos_api_key:
+    file: ${SCHEMA_GUARD_WORKOS_API_KEY_FILE}
+  schema_guard_workos_cookie_password:
+    file: ${SCHEMA_GUARD_WORKOS_COOKIE_PASSWORD_FILE}
+  schema_guard_workos_organization_tenant_map:
+    file: ${SCHEMA_GUARD_WORKOS_ORGANIZATION_TENANT_MAP_FILE}

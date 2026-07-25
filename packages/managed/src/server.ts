@@ -65,6 +65,14 @@ import {
 } from './webhook.js';
 import { billingTenantReference, StripeBillingProvider, type BillingProvider } from './billing.js';
 import {
+  createAuthState,
+  humanPrincipalId,
+  verifyAuthState,
+  WorkOSIdentityProvider,
+  type HumanIdentity,
+  type HumanIdentityProvider,
+} from './identity.js';
+import {
   ALL_SCOPES,
   type ActionIdempotencyCheckpoint,
   type ManagedConfig,
@@ -166,6 +174,48 @@ function bearer(request: IncomingMessage): string {
     throw new ManagedError(401, 'authentication_required', 'provide a bearer API key');
   return header.slice(7);
 }
+const HUMAN_SESSION_COOKIE = '__Host-akriven_session';
+const HUMAN_STATE_COOKIE = '__Host-akriven_auth_state';
+function cookies(request: IncomingMessage): Readonly<Record<string, string>> {
+  const header = request.headers.cookie;
+  if (!header || header.length > 32_768) return {};
+  const result: Record<string, string> = {};
+  for (const part of header.split(';')) {
+    const separator = part.indexOf('=');
+    if (separator <= 0) continue;
+    const name = part.slice(0, separator).trim();
+    const value = part.slice(separator + 1).trim();
+    if (!/^[A-Za-z0-9_-]{1,64}$/u.test(name) || value.length > 16_384) continue;
+    try {
+      result[name] = decodeURIComponent(value);
+    } catch {
+      // Malformed cookie values are ignored and fail authentication closed.
+    }
+  }
+  return result;
+}
+function secureCookie(name: string, value: string, maxAgeSeconds: number): string {
+  return `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${maxAgeSeconds}; HttpOnly; Secure; SameSite=Lax`;
+}
+function clearSecureCookie(name: string): string {
+  return `${name}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`;
+}
+function requireSameOrigin(request: IncomingMessage, externalUrl: string | undefined): void {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(request.method ?? '')) return;
+  if (!externalUrl)
+    throw new ManagedError(
+      503,
+      'human_session_unavailable',
+      'human session origin is not configured',
+    );
+  const expected = new URL(externalUrl).origin;
+  if (request.headers.origin !== expected)
+    throw new ManagedError(
+      403,
+      'csrf_origin_rejected',
+      'human-session mutation requires the configured service origin',
+    );
+}
 function secretMatches(provided: string, expected: string): boolean {
   const providedBytes = Buffer.from(provided);
   const expectedBytes = Buffer.from(expected);
@@ -177,11 +227,46 @@ async function authenticate(
   store: ManagedStore,
   controlState: ControlState | undefined,
   request: IncomingMessage,
+  identityProvider: HumanIdentityProvider | undefined,
+  config: ManagedConfig,
 ): Promise<Principal> {
+  if (request.headers.authorization !== undefined) {
+    const principal = controlState
+      ? ((await controlState.authenticate(bearer(request))) as Principal | undefined)
+      : store.authenticate(bearer(request));
+    if (!principal) throw new ManagedError(401, 'invalid_api_key', 'API key is invalid or revoked');
+    return principal;
+  }
+  const sealedSession = cookies(request)[HUMAN_SESSION_COOKIE];
+  if (!identityProvider || !sealedSession)
+    throw new ManagedError(
+      401,
+      'authentication_required',
+      'provide a bearer API key or authenticated browser session',
+    );
+  requireSameOrigin(request, config.externalUrl);
+  let identity: HumanIdentity | undefined;
+  try {
+    identity = await identityProvider.authenticateSession(sealedSession);
+  } catch {
+    throw new ManagedError(
+      503,
+      'identity_provider_unavailable',
+      'human identity verification is unavailable',
+    );
+  }
+  if (!identity)
+    throw new ManagedError(401, 'invalid_human_session', 'browser session is invalid or expired');
+  const principalId = humanPrincipalId(config.masterSecret, identity.userId, identity.sessionId);
   const principal = controlState
-    ? ((await controlState.authenticate(bearer(request))) as Principal | undefined)
-    : store.authenticate(bearer(request));
-  if (!principal) throw new ManagedError(401, 'invalid_api_key', 'API key is invalid or revoked');
+    ? ((await controlState.principalForTenant(
+        identity.tenantId,
+        principalId,
+        identity.scopes,
+      )) as Principal)
+    : store.principalForTenant(identity.tenantId, principalId, identity.scopes);
+  if (!principal)
+    throw new ManagedError(401, 'invalid_human_session', 'browser tenant binding is invalid');
   return principal;
 }
 function pathOf(request: IncomingMessage): URL {
@@ -447,6 +532,7 @@ export function createManagedServer(
     intelligenceState?: IntelligenceState;
     billingState?: BillingState;
     billingProvider?: BillingProvider;
+    identityProvider?: HumanIdentityProvider;
   } = {},
 ) {
   validateManagedConfig(config);
@@ -576,6 +662,26 @@ export function createManagedServer(
           successUrl: config.stripeCheckoutSuccessUrl!,
           cancelUrl: config.stripeCheckoutCancelUrl!,
           portalReturnUrl: config.stripePortalReturnUrl!,
+        })
+      : undefined);
+  const workosConfigured = [
+    config.workosApiKey,
+    config.workosClientId,
+    config.workosCookiePassword,
+    config.workosRedirectUri,
+    config.workosLogoutReturnUrl,
+    config.workosOrganizationTenantMap,
+  ].every((value) => value !== undefined);
+  const identityProvider =
+    dependencies.identityProvider ??
+    (workosConfigured
+      ? new WorkOSIdentityProvider({
+          apiKey: config.workosApiKey!,
+          clientId: config.workosClientId!,
+          cookiePassword: config.workosCookiePassword!,
+          redirectUri: config.workosRedirectUri!,
+          logoutReturnUrl: config.workosLogoutReturnUrl!,
+          organizationTenantMap: config.workosOrganizationTenantMap!,
         })
       : undefined);
   const limiter = new FixedWindowRateLimiter(config.rateLimitPerMinute ?? 120);
@@ -757,6 +863,41 @@ export function createManagedServer(
     extra: Record<string, string> = {},
   ): void => {
     json(response, status, value, { ...publicResponseHeaders, ...extra });
+  };
+  const browserIdentity = async (request: IncomingMessage): Promise<HumanIdentity> => {
+    const sealedSession = cookies(request)[HUMAN_SESSION_COOKIE];
+    if (!identityProvider || !sealedSession)
+      throw new ManagedError(
+        401,
+        'authentication_required',
+        'an authenticated browser session is required',
+      );
+    let identity: HumanIdentity | undefined;
+    try {
+      identity = await identityProvider.authenticateSession(sealedSession);
+    } catch {
+      throw new ManagedError(
+        503,
+        'identity_provider_unavailable',
+        'human identity verification is unavailable',
+      );
+    }
+    if (!identity)
+      throw new ManagedError(401, 'invalid_human_session', 'browser session is invalid or expired');
+    return identity;
+  };
+  const browserPrincipal = async (identity: HumanIdentity): Promise<Principal> => {
+    const principalId = humanPrincipalId(config.masterSecret, identity.userId, identity.sessionId);
+    const principal = controlState
+      ? ((await controlState.principalForTenant(
+          identity.tenantId,
+          principalId,
+          identity.scopes,
+        )) as Principal)
+      : store.principalForTenant(identity.tenantId, principalId, identity.scopes);
+    if (!principal)
+      throw new ManagedError(401, 'invalid_human_session', 'browser tenant binding is invalid');
+    return principal;
   };
   const loadTenantIntelligence = async (principal: Principal): Promise<Record<string, unknown>> => {
     if (!intelligenceState)
@@ -1090,6 +1231,187 @@ export function createManagedServer(
         });
         return;
       }
+      if (request.method === 'GET' && url.pathname === '/v1/auth/login') {
+        if (!identityProvider)
+          throw new ManagedError(
+            501,
+            'identity_integration_required',
+            'human identity is not configured',
+          );
+        const returnTo = url.searchParams.get('return_to') ?? '/dashboard/overview';
+        let state: string;
+        try {
+          state = createAuthState(config.masterSecret, returnTo);
+        } catch {
+          throw new ManagedError(
+            400,
+            'invalid_authentication_return',
+            'return_to must be a dashboard path',
+          );
+        }
+        let location: string;
+        try {
+          location = identityProvider.authorizationUrl(state);
+        } catch {
+          throw new ManagedError(
+            503,
+            'identity_provider_unavailable',
+            'human identity authorization is unavailable',
+          );
+        }
+        response.writeHead(302, {
+          location,
+          'set-cookie': secureCookie(HUMAN_STATE_COOKIE, state, 10 * 60),
+          'cache-control': 'no-store',
+          'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+          'x-content-type-options': 'nosniff',
+          ...publicResponseHeaders,
+        });
+        response.end();
+        return;
+      }
+      if (request.method === 'GET' && url.pathname === '/v1/auth/callback') {
+        if (!identityProvider)
+          throw new ManagedError(
+            501,
+            'identity_integration_required',
+            'human identity is not configured',
+          );
+        const code = url.searchParams.get('code');
+        const state = url.searchParams.get('state');
+        const stateCookie = cookies(request)[HUMAN_STATE_COOKIE];
+        if (
+          !code ||
+          code.length > 4096 ||
+          !state ||
+          state.length > 2048 ||
+          !stateCookie ||
+          !secretMatches(state, stateCookie)
+        )
+          throw new ManagedError(
+            400,
+            'invalid_authentication_callback',
+            'authentication callback state or code is invalid',
+          );
+        const verifiedState = verifyAuthState(config.masterSecret, state);
+        if (!verifiedState)
+          throw new ManagedError(
+            400,
+            'invalid_authentication_callback',
+            'authentication callback state is invalid or expired',
+          );
+        let session;
+        try {
+          session = await identityProvider.exchangeCode({
+            code,
+            ...(typeof request.headers['user-agent'] === 'string'
+              ? { userAgent: request.headers['user-agent'].slice(0, 512) }
+              : {}),
+          });
+          await controlStateInitialization;
+          if (controlStateInitializationFailed) throw sharedControlStateUnavailable(undefined);
+          await browserPrincipal(session.identity);
+        } catch (error) {
+          if (error instanceof ManagedError) throw error;
+          throw new ManagedError(
+            503,
+            'identity_provider_unavailable',
+            'human identity verification is unavailable',
+          );
+        }
+        response.writeHead(303, {
+          location: verifiedState.returnTo,
+          'set-cookie': [
+            secureCookie(HUMAN_SESSION_COOKIE, session.sealedSession, 8 * 60 * 60),
+            clearSecureCookie(HUMAN_STATE_COOKIE),
+          ],
+          'cache-control': 'no-store',
+          'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+          'x-content-type-options': 'nosniff',
+          ...publicResponseHeaders,
+        });
+        response.end();
+        return;
+      }
+      if (request.method === 'GET' && url.pathname === '/v1/auth/session') {
+        await controlStateInitialization;
+        if (controlStateInitializationFailed) throw sharedControlStateUnavailable(undefined);
+        const identity = await browserIdentity(request);
+        const principal = await browserPrincipal(identity);
+        sendJson(response, 200, {
+          authenticated: true,
+          tenant_id: principal.tenantId,
+          tenant_name: principal.tenantName,
+          email: identity.email,
+          roles: identity.roles,
+          permissions: identity.permissions,
+          authentication_method: identity.authenticationMethod ?? null,
+        });
+        return;
+      }
+      if (request.method === 'POST' && url.pathname === '/v1/auth/refresh') {
+        requireSameOrigin(request, config.externalUrl);
+        const sealedSession = cookies(request)[HUMAN_SESSION_COOKIE];
+        if (!identityProvider || !sealedSession)
+          throw new ManagedError(
+            401,
+            'authentication_required',
+            'an authenticated browser session is required',
+          );
+        let refreshed;
+        try {
+          refreshed = await identityProvider.refreshSession(sealedSession);
+          if (refreshed) {
+            await controlStateInitialization;
+            if (controlStateInitializationFailed) throw sharedControlStateUnavailable(undefined);
+            await browserPrincipal(refreshed.identity);
+          }
+        } catch (error) {
+          if (error instanceof ManagedError) throw error;
+          throw new ManagedError(
+            503,
+            'identity_provider_unavailable',
+            'human identity refresh is unavailable',
+          );
+        }
+        if (!refreshed)
+          throw new ManagedError(
+            401,
+            'invalid_human_session',
+            'browser session cannot be refreshed',
+          );
+        sendJson(
+          response,
+          200,
+          { refreshed: true },
+          {
+            'set-cookie': secureCookie(HUMAN_SESSION_COOKIE, refreshed.sealedSession, 8 * 60 * 60),
+          },
+        );
+        return;
+      }
+      if (request.method === 'POST' && url.pathname === '/v1/auth/logout') {
+        requireSameOrigin(request, config.externalUrl);
+        const sealedSession = cookies(request)[HUMAN_SESSION_COOKIE];
+        let location = config.workosLogoutReturnUrl ?? '/';
+        if (identityProvider && sealedSession)
+          try {
+            location = await identityProvider.logoutUrl(sealedSession);
+          } catch {
+            throw new ManagedError(
+              503,
+              'identity_provider_unavailable',
+              'human identity logout is unavailable',
+            );
+          }
+        sendJson(
+          response,
+          200,
+          { logout_url: location },
+          { 'set-cookie': clearSecureCookie(HUMAN_SESSION_COOKIE) },
+        );
+        return;
+      }
       if (
         request.method === 'GET' &&
         (url.pathname === '/dashboard' ||
@@ -1105,7 +1427,7 @@ export function createManagedServer(
           'x-content-type-options': 'nosniff',
           ...publicResponseHeaders,
         });
-        response.end(dashboardHtml(Boolean(config.publicMode)));
+        response.end(dashboardHtml(Boolean(config.publicMode), Boolean(identityProvider)));
         return;
       }
       if (request.method === 'GET' && url.pathname === '/dashboard/app.js') {
@@ -1251,7 +1573,7 @@ export function createManagedServer(
         throw new ManagedError(503, 'billing_state_unavailable', 'billing state is unavailable');
       let principal: Principal;
       try {
-        principal = await authenticate(store, controlState, request);
+        principal = await authenticate(store, controlState, request, identityProvider, config);
       } catch (error) {
         if (error instanceof ManagedError) throw error;
         throw sharedControlStateUnavailable(error);
@@ -3378,6 +3700,38 @@ export function validateManagedConfig(config: ManagedConfig): void {
         throw new Error('Stripe billing return URLs must be absolute HTTPS URLs');
     }
   }
+  const workosValues = [
+    config.workosApiKey,
+    config.workosClientId,
+    config.workosCookiePassword,
+    config.workosRedirectUri,
+    config.workosLogoutReturnUrl,
+    config.workosOrganizationTenantMap,
+  ];
+  if (
+    workosValues.some((value) => value !== undefined) &&
+    !workosValues.every((value) => value !== undefined)
+  )
+    throw new Error(
+      'WorkOS identity requires API key, client ID, cookie password, redirect/logout URLs, and organization-to-tenant mapping together',
+    );
+  if (workosValues.every((value) => value !== undefined)) {
+    new WorkOSIdentityProvider({
+      apiKey: config.workosApiKey!,
+      clientId: config.workosClientId!,
+      cookiePassword: config.workosCookiePassword!,
+      redirectUri: config.workosRedirectUri!,
+      logoutReturnUrl: config.workosLogoutReturnUrl!,
+      organizationTenantMap: config.workosOrganizationTenantMap!,
+    });
+    if (!config.externalUrl) throw new Error('WorkOS identity requires SCHEMA_GUARD_EXTERNAL_URL');
+    const serviceOrigin = new URL(config.externalUrl).origin;
+    if (
+      new URL(config.workosRedirectUri!).origin !== serviceOrigin ||
+      new URL(config.workosLogoutReturnUrl!).origin !== serviceOrigin
+    )
+      throw new Error('WorkOS redirect and logout URLs must use the configured service origin');
+  }
   if (config.publicMode) {
     if (!config.metricsBearerToken)
       throw new Error('public mode requires SCHEMA_GUARD_METRICS_BEARER_TOKEN');
@@ -3485,6 +3839,34 @@ function configFromEnvironment(): ManagedConfig {
     config.stripeCheckoutCancelUrl = process.env.SCHEMA_GUARD_STRIPE_CHECKOUT_CANCEL_URL;
   if (process.env.SCHEMA_GUARD_STRIPE_PORTAL_RETURN_URL)
     config.stripePortalReturnUrl = process.env.SCHEMA_GUARD_STRIPE_PORTAL_RETURN_URL;
+  const workosApiKey = environmentValue('SCHEMA_GUARD_WORKOS_API_KEY');
+  if (workosApiKey) config.workosApiKey = workosApiKey;
+  if (process.env.SCHEMA_GUARD_WORKOS_CLIENT_ID)
+    config.workosClientId = process.env.SCHEMA_GUARD_WORKOS_CLIENT_ID;
+  const workosCookiePassword = environmentValue('SCHEMA_GUARD_WORKOS_COOKIE_PASSWORD');
+  if (workosCookiePassword) config.workosCookiePassword = workosCookiePassword;
+  if (process.env.SCHEMA_GUARD_WORKOS_REDIRECT_URI)
+    config.workosRedirectUri = process.env.SCHEMA_GUARD_WORKOS_REDIRECT_URI;
+  if (process.env.SCHEMA_GUARD_WORKOS_LOGOUT_RETURN_URL)
+    config.workosLogoutReturnUrl = process.env.SCHEMA_GUARD_WORKOS_LOGOUT_RETURN_URL;
+  const organizationTenantMap = environmentValue('SCHEMA_GUARD_WORKOS_ORGANIZATION_TENANT_MAP');
+  if (organizationTenantMap) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(organizationTenantMap);
+    } catch {
+      throw new Error('SCHEMA_GUARD_WORKOS_ORGANIZATION_TENANT_MAP must be valid JSON');
+    }
+    if (
+      !object(parsed) ||
+      Object.keys(parsed).length === 0 ||
+      Object.values(parsed).some((value) => typeof value !== 'string')
+    )
+      throw new Error(
+        'SCHEMA_GUARD_WORKOS_ORGANIZATION_TENANT_MAP must be a non-empty JSON string map',
+      );
+    config.workosOrganizationTenantMap = parsed as Record<string, string>;
+  }
   if (process.env.SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_POLL_INTERVAL_MS)
     config.actionCheckpointAnchorPollIntervalMs = Number(
       process.env.SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_POLL_INTERVAL_MS,

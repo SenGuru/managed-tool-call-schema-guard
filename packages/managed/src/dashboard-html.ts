@@ -80,13 +80,15 @@ function evidenceBlock(id: string, title: string, wide = false): string {
   return `<details class="evidence-block${wide ? ' wide' : ''}"><summary><span>${title}</span><small>Raw evidence</small></summary><pre id="${id}">—</pre></details>`;
 }
 
-export function dashboardHtml(publicMode = false): string {
+export function dashboardHtml(publicMode = false, humanIdentity = false): string {
   const title = publicMode
     ? 'Akriven / Schema Guard Control Plane'
     : 'Akriven / Schema Guard Local Control Plane';
-  const description = publicMode
-    ? "Enter a tenant API key. It remains only in this tab's memory and is sent to this service origin over its configured TLS connection."
-    : "Enter a tenant API key. It remains only in this tab's memory and is sent to this loopback service origin.";
+  const description = humanIdentity
+    ? 'Sign in through the configured identity provider, or use a scoped tenant API key for operational testing.'
+    : publicMode
+      ? "Enter a tenant API key. It remains only in this tab's memory and is sent to this service origin over its configured TLS connection."
+      : "Enter a tenant API key. It remains only in this tab's memory and is sent to this loopback service origin.";
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer"><title>${title}</title><link rel="stylesheet" href="/dashboard/app.css"></head>
@@ -116,9 +118,11 @@ export function dashboardHtml(publicMode = false): string {
       <label class="sr-only" for="key">Tenant API key</label>
       <input id="key" type="password" autocomplete="off" aria-describedby="credential-help" placeholder="Tenant API key — held only in this tab">
       <button class="btn" id="load" type="button">Load workspace</button>
+      <a class="btn secondary" id="sign-in" href="/v1/auth/login?return_to=/dashboard/overview"${humanIdentity ? '' : ' hidden'}>Sign in</a>
     </div>
-    <div class="credential-connected" id="credential-connected" hidden><span class="connection-dot"></span><div><strong>Workspace connected</strong><small>The tenant key remains only in this tab’s memory.</small></div></div>
+    <div class="credential-connected" id="credential-connected" hidden><span class="connection-dot"></span><div><strong>Workspace connected</strong><small id="credential-connected-detail">The tenant key remains only in this tab’s memory.</small></div></div>
     <button class="btn secondary" id="change-key" type="button" hidden>Change key</button>
+    <button class="btn secondary" id="sign-out" type="button" hidden>Sign out</button>
     <button class="btn secondary" id="export" type="button">Download tenant export</button>
     <small class="credential-help" id="credential-help">${description}</small>
     <p id="status" role="status" aria-live="polite"></p>

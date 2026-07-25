@@ -147,6 +147,11 @@ export interface ControlState {
   ready(): Promise<boolean>;
   bootstrapTenant(input: SharedTenantBootstrap): Promise<void>;
   authenticate(apiKey: string): Promise<SharedPrincipal | undefined>;
+  principalForTenant(
+    tenantId: string,
+    principalId: string,
+    scopes: SharedScope[],
+  ): Promise<SharedPrincipal | undefined>;
   issueApiKey(
     tenantId: string,
     scopes: SharedScope[],
@@ -1236,6 +1241,88 @@ export class PostgresControlState implements ControlState {
       retentionDays: tenant.retention_days,
       policy: this.parsePolicy(tenant.policy_json),
       lifecycleStatus: lifecycle.status,
+    };
+  }
+
+  async principalForTenant(
+    tenantId: string,
+    principalId: string,
+    scopes: SharedScope[],
+  ): Promise<SharedPrincipal | undefined> {
+    if (
+      !/^[A-Za-z0-9_-]{1,64}$/u.test(tenantId) ||
+      !/^human_[A-Za-z0-9_-]{16,128}$/u.test(principalId)
+    )
+      return undefined;
+    this.assertScopes(scopes);
+    const result = await this.pool.query<{
+      id: string;
+      name: string;
+      plan: SharedPlanId;
+      monthly_limit: number;
+      retention_days: number;
+      policy_json: string;
+      usage_month: string;
+      validation_count: number;
+      repair_count: number;
+      rejection_count: number;
+      drift_count: number;
+      created_at: Date;
+      updated_at: Date;
+      control_hmac: string;
+      lifecycle_status: SharedTenantLifecycleStatus;
+      lifecycle_reason_code: string | null;
+      lifecycle_deletion_requested_at: Date | null;
+      lifecycle_updated_at: Date;
+      lifecycle_control_hmac: string;
+    }>(
+      `SELECT t.*,l.status lifecycle_status,l.reason_code lifecycle_reason_code,
+              l.deletion_requested_at lifecycle_deletion_requested_at,
+              l.updated_at lifecycle_updated_at,l.control_hmac lifecycle_control_hmac
+       FROM sg_control_tenants t
+       JOIN sg_tenant_lifecycle l ON l.tenant_id=t.id
+       WHERE t.id=$1`,
+      [tenantId],
+    );
+    const row = result.rows[0];
+    if (!row) return undefined;
+    const tenant: TenantRow = {
+      id: row.id,
+      name: row.name,
+      plan: row.plan,
+      monthly_limit: row.monthly_limit,
+      retention_days: row.retention_days,
+      policy_json: row.policy_json,
+      usage_month: row.usage_month,
+      validation_count: row.validation_count,
+      repair_count: row.repair_count,
+      rejection_count: row.rejection_count,
+      drift_count: row.drift_count,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      control_hmac: row.control_hmac,
+    };
+    const lifecycle: TenantLifecycleRow = {
+      tenant_id: row.id,
+      status: row.lifecycle_status,
+      reason_code: row.lifecycle_reason_code,
+      deletion_requested_at: row.lifecycle_deletion_requested_at,
+      updated_at: row.lifecycle_updated_at,
+      control_hmac: row.lifecycle_control_hmac,
+    };
+    this.assertTenant(tenant);
+    this.assertTenantLifecycle(lifecycle);
+    const policy = this.parsePolicy(row.policy_json);
+    return {
+      tenantId: row.id,
+      tenantName: row.name,
+      keyId: principalId,
+      scopes: [...scopes],
+      plan: row.plan,
+      monthlyLimit: row.monthly_limit,
+      retentionDays: row.retention_days,
+      policy,
+      lifecycleStatus: row.lifecycle_status,
     };
   }
 

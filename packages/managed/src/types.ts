@@ -100,6 +100,12 @@ export interface ManagedConfig {
   stripeCheckoutSuccessUrl?: string;
   stripeCheckoutCancelUrl?: string;
   stripePortalReturnUrl?: string;
+  workosApiKey?: string;
+  workosClientId?: string;
+  workosCookiePassword?: string;
+  workosRedirectUri?: string;
+  workosLogoutReturnUrl?: string;
+  workosOrganizationTenantMap?: Record<string, string>;
 }
 
 export interface DeliveryOperationalMetrics {

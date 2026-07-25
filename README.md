@@ -218,7 +218,7 @@ request. Billing CLI commands write provider URLs only to a new owner-only
 file. The Python client accepts `api_key=` and exposes the same
 lifecycle/export/deletion workflow.
 
-This is the local finished-product-spine walkthrough: bootstrap a tenant, protect validation with an API key, register evolving schemas, exercise repair and rejection cases, inspect the signed audit trail and drift alerts, review privacy-thresholded compatibility signals, and export operational evidence. It demonstrates the implemented product workflow end to end on one machine. A public staging ingress is now under production-readiness verification. The Stripe integration is sandbox-only and deterministically tested but has not been exercised against a real Stripe test account; payment collection, hosted identity, a configured and deployment-tested customer notification receiver, cloud key management, and multi-region recovery remain integration work and are not simulated as successful.
+This is the local finished-product-spine walkthrough: bootstrap a tenant, protect validation with an API key, register evolving schemas, exercise repair and rejection cases, inspect the signed audit trail and drift alerts, review privacy-thresholded compatibility signals, and export operational evidence. It demonstrates the implemented product workflow end to end on one machine. A public staging ingress is now under production-readiness verification. Stripe sandbox, WorkOS human-session, and Postmark send/webhook boundaries are deterministically tested but have not been exercised against real provider test accounts. Payment collection, hosted identity behavior, durable customer notification delivery, cloud key management, and multi-region recovery remain integration work and are not simulated as successful.
 
 Protocol JSON Schemas live in [`protocol/v1`](protocol/v1). See
 [`docs/CONTRACT_COMPILER.md`](docs/CONTRACT_COMPILER.md),
@@ -226,7 +226,9 @@ Protocol JSON Schemas live in [`protocol/v1`](protocol/v1). See
 [`docs/ACTION_CONTROLS.md`](docs/ACTION_CONTROLS.md),
 [`docs/SHARED_STATE.md`](docs/SHARED_STATE.md),
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md),
-[`docs/SECURITY.md`](docs/SECURITY.md), and
+[`docs/SECURITY.md`](docs/SECURITY.md),
+[`docs/HUMAN_IDENTITY_AND_EMAIL_BOUNDARIES.md`](docs/HUMAN_IDENTITY_AND_EMAIL_BOUNDARIES.md),
+and
 [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
 Drop-in runtime usage and the pinned four-framework audit are documented in

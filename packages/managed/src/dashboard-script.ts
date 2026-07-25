@@ -26,6 +26,7 @@ let workspaceData=null;
 let challengeFilter='pending';
 let auditRecords=[];
 let auditDialogOpener=null;
+let browserSession=false;
 const routeViews=Array.from(document.querySelectorAll('[data-route-view]'));
 const routeLinks=Array.from(document.querySelectorAll('.nav-link[data-route]'));
 const allRouteTriggers=Array.from(document.querySelectorAll('[data-route]'));
@@ -150,6 +151,9 @@ function setCredentialMode(mode){
   workspace.dataset.credential=mode;
   const connected=mode==='connected';
   q('credential-connected').hidden=!connected;q('change-key').hidden=!connected;
+  q('sign-out').hidden=!(connected&&browserSession);
+  q('change-key').hidden=!connected||browserSession;
+  text('credential-connected-detail',browserSession?'Authenticated browser session; permissions follow assigned organization roles.':'The tenant key remains only in this tab’s memory.');
   q('key').closest('.credential-editor').hidden=connected;
 }
 
@@ -179,7 +183,9 @@ function resetDerivedViews(){
 }
 const parseBody=async response=>{const body=await response.text();if(!body)return null;try{return JSON.parse(body)}catch{return {unparsed_response:true}}};
 async function requestRaw(path,options={},key=q('key').value){
-  const response=await fetch(path,{...options,headers:{authorization:'Bearer '+key,...options.headers},cache:'no-store'});
+  const headers={...options.headers};
+  if(key)headers.authorization='Bearer '+key;
+  const response=await fetch(path,{...options,headers,credentials:'same-origin',cache:'no-store'});
   return {status:response.status,ok:response.ok,body:await parseBody(response)};
 }
 async function request(path,options={},key){
@@ -654,6 +660,13 @@ q('load').onclick=async()=>{
 };
 q('key').addEventListener('keydown',event=>{if(event.key==='Enter')q('load').click()});
 q('change-key').onclick=()=>{setCredentialMode('editing');q('key').focus();q('key').select()};
+q('sign-out').onclick=async()=>{
+  try{
+    const result=await requestRaw('/v1/auth/logout',{method:'POST'},'');
+    if(!result.ok)throw new Error(result.body?.message||'Sign out failed');
+    browserSession=false;workspace.dataset.connected='false';setCredentialMode('editing');clearPanels();resetDerivedViews();location.assign(result.body?.logout_url||'/');
+  }catch(error){q('status').className='bad';q('status').textContent=error instanceof Error?error.message:'Sign out failed'}
+};
 async function refreshSchemas(){
   const [schemas,releases,releaseChain]=await Promise.all([get('/v1/schemas'),get('/v1/schema-releases?limit=25'),get('/v1/schema-releases/verify')]);
   Object.assign(workspaceData,{schemas,releases,releaseChain});q('schemas').textContent=JSON.stringify(schemas,null,2);q('releases').textContent=JSON.stringify({chain:releaseChain,releases:releases.releases},null,2);renderSchemas(workspaceData);return refreshInventoryBestEffort();
@@ -758,7 +771,8 @@ q('local-plan-change').onclick=async()=>{if(!q('local-plan-confirm').checked){st
 bindForm('policy-form','policy-status',async()=>{await request('/v1/admin/policy',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(parseJson('policy-editor'))});await refreshSettings();return 'Organization policy saved'});
 q('retention-purge').onclick=async()=>{if(!q('retention-confirm').checked){status('retention-status','Confirm the irreversible purge first','bad');return}if(!await confirmAction({title:'Purge expired audit records?',copy:'Permanently remove audits older than this tenant’s retention window. The signed anchor boundary remains, but deleted records cannot be recovered.',confirmLabel:'Purge expired audits',kicker:'Irreversible data action',tone:'danger'}))return;status('retention-status','Purging…');try{const result=await request('/v1/admin/retention/purge',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({before:new Date(Date.now()-number(workspaceData?.usage?.entitlements?.retention_days||30)*86400000).toISOString()})});status('retention-status','Purged '+number(value(result,'deleted','purged','deleted_count'))+' audit records','good')}catch(error){status('retention-status',error instanceof Error?error.message:'Purge failed','bad')}};
 async function downloadAuditCsv(){
-  const response=await fetch('/v1/audits?format=csv',{headers:{authorization:'Bearer '+q('key').value},cache:'no-store'});if(!response.ok){const body=await parseBody(response);throw new Error(body?.message||body?.error||'Audit CSV export failed')}const blob=await response.blob();const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download='akriven-audits.csv';link.click();URL.revokeObjectURL(link.href);
+  const headers={};if(q('key').value)headers.authorization='Bearer '+q('key').value;
+  const response=await fetch('/v1/audits?format=csv',{headers,credentials:'same-origin',cache:'no-store'});if(!response.ok){const body=await parseBody(response);throw new Error(body?.message||body?.error||'Audit CSV export failed')}const blob=await response.blob();const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download='akriven-audits.csv';link.click();URL.revokeObjectURL(link.href);
 }
 for(const id of ['audit-csv','evidence-audit-csv'])q(id).onclick=async()=>{try{await downloadAuditCsv();q('status').className='good';q('status').textContent='Audit CSV downloaded'}catch(error){q('status').className='bad';q('status').textContent=error instanceof Error?error.message:'Audit CSV failed'}};
 q('evaluation-export').onclick=async()=>{
@@ -855,4 +869,13 @@ loadPreset();
 for(const button of document.querySelectorAll('[data-preset]'))button.onclick=()=>{
   q('operation').value=button.dataset.preset;loadPreset();navigate('workbench');
 };
+void (async()=>{
+  try{
+    const session=await requestRaw('/v1/auth/session',{},'');
+    if(!session.ok)return;
+    browserSession=true;
+    q('key').value='';
+    q('load').click();
+  }catch{}
+})();
 `;

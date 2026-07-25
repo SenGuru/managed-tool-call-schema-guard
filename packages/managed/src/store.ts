@@ -1442,6 +1442,14 @@ export class ManagedStore {
     }
   }
 
+  principalForTenant(tenantId: string, principalId: string, scopes: Scope[]): Principal {
+    if (!/^human_[A-Za-z0-9_-]{16,128}$/u.test(principalId))
+      throw new ManagedError(401, 'invalid_human_session', 'human session identity is invalid');
+    this.assertScopes(scopes);
+    const principal = this.operatorPrincipal(tenantId);
+    return { ...principal, keyId: principalId, scopes: [...scopes] };
+  }
+
   issueApiKey(
     principal: Principal,
     scopes: Scope[],

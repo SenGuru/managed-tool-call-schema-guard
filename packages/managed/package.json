@@ -10,7 +10,9 @@
   "dependencies": {
     "@schema-guard/core": "0.2.0",
     "@schema-guard/shared-state": "0.2.0",
+    "@workos-inc/node": "^10.8.0",
     "better-sqlite3": "^12.11.1",
+    "postmark": "^5.1.0",
     "stripe": "^22.3.2"
   }
 }

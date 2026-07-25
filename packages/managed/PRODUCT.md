@@ -13,9 +13,11 @@ operator at an operator-onboarded private-beta customer. They need to protect
 tool execution, release schemas safely, review decisions, govern risky actions,
 and retain evidence without reading internal implementation details.
 
-Human account membership, invitations, recovery, and self-service
-administration are outside the currently proven product boundary. The private
-beta uses scoped tenant API keys.
+The server now has a deterministic WorkOS-compatible human-session and
+organization-role boundary, but live membership, invitations, MFA, recovery,
+revocation, and self-service administration remain outside the proven product
+boundary until a real staging provider is exercised. The current deployed
+private beta continues to use scoped tenant API keys.
 
 ## Product Purpose
 
@@ -61,8 +63,9 @@ the same authority through release and execution coordination.
   links, responsive behavior, and a collapsible desktop sidebar.
 - Interface refinement must not weaken confirmation, placeholder, tenant,
   policy, integrity, or deletion guards.
-- External identity, automated billing, transactional email, live provider
-  proof, and paging remain blocked until exercised.
+- Live external identity, automated billing, transactional email delivery,
+  provider proof, and paging remain blocked until exercised. Local WorkOS and
+  Postmark adapter contracts do not change that evidence boundary.
 
 ## Brand Commitments
 

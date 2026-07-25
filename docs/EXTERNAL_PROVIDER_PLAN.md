@@ -25,8 +25,13 @@ webhook and incident-response complexity.
 
 ## Ordered activation sequence
 
-The provider-independent product and purchased-host staging drills are complete.
-Use this order for the remaining account work:
+The provider-independent product and purchased-host staging drills are complete
+for the prior API-key cohort boundary. The repository now also contains a
+fail-closed WorkOS-compatible human-session boundary and Postmark
+send/webhook-normalization contracts. These are deterministic local evidence,
+not live-provider proof. The Postmark boundary does not yet include a durable
+application notification outbox. Use this order for the remaining account
+work:
 
 1. Create the 1Password production vault and vault-scoped service account.
    Prove a clean operator session can render owner-only files after reboot.
@@ -41,9 +46,12 @@ Use this order for the remaining account work:
    vulnerability-disclosure routing, and named incident/support ownership.
    These four steps gate action-mutating private-beta traffic.
 5. If self-service or multi-user access is desired, configure WorkOS staging
-   first and certify organization/role/session/MFA/recovery isolation.
+   against the implemented organization/role/session boundary and certify
+   invitation/MFA/recovery/revocation isolation.
 6. Configure Postmark only after the identity flows define their verification,
-   invitation, recovery and security-message requirements.
+   invitation, recovery and security-message requirements. Add and exercise a
+   durable application outbox before Akriven-owned mandatory messages are a
+   launch claim.
 7. Rotate the previously exposed Stripe test credential in the Stripe console,
    store the replacement only through 1Password-rendered owner-only files, and
    run the complete test-mode lifecycle. Do not enable live mode.
