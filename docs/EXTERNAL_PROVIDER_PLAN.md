@@ -23,6 +23,41 @@ Do not add another general-purpose platform unless one of these providers fails
 the sandbox certification. Keeping one provider per boundary reduces secret,
 webhook and incident-response complexity.
 
+## Ordered activation sequence
+
+The provider-independent product and purchased-host staging drills are complete.
+Use this order for the remaining account work:
+
+1. Create the 1Password production vault and vault-scoped service account.
+   Prove a clean operator session can render owner-only files after reboot.
+2. Configure Better Stack public API/anchor monitors, backup heartbeats, an
+   actual on-call contact and an escalation policy. Trigger and acknowledge one
+   service incident and one missed-heartbeat incident.
+3. Obtain the first design partner's owned HTTPS webhook receiver and
+   downstream side-effect ledger, plus sandbox credentials for only the exact
+   model/provider versions that partner will use. Run the customer-bound
+   callback and five-trial provider gates.
+4. Complete independent security review, legal/privacy retention approval,
+   vulnerability-disclosure routing, and named incident/support ownership.
+   These four steps gate action-mutating private-beta traffic.
+5. If self-service or multi-user access is desired, configure WorkOS staging
+   first and certify organization/role/session/MFA/recovery isolation.
+6. Configure Postmark only after the identity flows define their verification,
+   invitation, recovery and security-message requirements.
+7. Rotate the previously exposed Stripe test credential in the Stripe console,
+   store the replacement only through 1Password-rendered owner-only files, and
+   run the complete test-mode lifecycle. Do not enable live mode.
+8. Add Backblaze B2 Object Lock after legal approves retention. The current
+   encrypted cross-host daily backup/clean-restore boundary is already proven;
+   B2 adds independent WORM/ransomware resistance.
+9. Add privacy-scrubbed Sentry diagnostics before expanding the cohort. It is
+   recommended, not a substitute for Better Stack paging.
+
+Only non-secret identifiers such as callback URLs, provider environment names,
+price IDs and selected model versions belong in the evidence record. Do not
+paste keys, tokens, heartbeat URLs, webhook secrets, session cookies or
+recovery identities into chat.
+
 ## Owner-console actions
 
 These actions must be completed in the provider consoles. Values are secret

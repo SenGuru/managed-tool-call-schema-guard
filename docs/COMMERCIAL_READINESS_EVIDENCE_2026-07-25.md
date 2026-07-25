@@ -9,6 +9,17 @@ not ready for self-service signup or automated charging.
 This verdict applies to the exact source checkpoint created after this report.
 It does not promote historical staging evidence to exact-source evidence.
 
+Final checkpoint inventory:
+
+- managed runtime source/image: commit `887274c`, immutable image
+  `sha256:53470b39049d3f09e707bede7e47fe1b8dea13587ae1558fe7004fd3af7ef199`;
+- independent anchor source/image: commit `dd60b4e`, immutable image
+  `sha256:0dab2046729a75d75c68b0e4e9c4290b192ed50b6e23db3477b884d033ead9a2`;
+- bounded host monitoring first committed at `09f7724`; final handoff is the
+  branch HEAD containing this report;
+- branch `codex/production-readiness-2026-07-24` is pushed. The tracked tree is
+  clean; the unrelated untracked `apps/` directory was preserved and excluded.
+
 ## Provider-independent completion delta
 
 The commercial-completeness audit added and exercised:
