@@ -16,6 +16,8 @@ const baseUrl = required('SCHEMA_GUARD_PUBLIC_E2E_BASE_URL').replace(/\/+$/u, ''
 const keyFile = required('SCHEMA_GUARD_PUBLIC_E2E_API_KEY_FILE');
 const tenantId = required('SCHEMA_GUARD_PUBLIC_E2E_TENANT_ID');
 const sshTarget = required('SCHEMA_GUARD_ANCHOR_SSH_TARGET');
+const sshIdentityFile = required('SCHEMA_GUARD_ANCHOR_SSH_IDENTITY_FILE');
+const sshKnownHostsFile = required('SCHEMA_GUARD_ANCHOR_SSH_KNOWN_HOSTS_FILE');
 const anchorEdgeContainer = required('SCHEMA_GUARD_ANCHOR_EDGE_CONTAINER');
 const deployedRevision = required('SCHEMA_GUARD_DEPLOYED_REVISION');
 
@@ -31,6 +33,12 @@ if (!/^[A-Za-z0-9_.-]{1,80}$/u.test(deployedRevision))
 const keyMetadata = statSync(keyFile);
 if (!keyMetadata.isFile() || (keyMetadata.mode & 0o077) !== 0)
   throw new Error('public outage audit API-key file must be a regular owner-only file');
+const identityMetadata = statSync(sshIdentityFile);
+if (!identityMetadata.isFile() || (identityMetadata.mode & 0o077) !== 0)
+  throw new Error('anchor SSH identity must be a regular owner-only file');
+const knownHostsMetadata = statSync(sshKnownHostsFile);
+if (!knownHostsMetadata.isFile() || (knownHostsMetadata.mode & 0o022) !== 0)
+  throw new Error('anchor SSH known-hosts file must not be writable by group or other users');
 let apiKey = readFileSync(keyFile, 'utf8').trim();
 if (apiKey.length < 20) throw new Error('public outage audit API-key file is invalid');
 
@@ -44,6 +52,14 @@ function sshDocker(action, ...arguments_) {
       'BatchMode=yes',
       '-o',
       'ConnectTimeout=10',
+      '-o',
+      'IdentitiesOnly=yes',
+      '-o',
+      'StrictHostKeyChecking=yes',
+      '-o',
+      `UserKnownHostsFile=${sshKnownHostsFile}`,
+      '-i',
+      sshIdentityFile,
       sshTarget,
       'sudo',
       '-n',

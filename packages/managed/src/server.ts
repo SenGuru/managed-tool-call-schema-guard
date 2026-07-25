@@ -655,6 +655,19 @@ export function createManagedServer(
         billingStateInitializationFailed = true;
       })
     : Promise.resolve();
+  const dependencyReady = async (
+    state: { ready(): Promise<boolean> } | undefined,
+    initializationFailed: boolean,
+    initialized: boolean,
+  ): Promise<boolean> => {
+    if (state === undefined) return true;
+    if (initializationFailed || !initialized) return false;
+    try {
+      return await state.ready();
+    } catch {
+      return false;
+    }
+  };
   let webhookDispatch: Promise<void> | undefined;
   let checkpointAnchorDispatch: Promise<void> | undefined;
   const runWebhookDispatch = (): Promise<void> => {
@@ -897,39 +910,34 @@ export function createManagedServer(
           intelligenceStateInitialization,
           billingStateInitialization,
         ]);
+        const [
+          actionStateReady,
+          controlStateReady,
+          schemaStateReady,
+          alertStateReady,
+          intelligenceStateReady,
+          billingStateReady,
+        ] = await Promise.all([
+          dependencyReady(actionState, actionStateInitializationFailed, actionStateInitialized),
+          dependencyReady(controlState, controlStateInitializationFailed, controlStateInitialized),
+          dependencyReady(schemaState, schemaStateInitializationFailed, schemaStateInitialized),
+          dependencyReady(alertState, alertStateInitializationFailed, alertStateInitialized),
+          dependencyReady(
+            intelligenceState,
+            intelligenceStateInitializationFailed,
+            intelligenceStateInitialized,
+          ),
+          dependencyReady(billingState, billingStateInitializationFailed, billingStateInitialized),
+        ]);
         const readiness: ManagedReadinessMetrics = {
           draining,
           localDatabase: store.readinessCheck(),
-          actionState:
-            actionState === undefined ||
-            (!actionStateInitializationFailed &&
-              actionStateInitialized &&
-              (await actionState.ready())),
-          controlState:
-            controlState === undefined ||
-            (!controlStateInitializationFailed &&
-              controlStateInitialized &&
-              (await controlState.ready())),
-          schemaState:
-            schemaState === undefined ||
-            (!schemaStateInitializationFailed &&
-              schemaStateInitialized &&
-              (await schemaState.ready())),
-          alertState:
-            alertState === undefined ||
-            (!alertStateInitializationFailed &&
-              alertStateInitialized &&
-              (await alertState.ready())),
-          intelligenceState:
-            intelligenceState === undefined ||
-            (!intelligenceStateInitializationFailed &&
-              intelligenceStateInitialized &&
-              (await intelligenceState.ready())),
-          billingState:
-            billingState === undefined ||
-            (!billingStateInitializationFailed &&
-              billingStateInitialized &&
-              (await billingState.ready())),
+          actionState: actionStateReady,
+          controlState: controlStateReady,
+          schemaState: schemaStateReady,
+          alertState: alertStateReady,
+          intelligenceState: intelligenceStateReady,
+          billingState: billingStateReady,
         };
         let operational: ManagedOperationalMetrics = {
           quota_tenants: { healthy: 0, warning: 0, exhausted: 0 },
@@ -1023,34 +1031,25 @@ export function createManagedServer(
           intelligenceStateInitialization,
           billingStateInitialization,
         ]);
-        const sharedAvailable =
-          actionState === undefined ||
-          (!actionStateInitializationFailed &&
-            actionStateInitialized &&
-            (await actionState.ready()));
-        const sharedControlAvailable =
-          controlState === undefined ||
-          (!controlStateInitializationFailed &&
-            controlStateInitialized &&
-            (await controlState.ready()));
-        const sharedSchemaAvailable =
-          schemaState === undefined ||
-          (!schemaStateInitializationFailed &&
-            schemaStateInitialized &&
-            (await schemaState.ready()));
-        const sharedAlertAvailable =
-          alertState === undefined ||
-          (!alertStateInitializationFailed && alertStateInitialized && (await alertState.ready()));
-        const sharedIntelligenceAvailable =
-          intelligenceState === undefined ||
-          (!intelligenceStateInitializationFailed &&
-            intelligenceStateInitialized &&
-            (await intelligenceState.ready()));
-        const billingAvailable =
-          billingState === undefined ||
-          (!billingStateInitializationFailed &&
-            billingStateInitialized &&
-            (await billingState.ready()));
+        const [
+          sharedAvailable,
+          sharedControlAvailable,
+          sharedSchemaAvailable,
+          sharedAlertAvailable,
+          sharedIntelligenceAvailable,
+          billingAvailable,
+        ] = await Promise.all([
+          dependencyReady(actionState, actionStateInitializationFailed, actionStateInitialized),
+          dependencyReady(controlState, controlStateInitializationFailed, controlStateInitialized),
+          dependencyReady(schemaState, schemaStateInitializationFailed, schemaStateInitialized),
+          dependencyReady(alertState, alertStateInitializationFailed, alertStateInitialized),
+          dependencyReady(
+            intelligenceState,
+            intelligenceStateInitializationFailed,
+            intelligenceStateInitialized,
+          ),
+          dependencyReady(billingState, billingStateInitializationFailed, billingStateInitialized),
+        ]);
         const available =
           !draining &&
           store.readinessCheck() &&

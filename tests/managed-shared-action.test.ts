@@ -705,6 +705,41 @@ describe('managed shared action-state boundary', () => {
     }
   });
 
+  it('reports transient shared-state readiness failures as degraded without losing metrics', async () => {
+    const state = new MemoryActionState();
+    state.ready = () => Promise.reject(new Error('database connection unavailable'));
+    const metricsToken = 'shared-state-readiness-metrics-token-at-least-32-characters';
+    const service = createManagedServer(
+      {
+        databasePath: await database(),
+        masterSecret: secret,
+        metricsBearerToken: metricsToken,
+      },
+      { actionState: state },
+    );
+    try {
+      await new Promise<void>((resolve) => service.server.listen(0, '127.0.0.1', resolve));
+      const address = service.server.address();
+      if (!address || typeof address === 'string') throw new Error('missing server address');
+      const base = `http://127.0.0.1:${address.port}`;
+
+      const readiness = await fetch(`${base}/readyz`);
+      expect(readiness.status).toBe(503);
+      expect(await readiness.json()).toEqual({ status: 'shared_action_state_unavailable' });
+
+      const metrics = await fetch(`${base}/metrics`, {
+        headers: { authorization: `Bearer ${metricsToken}` },
+      });
+      expect(metrics.status).toBe(200);
+      const body = await metrics.text();
+      expect(body).toContain('schema_guard_dependency_ready{dependency="action_state"} 0');
+      expect(body).toContain('schema_guard_operational_metrics_source_ready{source="action"} 0');
+    } finally {
+      await service.close();
+    }
+    expect(state.closed).toBe(true);
+  });
+
   it('requires shared checkpoint delivery acknowledgement before allowing execution', async () => {
     const state = new AnchoredMemoryActionState();
     const deliveredPayloads: string[] = [];

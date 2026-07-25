@@ -156,17 +156,21 @@ SCHEMA_GUARD_PUBLIC_E2E_BASE_URL=https://api.example.com \
 SCHEMA_GUARD_PUBLIC_E2E_API_KEY_FILE=/owner-only/audit.key \
 SCHEMA_GUARD_PUBLIC_E2E_TENANT_ID=audit-release-candidate \
 SCHEMA_GUARD_ANCHOR_SSH_TARGET=anchor-host-alias \
+SCHEMA_GUARD_ANCHOR_SSH_IDENTITY_FILE=/owner-only/anchor-identity \
+SCHEMA_GUARD_ANCHOR_SSH_KNOWN_HOSTS_FILE=/trusted/anchor-known-hosts \
 SCHEMA_GUARD_ANCHOR_EDGE_CONTAINER=exact-anchor-edge-container \
 SCHEMA_GUARD_DEPLOYED_REVISION=managed-release-digest \
 npm run audit:public-anchor-outage
 ```
 
-The script validates every identifier, stops only the named anchor edge,
-requires public action admission to return an anchor-acknowledgement 503,
-restarts the edge in a `finally` path, waits for outbox recovery, proves the
-reservation remains duplicate-blocked, releases it explicitly, and verifies
-reconciliation and control integrity. Do not run it against customer action
-traffic or without an independently verified recovery path.
+The script validates every identifier, requires an owner-only SSH identity and
+a known-hosts file that is not group/other writable, enforces strict host-key
+checking, stops only the named anchor edge, requires public action admission to
+return an anchor-acknowledgement 503, restarts the edge in a `finally` path,
+waits for outbox recovery, proves the reservation remains duplicate-blocked,
+releases it explicitly, and verifies reconciliation and control integrity. Do
+not run it against customer action traffic or without an independently verified
+recovery path.
 
 ## Uncertain action reconciliation
 

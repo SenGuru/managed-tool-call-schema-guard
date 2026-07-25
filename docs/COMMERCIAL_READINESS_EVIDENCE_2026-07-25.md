@@ -98,86 +98,86 @@ managed service. This final pass:
 No destructive tenant deletion was executed in this browser pass. No external
 provider was called or represented as proven.
 
-## Purchased-host preflight
+## Purchased-host staging evidence
 
-Read-only checks after commit `6055990` established the following without
-switching running services:
+Strictly pinned SSH checks and controlled staging operations established:
 
-- DreamHost `208.113.209.209` is online and its observed ED25519 host key
-  matches the separately pinned local known-hosts entry.
-- The DreamHost managed service, PostgreSQL, and edge proxy are healthy; the
-  public readiness endpoint presents trusted TLS.
-- DreamHost uses default-drop IPv4 and IPv6 host-firewall policies. Only SSH,
-  HTTP, HTTPS, and HTTPS/QUIC are admitted; the managed API listener is bound to
-  loopback behind the edge proxy. Fail2Ban is active for SSH.
-- The running managed container is still the previous reviewed
-  `schema-guard-managed:0.2.0` release. Exact commit `dd60b4e` managed and
-  anchor images were built locally for `linux/amd64`, run as UID/GID 65532,
-  and scanned with zero High/Critical vulnerabilities or embedded secrets.
-  Their local image IDs are
-  `sha256:1c244d892e85e98e2a2fa1bbf7b7d8866a7f717ac4c42ff8f457a3e2d81700fb`
-  and
-  `sha256:0dab2046729a75d75c68b0e4e9c4290b192ed50b6e23db3477b884d033ead9a2`.
-- The exact `dd60b4e` managed archive was transferred to DreamHost with
-  matching SHA-256
-  `3bf6b47f38ed1064221ab49dcfbc8b4b4de916ca3a19352652a191a445fc3ae1`
-  and loaded under the immutable `schema-guard-managed:dd60b4e-amd64`
-  tag. Its remote image ID, platform, and user match the local image. Zero
-  running containers use it.
-- The current production Compose file predates the monitoring-only bearer
-  required by the new public-mode image. A versioned `dd60b4e` Compose
-  candidate and a rollback copy of the deployment environment were staged.
-  A fresh monitoring credential was generated directly into a root-owned,
-  mode-0600 host file; only its file path was added to the deployment
-  environment. The complete managed, PostgreSQL, and edge overlay renders
-  successfully under the root operator context with the exact candidate tag.
-  No container was recreated.
-- The previous DreamHost image has an immutable rollback tag.
-- DreamHost can reach the independently hosted anchor readiness endpoint using
-  the pinned private CA.
-- DreamHost's daily encrypted main-backup job most recently exited successfully
-  and recorded an off-machine transfer. Its inbound anchor-backup ingest and
-  retention jobs also exited successfully, and the root-owned archive contains
-  recent owner-read-only encrypted anchor bundles. This proves recent encrypted
-  bidirectional transfer, not a clean-host restore.
-- The DreamHost cross-domain readiness, container-health, TLS-expiry, and
-  backup-freshness monitor most recently exited successfully and recorded a
-  healthy state. External paging delivery and escalation have not been
-  deliberately triggered or acknowledged.
-- The authenticated DigitalOcean provider console confirms Droplet
-  `akriven-anchor-prod-01` is Active at `147.182.213.242`, in NYC1, on Ubuntu
-  24.04 x64, with the expected `akriven`, `production`, and `audit-anchor`
-  tags. No DigitalOcean Cloud Firewall is assigned and provider automated
-  backups are not enabled.
-- The DigitalOcean ED25519 fingerprint observed over the network agrees with
-  the existing local known-hosts entry. Its authoritative value has not yet
-  been confirmed from the Droplet itself through the provider Web Console. The
-  control panel exposes the correct console launch flow, but its terminal opens
-  in a popup that the controlled in-app browser cannot claim. No further
-  DigitalOcean SSH operation is permitted until the non-secret
-  `/etc/ssh/ssh_host_ed25519_key.pub` fingerprint is read through that
-  control-plane terminal and matched. The exact `dd60b4e` anchor candidate has
-  not been transferred or deployed.
+- The owner read the DigitalOcean Droplet's ED25519 fingerprint from its
+  control-plane terminal. It exactly matched the separately pinned local
+  known-hosts entry before DigitalOcean SSH operations resumed.
+- DreamHost `208.113.209.209` uses default-drop IPv4 and IPv6 firewall
+  policies. Only SSH, HTTP, HTTPS, and HTTPS/QUIC are admitted; the managed API
+  listener is loopback-only behind the edge proxy. Fail2Ban is active for SSH.
+- DigitalOcean `147.182.213.242` uses default-deny UFW rules; the anchor API is
+  reachable from DreamHost across the WireGuard failure-domain link. No
+  DigitalOcean Cloud Firewall is assigned and provider automated backups are
+  not enabled, which remain defense-in-depth findings rather than hidden
+  controls.
+- Exact commit `dd60b4e` managed and anchor images were built locally for
+  `linux/amd64`, run as UID/GID 65532, and scanned with zero High/Critical
+  vulnerabilities or embedded secrets. The archives transferred to each host
+  had matching SHA-256 values and the remote image IDs exactly matched the
+  local images.
+- The `dd60b4e` anchor image is running on DigitalOcean with zero restarts. Its
+  previous image is retained under an immutable rollback tag. An immediate
+  encrypted off-machine backup completed in 8 seconds with 8 seconds of
+  measured receiver downtime. Pre/post activation database integrity, row
+  counts, revision range, and checkpoint/event digests matched.
+- The `dd60b4e` managed image is running on DreamHost behind trusted TLS with
+  zero restarts after a deliberate clean recreation. The previous image is
+  retained under an immutable rollback tag. SQLite integrity is `ok`, schema
+  version 15 and persisted counts survived activation, the PostgreSQL migration
+  families remained current, and the action checkpoint remained revision 9
+  with two rows.
+- A fresh encrypted main backup completed in 2 seconds and recorded an
+  off-machine transfer before managed activation. The backup is online and
+  therefore recorded no application downtime.
+- A newly required monitoring credential initially exposed a real deployment
+  permission defect: the hardened UID 65532 process could not read a root-owned
+  mode-0600 source file. The file was corrected to the same UID 65532,
+  mode-0400 pattern as the other container secrets. A clean recreation then
+  passed loopback and TLS health/readiness, dashboard, authenticated metrics
+  (`200`), and unauthenticated metrics (`401`).
+- The DreamHost revision 9 checkpoint hash had exactly one matching latest
+  acknowledgement in the independent DigitalOcean anchor. The anchor integrity
+  check was `ok`.
+- A real separate-host anchor outage drill used a dedicated disposable
+  `audit-*` tenant. High-risk action admission failed closed with
+  `checkpoint_anchor_unacknowledged`; the edge recovered in 6.011 seconds; the
+  uncertain reservation remained `duplicate_blocked`; and reconciliation and
+  control-plane integrity passed. The audit tenant then completed the actual
+  deletion-request lock, synchronized export/hash verification, offline
+  deletion receipt, retained value-free anchor boundary, and credential/file
+  cleanup.
+- A receiver restart recovered in 6.965 seconds. Anchor integrity remained
+  `ok`, all 12 latest checkpoints and 38 events remained present, and the
+  ordered checkpoint/event digests were identical before and after restart.
+- A PostgreSQL outage left liveness at `200`, removed readiness, recovered in
+  5.730 seconds without restarting the managed container, and preserved the
+  checkpoint exactly. The first observed readiness response was `500` rather
+  than the intended `503`; this was classified as a defect, fixed so transient
+  dependency exceptions degrade readiness and metrics deterministically, and
+  covered by a focused regression before rebuilding the next candidate.
+- The separate-host outage runner now requires an owner-only SSH identity,
+  a non-group/other-writable known-hosts file, `IdentitiesOnly`, and strict
+  host-key checking. It no longer relies on ambient SSH trust.
 
-The Compose profiles now accept explicit reviewed managed and anchor image
-identities. The operator runbook requires immutable selections, a preserved
-rollback tag, complete overlay rendering, and host deployment with
-`--no-build`. These are deployment controls, not evidence that the new release
-is running.
+These are production-like staging observations on the purchased hosts. They do
+not prove customer-production traffic, external paging acknowledgement, a
+clean-host encrypted restore, or unavailable identity/email/billing/model
+providers.
 
 ## Remaining launch blockers
 
 ### Before first design-partner action traffic
 
-1. Verify the DigitalOcean host fingerprint in the provider console before any
-   further SSH operation.
-2. Deploy the exact committed source privately to the verified DreamHost main
-   host and DigitalOcean anchor host, then repeat TLS, migration, rollback,
-   anchor-outage, redrive, reconciliation, restart, and checkpoint-comparison
-   drills.
-3. Configure immutable encrypted off-machine backups and restore them on a
-   clean host; compare audit and anchor checkpoints before resuming action
-   traffic.
+1. Build and activate the dependency-readiness correction identified by the
+   real PostgreSQL outage, then repeat the PostgreSQL outage and exact
+   checkpoint comparison.
+2. Exercise the preserved rollback image and return to the exact candidate
+   without data divergence.
+3. Restore the encrypted main and anchor backups on an isolated clean host and
+   compare audit and anchor checkpoints before resuming action traffic.
 4. Configure independent uptime, backup-heartbeat, and paging delivery and
    observe acknowledgement/escalation.
 5. Exercise a customer-owned HTTPS webhook receiver and downstream side-effect
@@ -216,8 +216,10 @@ is running.
 ## Honest boundary
 
 What is proven is a substantial deterministic checkpoint, managed control
-plane, operator dashboard, API/SDK/CLI surface, hardened container topology, and
-provider-independent operational program. What is not proven is a public SaaS
-business, a customer-production SLO, live identity/email/billing/model-provider
-integration, exact-source operation on the two purchased hosts, or customer
-demand.
+plane, operator dashboard, API/SDK/CLI surface, hardened container topology,
+provider-independent operational program, and exact `dd60b4e` cross-host
+staging operation with real backup, anchor-outage, deletion, restart, and
+checkpoint evidence. What is not proven is a public SaaS business, a
+customer-production SLO, clean-host encrypted restore, external paging,
+live identity/email/billing/model-provider integration, the pending
+dependency-readiness correction on the purchased hosts, or customer demand.
