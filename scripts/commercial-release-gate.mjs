@@ -175,6 +175,35 @@ function requirementsFor(target) {
   return requirements;
 }
 
+export function commercialEvidenceTemplate({
+  target,
+  sourceRevision,
+  executedAt = new Date().toISOString(),
+}) {
+  if (!['private-beta', 'public-production'].includes(target))
+    throw new TypeError('target must be private-beta or public-production');
+  if (typeof sourceRevision !== 'string' || !/^[0-9a-f]{40}$/u.test(sourceRevision))
+    throw new TypeError('sourceRevision must be an exact lowercase 40-character Git SHA');
+  if (!Number.isFinite(Date.parse(executedAt)))
+    throw new TypeError('executedAt must be an ISO-8601 timestamp');
+  const billingVariant = target === 'public-production' ? 'stripe_test' : 'manual';
+  return requirementsFor(target).map((gate) => {
+    const checks = gate.id === 'billing' ? BILLING_CHECKS[billingVariant] : gate.checks;
+    return {
+      report_version: REPORT_VERSION,
+      gate_id: gate.id,
+      source_revision: sourceRevision,
+      status: 'unproven',
+      redacted: true,
+      evidence_kind: 'manual_review',
+      executed_at: executedAt,
+      checks: Object.fromEntries(checks.map((check) => [check, false])),
+      artifacts: [],
+      ...(gate.id === 'billing' ? { variant: billingVariant } : {}),
+    };
+  });
+}
+
 function hasForbiddenKey(value) {
   if (Array.isArray(value)) return value.some(hasForbiddenKey);
   if (!value || typeof value !== 'object') return false;

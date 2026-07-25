@@ -26,6 +26,29 @@ export interface CommercialReleaseOptions {
   now?: number;
 }
 
+export interface CommercialEvidenceTemplateOptions {
+  target: 'private-beta' | 'public-production';
+  sourceRevision: string;
+  executedAt?: string;
+}
+
+export interface CommercialEvidenceTemplateReport {
+  report_version: '1';
+  gate_id: string;
+  source_revision: string;
+  status: 'unproven';
+  redacted: true;
+  evidence_kind: 'manual_review';
+  executed_at: string;
+  checks: Record<string, false>;
+  artifacts: [];
+  variant?: 'manual' | 'stripe_test';
+}
+
 export function evaluateCommercialRelease(
   options: CommercialReleaseOptions,
 ): CommercialReleaseReport;
+
+export function commercialEvidenceTemplate(
+  options: CommercialEvidenceTemplateOptions,
+): CommercialEvidenceTemplateReport[];

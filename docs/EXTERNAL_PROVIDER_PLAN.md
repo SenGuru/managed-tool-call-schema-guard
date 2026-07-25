@@ -62,8 +62,10 @@ not live-provider proof. Use this order for the remaining account work:
    charge procedures. For automated billing, rotate the previously exposed
    Stripe test credential in the Stripe console and complete the full sandbox
    lifecycle. Never enable live mode during certification.
-8. Assemble redacted, content-addressed evidence bound to the exact candidate
-   SHA and run `npm run audit:commercial-release -- --target private-beta`.
+8. Generate the all-unproven evidence skeleton with
+   `npm run audit:commercial-template`, then assemble redacted,
+   content-addressed evidence bound to the exact candidate SHA and run
+   `npm run audit:commercial-release -- --target private-beta`.
    Admit no design-partner action traffic unless the verdict is
    `private_beta_ready`.
 9. With the first design partner, exercise its owned HTTPS webhook and

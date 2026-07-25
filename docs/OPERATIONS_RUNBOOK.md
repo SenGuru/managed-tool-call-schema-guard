@@ -358,6 +358,17 @@ operator evidence described in
 [`COMMERCIAL_RELEASE_GATE.md`](COMMERCIAL_RELEASE_GATE.md), then run:
 
 ```bash
+npm run audit:commercial-template -- \
+  --target private-beta \
+  --source-revision 0123456789abcdef0123456789abcdef01234567 \
+  --output-dir /owner-only/path/to/new-evidence-directory
+```
+
+The template is deliberately all-false and refuses overwrite. Promote no check
+to `true` until its exact behavior and redacted artifact have been reviewed.
+Then evaluate the completed bundle:
+
+```bash
 npm run audit:commercial-release -- \
   --target private-beta \
   --source-revision 0123456789abcdef0123456789abcdef01234567 \

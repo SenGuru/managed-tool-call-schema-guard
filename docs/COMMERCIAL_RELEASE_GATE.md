@@ -17,6 +17,21 @@ unexercised provider configuration into proof.
 
 ## Commands
 
+Create a fail-closed evidence skeleton under an already owner-only parent:
+
+```bash
+npm run audit:commercial-template -- \
+  --target private-beta \
+  --source-revision 0123456789abcdef0123456789abcdef01234567 \
+  --output-dir /owner-only/path/to/new-evidence-directory
+```
+
+The generator refuses an existing destination or a group/other-accessible
+parent. It creates every report with mode `0600`, `status: "unproven"`, all
+checks `false`, and no artifacts. It never fabricates a passing report. Review
+and replace each field only after the named behavior has been exercised and
+the redacted artifact has been hashed.
+
 ```bash
 npm run audit:commercial-release -- \
   --target private-beta \
