@@ -44,10 +44,11 @@ not live-provider proof. Use this order for the remaining account work:
 4. Complete independent security review, legal/privacy retention approval,
    vulnerability-disclosure routing, and named incident/support ownership.
    These four steps gate action-mutating private-beta traffic.
-5. Deploy the configured WorkOS staging environment against the implemented
-   organization/role/session boundary and certify verified-email login,
-   public-TLS callback/session/logout, invitation, MFA/recovery, membership
-   removal, provider revocation and cross-organization isolation.
+5. Finish certification of the deployed WorkOS staging environment against the
+   implemented organization/role/session boundary: verified-email
+   callback/session/logout, invitation, MFA/recovery, membership removal,
+   provider revocation and cross-organization isolation. The real public login
+   redirect and secure state cookie are already observed.
 6. Configure Postmark only after the identity flows define their verification,
    invitation, recovery and security-message requirements. Exercise the
    implemented durable outbox through real inbox delivery, bounce,
@@ -208,9 +209,10 @@ Observed on 2026-07-25:
   owner-controlled master-password/Secret-Key step. Vault activation is blocked
   until the owner chooses the master password and retains the Emergency Kit.
 - WorkOS Google signup verification completed. The Akriven staging project,
-  application, hardened authentication settings, mapped organization, owner
-  user and exact owner role are configured. Deployment and live
-  public-TLS/session/MFA/recovery/revocation certification remain pending.
+  application, hardened authentication settings, mapped organization, complete
+  role set and owner membership are configured and deployed. The real public
+  login redirect and secure state cookie are observed; callback/session,
+  MFA/recovery and revocation certification remain pending.
 - Sentry signup remains blocked at Google's device-verification boundary; no
   Sentry project, data region or irreversible retention choice was created.
 - Postmark, Stripe, Backblaze and live model credentials: not configured.

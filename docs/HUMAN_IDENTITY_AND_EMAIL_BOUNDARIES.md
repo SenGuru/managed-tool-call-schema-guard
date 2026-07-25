@@ -54,11 +54,12 @@ organization is mapped to the existing `staging-owner` tenant, and its owner
 membership has the exact `owner` role consumed by the fail-closed role mapper.
 The replacement provider key, cookie password, generated staging-user password
 and authorization map are held in owner-only files outside the repository.
-This is **configured external evidence**, not a completed session
-certification: verified-email login, MFA enrollment/recovery, invitation,
-membership removal, provider-side revocation, organization switching and the
-public-TLS callback/session/logout path still require the exact application
-revision to be deployed and exercised.
+The exact application revision is deployed and the public login boundary has
+returned the real AuthKit redirect plus secure state cookie. This is
+**configured and partially exercised external evidence**, not a completed
+session certification: verified-email callback/session, MFA
+enrollment/recovery, invitation, membership removal, provider-side revocation,
+organization switching and logout still require end-to-end exercise.
 
 ## Transactional email
 

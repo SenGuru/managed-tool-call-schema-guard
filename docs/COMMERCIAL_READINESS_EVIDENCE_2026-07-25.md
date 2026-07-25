@@ -11,8 +11,9 @@ It does not promote historical staging evidence to exact-source evidence.
 
 Final checkpoint inventory:
 
-- managed runtime source/image: commit `089c86f`, immutable image
-  `sha256:6beebfa958bc7090e7f34f1f81e3abea0d119b14f5aed691f6e98c355a5f88e0`;
+- managed runtime source/image: commit `32e42b3`, immutable `linux/amd64`
+  image
+  `sha256:772754291759169e5d9867b7ac0abe6fdf5ec3b2df255c9297f5149297804dd4`;
 - independent anchor source/image: commit `dd60b4e`, immutable image
   `sha256:0dab2046729a75d75c68b0e4e9c4290b192ed50b6e23db3477b884d033ead9a2`;
 - bounded host monitoring first committed at `09f7724`; final handoff is the
@@ -259,6 +260,31 @@ These are production-like staging observations on the purchased hosts. They do
 not prove customer-production traffic, external paging acknowledgement, or
 unavailable identity/email/billing/model providers.
 
+### Notification and WorkOS staging activation
+
+Commit `32e42b3` was built for `linux/amd64` as UID/GID 65532, scanned with
+zero High/Critical vulnerabilities and zero detected image secrets, archived,
+transferred and loaded with an identical archive SHA-256. A fresh encrypted
+off-machine main backup completed before activation. The full
+production/PostgreSQL/edge/WorkOS Compose graph validated before the managed
+container was recreated.
+
+The activated container is healthy with zero restarts. Public and loopback
+liveness/readiness are `200`; SQLite integrity is `ok` at migration 17; shared
+control migrations are `1,2,3,4`; both notification outboxes were empty after
+activation. All three WorkOS secret files are mounted mode `0400` for UID/GID 65532. The authenticated notification inventory returned `200`; an attempted
+send and Postmark callback returned `501` with no row created because Postmark
+is intentionally unconfigured. A 15-minute log scan found no WorkOS key or
+private-sentinel pattern.
+
+The real public `GET /v1/auth/login` boundary returned `302` to WorkOS AuthKit
+and issued the secure state cookie. Its first console configuration used the
+nonexistent `/v1/auth/sign-in` endpoint and correctly produced `401`; the
+observed mismatch was corrected to `/v1/auth/login` before the browser
+certification proceeded. At this report checkpoint the hosted owner flow had
+reached WorkOS email verification. Callback/session/MFA/logout evidence remains
+pending until that owner-controlled verification and enrollment finishes.
+
 ## Remaining launch blockers
 
 ### Before first design-partner action traffic
@@ -324,7 +350,7 @@ delivery and tamper detection.
 
 What is proven is a substantial deterministic checkpoint, managed control
 plane, operator dashboard, API/SDK/CLI surface, hardened container topology,
-provider-independent operational program, exact `089c86f` managed plus
+provider-independent operational program, exact `32e42b3` managed plus
 `dd60b4e` anchor cross-host staging operation, and real backup/restore,
 anchor-outage, deletion, restart, rollback, and checkpoint evidence. What is
 not proven is a public SaaS business, a customer-production SLO, external
