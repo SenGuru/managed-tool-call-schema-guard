@@ -49,6 +49,12 @@ export interface SharedAlertClaim {
   payload: string;
   attemptCount: number;
 }
+export interface SharedAlertOperationalMetrics {
+  pending: number;
+  processing: number;
+  dead: number;
+  oldest_pending_age_seconds: number;
+}
 export interface AlertState {
   migrate(): Promise<void>;
   ready(): Promise<boolean>;
@@ -81,6 +87,7 @@ export interface AlertState {
     errorCode?: string;
   }): Promise<'delivered' | 'pending' | 'dead' | undefined>;
   verifyTenant(tenantId: string): Promise<{ valid: boolean; checked: number }>;
+  operationalMetrics?(): Promise<SharedAlertOperationalMetrics>;
   close(): Promise<void>;
 }
 export interface TransactionalAlertWriter {
@@ -1246,6 +1253,39 @@ export class PostgresAlertState implements AlertState {
       await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
       return this.verifyWith(client, tenantId);
     });
+  }
+  async operationalMetrics(): Promise<SharedAlertOperationalMetrics> {
+    const result = await this.pool.query<{
+      pending: string;
+      processing: string;
+      dead: string;
+      oldest_pending_age_seconds: string;
+    }>(
+      `SELECT
+         COUNT(*) FILTER (WHERE status='pending')::text pending,
+         COUNT(*) FILTER (WHERE status='processing')::text processing,
+         COUNT(*) FILTER (WHERE status='dead')::text dead,
+         COALESCE(
+           GREATEST(
+             0,
+             EXTRACT(EPOCH FROM (NOW() - MIN(created_at) FILTER (WHERE status='pending')))
+           ),
+           0
+         )::text oldest_pending_age_seconds
+       FROM sg_alert_deliveries`,
+    );
+    const row = result.rows[0] ?? {
+      pending: '0',
+      processing: '0',
+      dead: '0',
+      oldest_pending_age_seconds: '0',
+    };
+    return {
+      pending: Number(row.pending),
+      processing: Number(row.processing),
+      dead: Number(row.dead),
+      oldest_pending_age_seconds: Math.floor(Number(row.oldest_pending_age_seconds)),
+    };
   }
   async close(): Promise<void> {
     if (this.ownsPool) await this.pool.end();

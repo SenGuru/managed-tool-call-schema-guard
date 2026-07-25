@@ -1,12 +1,12 @@
 {
   "version": 1,
-  "generated_at": "2026-07-24T21:04:45.776Z",
+  "generated_at": "2026-07-25T12:07:22.113Z",
   "policy": "shallow clone and static source reading only; repository code and dependencies were not executed",
   "repositories": [
     {
       "id": "mcp-python-sdk",
       "url": "https://github.com/modelcontextprotocol/python-sdk.git",
-      "commit": "00a70148bcd39b40ee0b0745e0b468eac0a44efb",
+      "commit": "629ca297d24b24f8055bf191ea7ff046a5c32100",
       "evidence": [
         {
           "file": "tests/interaction/lowlevel/test_tools.py",
@@ -23,7 +23,7 @@
     {
       "id": "openai-agents-python",
       "url": "https://github.com/openai/openai-agents-python.git",
-      "commit": "59763339cba674392e0c88b9dfcc0bc7c169681e",
+      "commit": "c1b423749e2bf8ca5f89cad13e2a144c9683a6ee",
       "evidence": [
         {
           "file": "tests/test_function_schema.py",
@@ -40,7 +40,7 @@
     {
       "id": "pydantic-ai",
       "url": "https://github.com/pydantic/pydantic-ai.git",
-      "commit": "20cdf4529cc4c2a3e1de7b03a391ca00ccb86cb4",
+      "commit": "ed0f40c0e5061722f7d9f579ed7efff1b74e3ea5",
       "evidence": [
         {
           "file": "tests/test_tools.py",
@@ -57,7 +57,7 @@
     {
       "id": "google-adk-python",
       "url": "https://github.com/google/adk-python.git",
-      "commit": "4b002c4b56e0b5fa83a0d989ef7663fbedf23211",
+      "commit": "fabf0fd552eceda2a5cbc0263eb76ea2e6655fe8",
       "evidence": [
         {
           "file": "tests/integration/fixture/home_automation_agent/test_files/dependent_tool_calls.test.json",
@@ -79,7 +79,7 @@
     {
       "id": "openai-agents-js",
       "url": "https://github.com/openai/openai-agents-js.git",
-      "commit": "67e97331ba3fba5c4327c2d41144649506d5d2cf",
+      "commit": "52b2702fc034fb47f79ec50fad173f0e9b068ca6",
       "evidence": [
         {
           "file": "packages/agents-core/test/toolCustomData.test.ts",

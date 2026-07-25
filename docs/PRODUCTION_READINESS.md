@@ -53,9 +53,12 @@ independent checkpoint-anchor URL/signing-secret pair, plus a dedicated
 - Public-mode config validation.
 - Protected Prometheus-format service metrics for privacy-safe route/status
   counts, latency histograms, timeouts, in-flight work, dependency readiness,
-  dispatch failures, process memory, and uptime. A customer API key cannot
-  scrape aggregate metrics, and public mode refuses to start without the
-  separate monitoring credential.
+  dispatch failures, process memory, uptime, aggregate quota pressure,
+  authoritative alert/anchor queue depth and pending age, and unresolved
+  action-reservation count/age. Metric-source readiness distinguishes a healthy
+  zero from an unavailable persisted source. A customer API key cannot scrape
+  aggregate metrics, no customer/tool/delivery identifier is a label, and
+  public mode refuses to start without the separate monitoring credential.
 - W3C trace-context correlation with a new server span, response trace ID, and
   one-way trace-ID hashes in access logs. Raw prompts and tool arguments remain
   outside tracing metadata.

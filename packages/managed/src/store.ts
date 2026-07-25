@@ -47,6 +47,7 @@ import {
 import {
   ALL_SCOPES,
   type ManagedConfig,
+  type ManagedOperationalMetrics,
   type ActionCheckpointAnchorDelivery,
   type ActionIdempotencyCheckpoint,
   type ActionIdempotencyCheckpointComparison,
@@ -319,6 +320,7 @@ export class ManagedStore {
       const actualVersion = Number(this.db.pragma('user_version', { simple: true }));
       const foreignKeys = Number(this.db.pragma('foreign_keys', { simple: true }));
       const query = this.db.prepare('SELECT 1 ready').get() as Row | undefined;
+      this.operationalMetrics();
       return (
         actualVersion === expectedVersion &&
         foreignKeys === 1 &&
@@ -3849,6 +3851,68 @@ export class ManagedStore {
         drift_count: 0,
       }
     );
+  }
+
+  operationalMetrics(): ManagedOperationalMetrics {
+    const quota = this.db
+      .prepare(
+        `SELECT
+           COALESCE(SUM(CASE
+             WHEN COALESCE(u.validation_count,0) < t.monthly_limit * 0.8 THEN 1 ELSE 0 END),0) healthy,
+           COALESCE(SUM(CASE
+             WHEN COALESCE(u.validation_count,0) >= t.monthly_limit * 0.8
+              AND COALESCE(u.validation_count,0) < t.monthly_limit THEN 1 ELSE 0 END),0) warning,
+           COALESCE(SUM(CASE
+             WHEN COALESCE(u.validation_count,0) >= t.monthly_limit THEN 1 ELSE 0 END),0) exhausted
+         FROM tenants t
+         JOIN tenant_lifecycle l ON l.tenant_id=t.id AND l.status='active'
+         LEFT JOIN usage_monthly u ON u.tenant_id=t.id AND u.month=?`,
+      )
+      .get(month()) as Row;
+    const deliveryMetrics = (
+      table: 'alert_deliveries' | 'checkpoint_anchor_deliveries',
+    ): ManagedOperationalMetrics['alert_deliveries'] => {
+      const row = this.db
+        .prepare(
+          `SELECT
+             COALESCE(SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END),0) pending,
+             COALESCE(SUM(CASE WHEN status='processing' THEN 1 ELSE 0 END),0) processing,
+             COALESCE(SUM(CASE WHEN status='dead' THEN 1 ELSE 0 END),0) dead,
+             MIN(CASE WHEN status='pending' THEN created_at END) oldest_pending_at
+           FROM ${table}`,
+        )
+        .get() as Row;
+      const oldest = text(row.oldest_pending_at);
+      return {
+        pending: Number(row.pending),
+        processing: Number(row.processing),
+        dead: Number(row.dead),
+        oldest_pending_age_seconds: oldest
+          ? Math.max(0, Math.floor((Date.now() - Date.parse(oldest)) / 1_000))
+          : 0,
+      };
+    };
+    const pendingActions = this.db
+      .prepare(
+        `SELECT COUNT(*) pending,MIN(created_at) oldest_pending_at
+         FROM action_idempotency WHERE state='pending'`,
+      )
+      .get() as Row;
+    const oldestAction = text(pendingActions.oldest_pending_at);
+    return {
+      quota_tenants: {
+        healthy: Number(quota.healthy),
+        warning: Number(quota.warning),
+        exhausted: Number(quota.exhausted),
+      },
+      alert_deliveries: deliveryMetrics('alert_deliveries'),
+      anchor_deliveries: deliveryMetrics('checkpoint_anchor_deliveries'),
+      pending_action_reservations: Number(pendingActions.pending),
+      oldest_pending_action_age_seconds: oldestAction
+        ? Math.max(0, Math.floor((Date.now() - Date.parse(oldestAction)) / 1_000))
+        : 0,
+      sources_ready: { quota: true, alert: true, action: true },
+    };
   }
 
   publishRuleset(

@@ -66,6 +66,7 @@ import {
   ALL_SCOPES,
   type ActionIdempotencyCheckpoint,
   type ManagedConfig,
+  type ManagedOperationalMetrics,
   type PlanId,
   type Principal,
   type Scope,
@@ -930,13 +931,87 @@ export function createManagedServer(
               billingStateInitialized &&
               (await billingState.ready())),
         };
+        let operational: ManagedOperationalMetrics = {
+          quota_tenants: { healthy: 0, warning: 0, exhausted: 0 },
+          alert_deliveries: {
+            pending: 0,
+            processing: 0,
+            dead: 0,
+            oldest_pending_age_seconds: 0,
+          },
+          anchor_deliveries: {
+            pending: 0,
+            processing: 0,
+            dead: 0,
+            oldest_pending_age_seconds: 0,
+          },
+          pending_action_reservations: 0,
+          oldest_pending_action_age_seconds: 0,
+          sources_ready: { quota: false, alert: false, action: false },
+        };
+        if (readiness.localDatabase)
+          try {
+            operational = store.operationalMetrics();
+          } catch {
+            operational.sources_ready = { quota: false, alert: false, action: false };
+          }
+        if (controlState) {
+          operational.sources_ready.quota = false;
+          operational.quota_tenants = { healthy: 0, warning: 0, exhausted: 0 };
+          if (readiness.controlState && controlState.operationalMetrics)
+            try {
+              operational.quota_tenants = await controlState.operationalMetrics();
+              operational.sources_ready.quota = true;
+            } catch {
+              operational.sources_ready.quota = false;
+            }
+        }
+        if (alertState) {
+          operational.sources_ready.alert = false;
+          operational.alert_deliveries = {
+            pending: 0,
+            processing: 0,
+            dead: 0,
+            oldest_pending_age_seconds: 0,
+          };
+          if (readiness.alertState && alertState.operationalMetrics)
+            try {
+              operational.alert_deliveries = await alertState.operationalMetrics();
+              operational.sources_ready.alert = true;
+            } catch {
+              operational.sources_ready.alert = false;
+            }
+        }
+        if (actionState) {
+          operational.sources_ready.action = false;
+          operational.anchor_deliveries = {
+            pending: 0,
+            processing: 0,
+            dead: 0,
+            oldest_pending_age_seconds: 0,
+          };
+          operational.pending_action_reservations = 0;
+          operational.oldest_pending_action_age_seconds = 0;
+          if (readiness.actionState && actionState.operationalMetrics)
+            try {
+              const actionOperational = await actionState.operationalMetrics();
+              operational.anchor_deliveries = actionOperational.anchor_deliveries;
+              operational.pending_action_reservations =
+                actionOperational.pending_action_reservations;
+              operational.oldest_pending_action_age_seconds =
+                actionOperational.oldest_pending_action_age_seconds;
+              operational.sources_ready.action = true;
+            } catch {
+              operational.sources_ready.action = false;
+            }
+        }
         response.writeHead(200, {
           'content-type': 'text/plain; version=0.0.4; charset=utf-8',
           'cache-control': 'no-store',
           'x-content-type-options': 'nosniff',
           ...publicResponseHeaders,
         });
-        response.end(metrics.render(readiness));
+        response.end(metrics.render(readiness, operational));
         return;
       }
       if (request.method === 'GET' && url.pathname === '/readyz') {

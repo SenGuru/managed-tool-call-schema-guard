@@ -16,6 +16,11 @@ The commercial-completeness audit added and exercised:
 - protected Prometheus metrics with a monitoring-only credential, bounded
   route/status labels, latency histograms, in-flight work, timeouts, dependency
   readiness, dispatch failures, memory, and uptime;
+- authoritative privacy-safe operational gauges for tenant quota bands, alert
+  and checkpoint delivery depth/age/dead-letter state, pending action
+  reservations, and per-source availability; readiness now fails when a
+  required operational-state table is unavailable, while the monitoring
+  endpoint remains scrapeable and marks that source unavailable;
 - strict W3C trace-context correlation with a new server span and one-way
   trace-ID hashes in logs;
 - registered-and-observed inventory across API, TypeScript SDK, CLI, and
@@ -37,24 +42,29 @@ The commercial-completeness audit added and exercised:
 
 ## Exact final regression
 
-All commands below ran on 2026-07-25 after the final provider-independent fixes:
+The commands below ran on 2026-07-25 after the operational-metrics delta:
 
-| Command                                                                              | Observed result                                                                                                                                                                                                                                                                                                    |
-| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `npm run check`                                                                      | Passed format, build, lint, script syntax, dry provider boundary, package boundary, typecheck, conformance, 232 TypeScript/JavaScript tests; 16 credentialed PostgreSQL cases skipped by the uncredentialed command; 5 Python tests passed                                                                         |
-| `npm test -- --run tests/dashboard-ui.test.ts`                                       | 14/14 dashboard DOM tests passed, including least-privilege reset, committed-mutation refresh isolation, and evaluation-export success/failure recovery                                                                                                                                                            |
-| `npm audit`                                                                          | 0 known vulnerabilities after updating the transitive `brace-expansion` dependency that the first scan reported as High severity                                                                                                                                                                                   |
-| `npm run audit:container-e2e`                                                        | Passed in 45.870 seconds against fresh PostgreSQL 16, hardened managed and independent TLS-anchor images, two tenants, metrics, tracing, inventory/export, all decision paths, release admission, approvals/idempotency, outage/redrive, restart/persistence, tenant isolation, secret-file and log-privacy checks |
-| `npm run audit:images`                                                               | Managed, anchor, and PostgreSQL images: 0 High/Critical vulnerabilities and 0 embedded secrets                                                                                                                                                                                                                     |
-| `npm run audit:extreme`                                                              | Passed in 37.223 seconds; includes the repository check, dependency audit, conformance, benchmark, restore drill, load test, 1,000-call open-core burst, and 250-call managed burst                                                                                                                                |
-| `trivy fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL --exit-code 1 .` | 0 High/Critical npm vulnerabilities, embedded secrets, or Dockerfile misconfigurations                                                                                                                                                                                                                             |
+| Command                                                                                           | Observed result                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Product-targeted build, ESLint, typecheck, script-syntax, package-boundary, and conformance gates | Passed; conformance covered 8 cases, 4 adapters, and 8 probes. The root aggregate `npm run check` is not a valid exact-source result because an unrelated, concurrently created untracked `apps/trade-signal-lab/` directory is outside the root TypeScript/format configuration. That directory was preserved and excluded from this checkpoint.                  |
+| Serial uncredentialed test suite                                                                  | 232 passed and 17 credentialed PostgreSQL cases skipped; the one parallel resource-contention timeout was rerun focused (5/5) and the complete suite then passed serially                                                                                                                                                                                          |
+| Credentialed PostgreSQL coverage                                                                  | 42 files and 249/249 tests passed; 79.86% statements, 73.31% branches, 81.33% functions, and 81.62% lines                                                                                                                                                                                                                                                          |
+| Python client tests                                                                               | 5/5 passed                                                                                                                                                                                                                                                                                                                                                         |
+| `npm audit`                                                                                       | 0 known vulnerabilities                                                                                                                                                                                                                                                                                                                                            |
+| `npm run audit:container-e2e`                                                                     | Passed in 93.703 seconds against exact current source, fresh PostgreSQL 16, hardened managed and independent TLS-anchor images, two tenants, authoritative operational metrics, tracing, inventory/export, all decision paths, release admission, approvals/idempotency, outage/redrive, restart/persistence, tenant isolation, secret-file and log-privacy checks |
+| `npm run audit:images`                                                                            | Managed, anchor, and PostgreSQL images: 0 High/Critical vulnerabilities and 0 embedded secrets                                                                                                                                                                                                                                                                     |
+| `trivy fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL --exit-code 1 .`              | 0 High/Critical npm vulnerabilities, embedded secrets, or Dockerfile misconfigurations                                                                                                                                                                                                                                                                             |
+| `npm run audit:framework-integrations`                                                            | MCP SDK 1.29.0, OpenAI Agents 0.13.5, PydanticAI 2.13.0, and Google ADK 2.5.0 boundaries passed; rejected calls executed zero tools                                                                                                                                                                                                                                |
+| `npm run audit:five-repos` / `audit:benchmarks` / `audit:real-data`                               | 5 repositories / 9 native fixtures / 35 derived calls passed; 7,699 recorded calls and 30,203 mutations matched; 2,501 real-data rows, 3,302 expected calls, and 15,702 mutations matched. Downloaded repository code was not executed.                                                                                                                            |
+| `npm run audit:real-repos`                                                                        | 20 repositories inspected, 106 fixtures extracted, and no downloaded repository code executed                                                                                                                                                                                                                                                                      |
+| `npm run probe:live:dry`                                                                          | OpenAI, Anthropic, and Gemini request/profile construction passed in dry-run mode; zero live trials were claimed                                                                                                                                                                                                                                                   |
 
-Measurements from the final extreme audit:
+Current serial measurements:
 
-- core benchmark, 10,000 iterations: p50 28.166 µs, p95 33.417 µs,
-  p99 76.084 µs;
-- managed HTTP load, 2,000 requests at concurrency 32: 818.79 requests/s,
-  p50 35.55 ms, p95 43.82 ms, p99 215.25 ms, zero HTTP errors, 2,000
+- core benchmark, 10,000 iterations: p50 45.5 µs, p95 97.917 µs,
+  p99 290.792 µs;
+- managed HTTP load, 2,000 requests at concurrency 32 and four API keys:
+  411.16 requests/s, p50 65.91 ms, p95 86.75 ms, p99 594.94 ms, zero HTTP errors, 2,000
   unique audit IDs, valid 2,000-record audit chain, and no private sentinel in
   the database;
 - self-contained backup/restore: source and restored SQLite integrity true,
@@ -63,25 +73,27 @@ Measurements from the final extreme audit:
 
 ## Real browser evidence
 
-The Codex in-app browser used a disposable local tenant through the real HTTP
-boundary and persisted database. It exercised:
+The Codex in-app browser used a fresh disposable local tenant through the real
+HTTP boundary and persisted database after rebuilding the current website and
+managed service. This final pass:
 
-- `valid`, `valid_with_repair`, and ambiguous-input `rejected`;
-- schema registration, exact-hash production promotion, and enforcement;
-- high/irreversible action classification, approval, one-time admission,
-  duplicate blocking, completion, and checkpoint advance;
-- inventory showing one registered schema tool and one separate action-policy
-  fingerprint without falsely correlating the two privacy domains;
-- conformance ingestion, signed ruleset publication, and value-free evaluation
-  export;
-- validate-only API-key creation with no default scopes, one-time secret
-  display, product-native revoke confirmation, and revocation;
-- product-native alert acknowledgement and unsafe loopback webhook rejection;
-- audit/control/release/reconciliation/ruleset integrity and signed,
-  value-free audit inspection;
-- plan/entitlement display with Checkout and Portal honestly disabled;
-- organization-policy save, wrong-tenant deletion rejection, and guarded
-  workbench mutation refusal.
+- opened all 14 authenticated dashboard routes through the SPA router while
+  preserving the tab-memory-only tenant credential;
+- executed a guarded workbench validation and observed
+  `valid_with_repair`, the exact integer repair, repaired-field evidence,
+  policy result, audit ID, and signed value-free receipt;
+- verified the irreversible retention action presents an in-page `<dialog>`
+  and that no native JavaScript/browser dialog exists, then cancelled without
+  executing the purge;
+- verified the internal-evaluation quota and retention, exact 90-day
+  design-partner offer, manual collection boundary, and disabled Checkout and
+  Portal controls;
+- rebuilt the previously stale website preview after it exposed a `/start`
+  404, then traversed all 17 static routes plus all four resource-article
+  routes; every route exposed a titled document, `main`, and `h1`;
+- checked browser warning/error logs. The only recorded error belonged to the
+  intentionally replaced stale `127.0.0.1:4173` preview; the rebuilt website
+  and dashboard produced no new warning/error entry.
 
 No destructive tenant deletion was executed in this browser pass. No external
 provider was called or represented as proven.

@@ -1,3 +1,5 @@
+import type { ManagedOperationalMetrics } from './types.js';
+
 export interface ManagedReadinessMetrics {
   draining: boolean;
   localDatabase: boolean;
@@ -60,7 +62,7 @@ export class ManagedMetrics {
     this.anchorDispatchFailures += 1;
   }
 
-  render(readiness: ManagedReadinessMetrics): string {
+  render(readiness: ManagedReadinessMetrics, operational: ManagedOperationalMetrics): string {
     const lines = [
       '# HELP schema_guard_http_requests_total Completed HTTP requests.',
       '# TYPE schema_guard_http_requests_total counter',
@@ -118,6 +120,39 @@ export class ManagedMetrics {
         ([dependency, ready]) =>
           `schema_guard_dependency_ready{dependency="${dependency}"} ${ready ? 1 : 0}`,
       ),
+      '# HELP schema_guard_operational_metrics_source_ready Persisted operational metric source readiness (1 ready, 0 unavailable).',
+      '# TYPE schema_guard_operational_metrics_source_ready gauge',
+      ...Object.entries(operational.sources_ready).map(
+        ([source, ready]) =>
+          `schema_guard_operational_metrics_source_ready{source="${escapeLabel(source)}"} ${ready ? 1 : 0}`,
+      ),
+      '# HELP schema_guard_quota_tenants_total Active tenants grouped by monthly quota pressure.',
+      '# TYPE schema_guard_quota_tenants_total gauge',
+      `schema_guard_quota_tenants_total{state="healthy"} ${operational.quota_tenants.healthy}`,
+      `schema_guard_quota_tenants_total{state="warning"} ${operational.quota_tenants.warning}`,
+      `schema_guard_quota_tenants_total{state="exhausted"} ${operational.quota_tenants.exhausted}`,
+      '# HELP schema_guard_delivery_queue_depth Persisted delivery queue rows by dispatcher and status.',
+      '# TYPE schema_guard_delivery_queue_depth gauge',
+      ...(['alert_webhook', 'checkpoint_anchor'] as const).flatMap((dispatcher) => {
+        const queue =
+          dispatcher === 'alert_webhook'
+            ? operational.alert_deliveries
+            : operational.anchor_deliveries;
+        return (['pending', 'processing', 'dead'] as const).map(
+          (status) =>
+            `schema_guard_delivery_queue_depth{dispatcher="${dispatcher}",status="${status}"} ${queue[status]}`,
+        );
+      }),
+      '# HELP schema_guard_delivery_oldest_pending_age_seconds Age of the oldest persisted pending delivery.',
+      '# TYPE schema_guard_delivery_oldest_pending_age_seconds gauge',
+      `schema_guard_delivery_oldest_pending_age_seconds{dispatcher="alert_webhook"} ${operational.alert_deliveries.oldest_pending_age_seconds}`,
+      `schema_guard_delivery_oldest_pending_age_seconds{dispatcher="checkpoint_anchor"} ${operational.anchor_deliveries.oldest_pending_age_seconds}`,
+      '# HELP schema_guard_pending_action_reservations Persisted action reservations awaiting completion or reconciliation.',
+      '# TYPE schema_guard_pending_action_reservations gauge',
+      `schema_guard_pending_action_reservations ${operational.pending_action_reservations}`,
+      '# HELP schema_guard_oldest_pending_action_age_seconds Age of the oldest pending action reservation.',
+      '# TYPE schema_guard_oldest_pending_action_age_seconds gauge',
+      `schema_guard_oldest_pending_action_age_seconds ${operational.oldest_pending_action_age_seconds}`,
       '# HELP schema_guard_process_uptime_seconds Managed-service process uptime.',
       '# TYPE schema_guard_process_uptime_seconds gauge',
       `schema_guard_process_uptime_seconds ${((Date.now() - this.startedAt) / 1_000).toFixed(3)}`,

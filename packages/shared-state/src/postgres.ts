@@ -141,6 +141,17 @@ export interface SharedActionChallengeSummary {
   approved_at: string | null;
 }
 
+export interface SharedActionOperationalMetrics {
+  pending_action_reservations: number;
+  oldest_pending_action_age_seconds: number;
+  anchor_deliveries: {
+    pending: number;
+    processing: number;
+    dead: number;
+    oldest_pending_age_seconds: number;
+  };
+}
+
 export interface ActionState {
   readonly recordsReconciliationAlerts?: boolean;
   readonly recordsAcceptedDecisions?: boolean;
@@ -217,6 +228,7 @@ export interface ActionState {
     limit: number,
   ): Promise<SharedCheckpointAnchorDelivery[]>;
   redriveCheckpointAnchorDelivery(tenantId: string, deliveryId: string): Promise<boolean>;
+  operationalMetrics?(): Promise<SharedActionOperationalMetrics>;
   close(): Promise<void>;
 }
 
@@ -1785,5 +1797,65 @@ export class PostgresActionState implements ActionState {
         lease_expires_at: null,
       });
     });
+  }
+  async operationalMetrics(): Promise<SharedActionOperationalMetrics> {
+    const [reservations, deliveries] = await Promise.all([
+      this.pool.query<{
+        pending: string;
+        oldest_pending_action_age_seconds: string;
+      }>(
+        `SELECT
+           COUNT(*) FILTER (WHERE state='pending')::text pending,
+           COALESCE(
+             GREATEST(
+               0,
+               EXTRACT(EPOCH FROM (NOW() - MIN(created_at) FILTER (WHERE state='pending')))
+             ),
+             0
+           )::text oldest_pending_action_age_seconds
+         FROM sg_action_reservations`,
+      ),
+      this.pool.query<{
+        pending: string;
+        processing: string;
+        dead: string;
+        oldest_pending_age_seconds: string;
+      }>(
+        `SELECT
+           COUNT(*) FILTER (WHERE status='pending')::text pending,
+           COUNT(*) FILTER (WHERE status='processing')::text processing,
+           COUNT(*) FILTER (WHERE status='dead')::text dead,
+           COALESCE(
+             GREATEST(
+               0,
+               EXTRACT(EPOCH FROM (NOW() - MIN(created_at) FILTER (WHERE status='pending')))
+             ),
+             0
+           )::text oldest_pending_age_seconds
+         FROM sg_checkpoint_anchor_deliveries`,
+      ),
+    ]);
+    const reservation = reservations.rows[0] ?? {
+      pending: '0',
+      oldest_pending_action_age_seconds: '0',
+    };
+    const delivery = deliveries.rows[0] ?? {
+      pending: '0',
+      processing: '0',
+      dead: '0',
+      oldest_pending_age_seconds: '0',
+    };
+    return {
+      pending_action_reservations: Number(reservation.pending),
+      oldest_pending_action_age_seconds: Math.floor(
+        Number(reservation.oldest_pending_action_age_seconds),
+      ),
+      anchor_deliveries: {
+        pending: Number(delivery.pending),
+        processing: Number(delivery.processing),
+        dead: Number(delivery.dead),
+        oldest_pending_age_seconds: Math.floor(Number(delivery.oldest_pending_age_seconds)),
+      },
+    };
   }
 }

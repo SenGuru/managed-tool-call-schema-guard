@@ -93,6 +93,30 @@ export interface ManagedConfig {
   stripePortalReturnUrl?: string;
 }
 
+export interface DeliveryOperationalMetrics {
+  pending: number;
+  processing: number;
+  dead: number;
+  oldest_pending_age_seconds: number;
+}
+
+export interface ManagedOperationalMetrics {
+  quota_tenants: {
+    healthy: number;
+    warning: number;
+    exhausted: number;
+  };
+  alert_deliveries: DeliveryOperationalMetrics;
+  anchor_deliveries: DeliveryOperationalMetrics;
+  pending_action_reservations: number;
+  oldest_pending_action_age_seconds: number;
+  sources_ready: {
+    quota: boolean;
+    alert: boolean;
+    action: boolean;
+  };
+}
+
 export interface AlertWebhookEndpoint {
   webhook_id: string;
   label: string;

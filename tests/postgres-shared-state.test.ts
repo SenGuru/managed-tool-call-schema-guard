@@ -275,6 +275,68 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
     await expect(secondControl.ready()).resolves.toBe(true);
   }, 30_000);
 
+  it('reports authoritative aggregate quota, outbox, and pending-action metrics', async () => {
+    await firstControl.bootstrapTenant({
+      id: 'operational-metrics',
+      name: 'Operational Metrics',
+      plan: 'trial',
+      apiKey: 'operational-metrics-admin',
+    });
+    await firstAlerts.bootstrapTenant('operational-metrics');
+    const decision = (): ReturnType<typeof validateToolCall> =>
+      validateToolCall({
+        tool_name: 'metrics_probe',
+        tool_schema: {
+          type: 'object',
+          properties: { value: { type: 'integer' } },
+          required: ['value'],
+        },
+        raw_arguments: { value: 1 },
+      });
+    for (let index = 0; index < 7; index += 1)
+      await firstControl.recordValidation('operational-metrics', decision());
+    const webhook = await firstAlerts.createWebhook(
+      'operational-metrics',
+      'metrics receiver',
+      'https://metrics.example/alerts',
+    );
+    await firstAlerts.recordAlert(
+      'operational-metrics',
+      'metrics_probe',
+      'warning',
+      { code: 'privacy_safe' },
+      'metrics-source',
+    );
+    const reservation = await first.reserve(
+      'operational-metrics',
+      'metrics-reservation',
+      `sha256:${'a'.repeat(64)}`,
+      {
+        auditId: 'metrics-audit',
+        toolNameHash: `sha256:${'b'.repeat(64)}`,
+        environment: 'production',
+      },
+    );
+
+    const quotaMetrics = await firstControl.operationalMetrics();
+    const alertMetrics = await firstAlerts.operationalMetrics();
+    const actionMetrics = await first.operationalMetrics();
+    expect(quotaMetrics.warning).toBeGreaterThanOrEqual(1);
+    expect(alertMetrics.pending).toBeGreaterThanOrEqual(1);
+    expect(actionMetrics.pending_action_reservations).toBeGreaterThanOrEqual(1);
+    expect(actionMetrics.anchor_deliveries).toEqual({
+      pending: 0,
+      processing: 0,
+      dead: 0,
+      oldest_pending_age_seconds: 0,
+    });
+
+    await first.release('operational-metrics', 'metrics-reservation', `sha256:${'a'.repeat(64)}`);
+    await firstAlerts.disableWebhook('operational-metrics', webhook.webhook_id);
+    await firstControl.pool.query(`DELETE FROM sg_control_tenants WHERE id='operational-metrics'`);
+    expect(reservation.state).toBe('new');
+  });
+
   it('durably reconciles Stripe reordering, replay, entitlements, export, and tamper evidence', async () => {
     const [controlHistory, billingHistory] = await Promise.all([
       firstPool.query<{ version: number }>(

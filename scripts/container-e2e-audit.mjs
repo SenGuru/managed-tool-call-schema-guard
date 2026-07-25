@@ -489,9 +489,22 @@ try {
   assert(
     typeof managedMetrics.body === 'string' &&
       managedMetrics.body.includes('schema_guard_http_requests_total') &&
+      managedMetrics.body.includes(
+        'schema_guard_operational_metrics_source_ready{source="quota"} 1',
+      ) &&
+      managedMetrics.body.includes(
+        'schema_guard_operational_metrics_source_ready{source="alert"} 1',
+      ) &&
+      managedMetrics.body.includes(
+        'schema_guard_operational_metrics_source_ready{source="action"} 1',
+      ) &&
+      managedMetrics.body.includes('schema_guard_quota_tenants_total') &&
+      managedMetrics.body.includes('schema_guard_delivery_queue_depth') &&
+      managedMetrics.body.includes('schema_guard_delivery_oldest_pending_age_seconds') &&
+      managedMetrics.body.includes('schema_guard_pending_action_reservations') &&
       !managedMetrics.body.includes(adminKey) &&
       !managedMetrics.body.includes(metricsBearerToken),
-    'authenticated production metrics are privacy-safe',
+    'authenticated production metrics include persisted privacy-safe operator gauges',
   );
   await request(managedBase, '/readyz', 200);
   const dashboard = await request(managedBase, '/dashboard', 200);

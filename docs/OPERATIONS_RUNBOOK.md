@@ -10,10 +10,16 @@ owner-readable only and configure the monitoring collector to scrape
 `GET /metrics` with `Authorization: Bearer <token>`. Do not reuse a tenant API
 key. The endpoint exposes aggregate Prometheus text with privacy-safe route
 templates and no tenant IDs, API-key identifiers, prompts, schemas, or raw
-arguments.
+arguments. Persisted operational gauges report active-tenant quota pressure,
+alert-webhook and checkpoint-anchor queue depth by status, oldest-pending
+delivery age, unresolved action-reservation count/age, and whether each
+authoritative metric source was readable. They do not use tenant, key, tool,
+environment, endpoint, or delivery identifiers as labels.
 
 Alert on sustained 5xx request growth, request timeouts, any zero-valued
-required dependency, background dispatch failures, memory pressure, and
+required dependency or operational-metric source, exhausted quota count,
+dead-letter growth, oldest-pending delivery/action age beyond the reviewed
+runbook thresholds, background dispatch failures, memory pressure, and
 readiness failure. The endpoint is instrumentation, not proof that an external
 collector, dashboard, or paging route is operating; exercise those targets
 before enabling customer traffic.

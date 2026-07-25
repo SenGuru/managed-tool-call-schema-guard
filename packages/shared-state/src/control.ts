@@ -122,6 +122,12 @@ export interface SharedTenantBootstrap {
   policy?: GuardPolicy;
 }
 
+export interface SharedQuotaOperationalMetrics {
+  healthy: number;
+  warning: number;
+  exhausted: number;
+}
+
 export interface ControlState {
   readonly recordsValidationAlerts?: boolean;
   readonly recordsValidationIntelligence?: boolean;
@@ -160,6 +166,7 @@ export interface ControlState {
   purgeExpiredAudits(tenantId: string, retentionDays: number): Promise<number>;
   recordDrift(tenantId: string): Promise<SharedUsage>;
   usage(tenantId: string): Promise<SharedUsage>;
+  operationalMetrics?(): Promise<SharedQuotaOperationalMetrics>;
   close(): Promise<void>;
 }
 
@@ -1636,6 +1643,38 @@ export class PostgresControlState implements ControlState {
         drift_count: 0,
       };
     return this.usageFrom(row);
+  }
+  async operationalMetrics(): Promise<SharedQuotaOperationalMetrics> {
+    const result = await this.pool.query<{
+      healthy: string;
+      warning: string;
+      exhausted: string;
+    }>(
+      `SELECT
+         COUNT(*) FILTER (
+           WHERE (CASE WHEN t.usage_month=$1 THEN t.validation_count ELSE 0 END)
+             < t.monthly_limit * 0.8
+         )::text healthy,
+         COUNT(*) FILTER (
+           WHERE (CASE WHEN t.usage_month=$1 THEN t.validation_count ELSE 0 END)
+             >= t.monthly_limit * 0.8
+             AND (CASE WHEN t.usage_month=$1 THEN t.validation_count ELSE 0 END)
+             < t.monthly_limit
+         )::text warning,
+         COUNT(*) FILTER (
+           WHERE (CASE WHEN t.usage_month=$1 THEN t.validation_count ELSE 0 END)
+             >= t.monthly_limit
+         )::text exhausted
+       FROM sg_control_tenants t
+       JOIN sg_tenant_lifecycle l ON l.tenant_id=t.id AND l.status='active'`,
+      [month()],
+    );
+    const row = result.rows[0] ?? { healthy: '0', warning: '0', exhausted: '0' };
+    return {
+      healthy: Number(row.healthy),
+      warning: Number(row.warning),
+      exhausted: Number(row.exhausted),
+    };
   }
   async close(): Promise<void> {
     if (this.ownsPool) await this.pool.end();

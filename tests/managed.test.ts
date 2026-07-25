@@ -344,6 +344,23 @@ describe('managed local control plane', () => {
       apiKey: 'metrics-tenant-key',
     });
     const principal = service.store.authenticate('metrics-tenant-key')!;
+    service.store.db
+      .prepare(
+        `INSERT INTO usage_monthly(tenant_id,month,validation_count)
+         VALUES(?,?,800)`,
+      )
+      .run(principal.tenantId, new Date().toISOString().slice(0, 7));
+    service.store.createAlertWebhook(
+      principal,
+      'metrics receiver',
+      'https://metrics.example/alerts',
+    );
+    const metricsEnvironment = service.store.createEnvironment(principal, 'metrics-production');
+    service.store.updateEnvironmentSchemaEnforcement(
+      principal,
+      String(metricsEnvironment.id),
+      'enforce',
+    );
     await new Promise<void>((resolve) => service.server.listen(0, '127.0.0.1', resolve));
     const address = service.server.address();
     if (!address || typeof address === 'string') throw new Error('missing address');
@@ -374,10 +391,33 @@ describe('managed local control plane', () => {
     );
     expect(body).toContain('schema_guard_http_request_duration_ms_bucket');
     expect(body).toContain('schema_guard_dependency_ready{dependency="local_database"} 1');
+    expect(body).toContain('schema_guard_operational_metrics_source_ready{source="quota"} 1');
+    expect(body).toContain('schema_guard_quota_tenants_total{state="warning"} 1');
+    expect(body).toContain(
+      'schema_guard_delivery_queue_depth{dispatcher="alert_webhook",status="pending"} 1',
+    );
+    expect(body).toContain(
+      'schema_guard_delivery_queue_depth{dispatcher="alert_webhook",status="dead"} 0',
+    );
+    expect(body).toContain(
+      'schema_guard_delivery_oldest_pending_age_seconds{dispatcher="checkpoint_anchor"} 0',
+    );
+    expect(body).toContain('schema_guard_pending_action_reservations 0');
     expect(body).toContain('schema_guard_process_resident_memory_bytes');
     expect(body).not.toContain(principal.keyId);
     expect(body).not.toContain('metrics-tenant-key');
     expect(body).not.toContain(metricsToken);
+
+    service.store.db.exec('DROP TABLE usage_monthly');
+    const degraded = await fetch(`${base}/metrics`, {
+      headers: { authorization: `Bearer ${metricsToken}` },
+    });
+    expect(degraded.status).toBe(200);
+    const degradedBody = await degraded.text();
+    expect(degradedBody).toContain('schema_guard_dependency_ready{dependency="local_database"} 0');
+    expect(degradedBody).toContain(
+      'schema_guard_operational_metrics_source_ready{source="quota"} 0',
+    );
   });
 
   it('does not let a public tenant self-upgrade without a verified billing workflow', async () => {

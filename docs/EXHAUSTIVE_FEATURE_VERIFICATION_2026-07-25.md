@@ -1,10 +1,11 @@
 # Exhaustive provider-independent feature verification — 2026-07-25
 
-> Commercial-completeness supplement: protected metrics, W3C trace
-> correlation, registered/observed inventory, value-free evaluation export,
-> least-privilege key UX, final 231-test regression, dependency remediation,
-> container/image results, and the current external blocker sequence are
-> recorded in
+> Commercial-completeness supplement: protected metrics, authoritative
+> privacy-safe quota/delivery/reservation gauges, W3C trace correlation,
+> registered/observed inventory, value-free evaluation export, least-privilege
+> key UX, the later 249-test credentialed regression, exact-source container
+> result, final 21-route website and 14-route dashboard browser pass,
+> dependency remediation, and the current external blocker sequence are recorded in
 > [`COMMERCIAL_READINESS_EVIDENCE_2026-07-25.md`](COMMERCIAL_READINESS_EVIDENCE_2026-07-25.md).
 > That report supersedes the exact counts below without invalidating the
 > historical evidence recorded here.
