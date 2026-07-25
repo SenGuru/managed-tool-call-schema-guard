@@ -259,9 +259,18 @@ identity/email/payment/paging delivery or customer willingness to pay.
    role/tenant binding.
 2. Postmark verification, invitation, recovery, security and billing email,
    including bounce/retry/outage behavior.
-3. Stripe test-mode Checkout, Portal, signed webhook, replay/reordering,
+3. Establish the branded Akriven email boundary: provision a human-operated
+   mailbox such as `support@akriven.com`, verify the selected mailbox and
+   transactional providers against the GoDaddy-hosted DNS zone, and prove
+   MX, SPF, DKIM, aligned return-path and staged DMARC enforcement before
+   using `akriven.com` for authentication or customer notifications. The
+   current recommendation is Google Workspace for the human mailbox and the
+   already-implemented Postmark boundary for application and WorkOS mail;
+   provider purchase and customer-facing DNS changes require owner approval.
+   Follow `docs/BRANDED_EMAIL_PROVIDER_CHECKLIST.md`.
+4. Stripe test-mode Checkout, Portal, signed webhook, replay/reordering,
    failed-payment, cancellation and entitlement reconciliation.
-4. Public website account flows, support ownership, privacy/terms acceptance
+5. Public website account flows, support ownership, privacy/terms acceptance
    and an externally reviewed retention/deletion policy.
 
 ### Post-launch validation

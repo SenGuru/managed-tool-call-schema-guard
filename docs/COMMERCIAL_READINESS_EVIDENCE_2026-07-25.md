@@ -329,12 +329,21 @@ delivery and tamper detection.
    dead-letter/redrive, privacy-safe evidence, API, dashboard, SDK and CLI
    paths are proven provider-independently; external delivery, bounce,
    duplicate/reordering, callback allowlisting and outage behavior are not.
-3. Rotate the previously exposed Stripe test credential outside chat. Supply
+3. Provision and certify the branded Akriven email boundary without conflating
+   a mailbox with a transactional sender. The recommended split is Google
+   Workspace for a human-operated address such as `support@akriven.com`, and
+   Postmark for application notifications and WorkOS authentication mail.
+   Before use, verify the GoDaddy DNS zone's MX, SPF, DKIM, custom return-path
+   alignment and staged DMARC policy, then exercise delivery, reply, bounce,
+   complaint and outage paths. Any mailbox purchase or customer-facing DNS
+   mutation remains an owner-confirmation gate. The ordered implementation and
+   evidence gates are in `docs/BRANDED_EMAIL_PROVIDER_CHECKLIST.md`.
+4. Rotate the previously exposed Stripe test credential outside chat. Supply
    the replacement only through a secret manager or owner-only file, then
    exercise test-mode Checkout, Portal, signed webhook, replay, duplicate,
    reordering, failed payment, recovery, cancellation, entitlement changes,
    refund/credit, tax, invoice, and dunning paths.
-4. Complete public account, consent, support, security-contact, and
+5. Complete public account, consent, support, security-contact, and
    retention/deletion flows without publishing the currently private website
    until explicitly approved.
 
