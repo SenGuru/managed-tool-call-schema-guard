@@ -405,4 +405,19 @@ export const migrations = [
       );
     `,
   },
+  {
+    version: 16,
+    sql: `
+      CREATE TABLE IF NOT EXISTS action_controls (
+        tenant_id TEXT PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+        hold INTEGER NOT NULL DEFAULT 0 CHECK(hold IN (0,1)),
+        reason_code TEXT,
+        enforced_policy_json TEXT NOT NULL DEFAULT '{}',
+        shadow_policy_json TEXT,
+        updated_at TEXT NOT NULL,
+        updated_by_hash TEXT NOT NULL,
+        control_hmac TEXT NOT NULL
+      );
+    `,
+  },
 ] as const;

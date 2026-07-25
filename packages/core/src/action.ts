@@ -12,7 +12,7 @@ import {
   type GuardDecision,
 } from './types.js';
 
-const CHALLENGE_VERSION = '2026-07-20' as const;
+const CHALLENGE_VERSION = '2026-07-25' as const;
 const RISK_RANK: Record<ActionRiskLevel, number> = {
   read: 0,
   low: 1,
@@ -32,6 +32,12 @@ const DEFAULT_POLICY: Required<
   max_repaired_auto_execute_risk: 'read',
   require_idempotency_for_side_effects: true,
 };
+const ACTION_POLICY_KEYS = new Set([
+  'max_auto_execute_risk',
+  'max_repaired_auto_execute_risk',
+  'allowed_environments',
+  'require_idempotency_for_side_effects',
+]);
 
 type LedgerState = 'new' | 'duplicate' | 'conflict';
 export interface IdempotencyLedger {
@@ -82,6 +88,7 @@ function actionBinding(
   decision: GuardDecision,
   descriptor: ActionDescriptor,
   environment: string,
+  workloadIdentityHash?: string,
 ): {
   binding_hash: string;
   tool_name_hash: string;
@@ -96,6 +103,11 @@ function actionBinding(
   )
     throw new TypeError('action descriptor tool name does not match the validation decision');
   const validArgumentsHash = sha256(decision.valid_arguments);
+  if (
+    workloadIdentityHash !== undefined &&
+    !/^(?:sha256|hmac-sha256):[0-9a-f]{64}$/u.test(workloadIdentityHash)
+  )
+    throw new TypeError('workload identity hash is invalid');
   return {
     tool_name_hash: toolNameHash,
     valid_arguments_hash: validArgumentsHash,
@@ -109,6 +121,7 @@ function actionBinding(
       risk_level: descriptor.risk_level,
       side_effect: descriptor.side_effect,
       environment,
+      workload_identity_hash: workloadIdentityHash ?? null,
     }),
   };
 }
@@ -141,6 +154,7 @@ export function createApprovalChallenge(input: {
   environment: string;
   created_at: string;
   expires_at: string;
+  workload_identity_hash?: string;
   challenge_id?: string;
 }): ApprovalChallenge {
   const created = validDate(input.created_at, 'created_at');
@@ -149,13 +163,21 @@ export function createApprovalChallenge(input: {
     throw new TypeError(
       'approval challenge lifetime must be greater than zero and at most 24 hours',
     );
-  const binding = actionBinding(input.decision, input.action, input.environment);
+  const binding = actionBinding(
+    input.decision,
+    input.action,
+    input.environment,
+    input.workload_identity_hash,
+  );
   return {
     challenge_version: CHALLENGE_VERSION,
     challenge_id: input.challenge_id ?? `ach_${randomUUID()}`,
     ...binding,
     risk_level: input.action.risk_level,
     environment: input.environment,
+    ...(input.workload_identity_hash
+      ? { workload_identity_hash: input.workload_identity_hash }
+      : {}),
     created_at: new Date(created).toISOString(),
     expires_at: new Date(expires).toISOString(),
   };
@@ -193,6 +215,38 @@ export function verifyApprovalEvidence(evidence: ApprovalEvidence, secret: strin
   }
 }
 
+export function actionControlPolicyValidationError(policy: unknown): string | undefined {
+  if (policy === undefined) return undefined;
+  if (policy === null || typeof policy !== 'object' || Array.isArray(policy))
+    return 'action policy must be an object';
+  const candidate = policy as Record<string, unknown>;
+  if (Object.keys(candidate).some((key) => !ACTION_POLICY_KEYS.has(key)))
+    return 'action policy contains an unsupported field';
+  for (const field of ['max_auto_execute_risk', 'max_repaired_auto_execute_risk'] as const)
+    if (
+      candidate[field] !== undefined &&
+      (typeof candidate[field] !== 'string' || !(candidate[field] in RISK_RANK))
+    )
+      return `${field} must be a valid action risk level`;
+  if (candidate.allowed_environments !== undefined) {
+    if (
+      !Array.isArray(candidate.allowed_environments) ||
+      candidate.allowed_environments.length > 64 ||
+      candidate.allowed_environments.some(
+        (item) => typeof item !== 'string' || item.length < 1 || item.length > 128,
+      ) ||
+      new Set(candidate.allowed_environments).size !== candidate.allowed_environments.length
+    )
+      return 'allowed_environments must contain at most 64 unique strings of 1-128 characters';
+  }
+  if (
+    candidate.require_idempotency_for_side_effects !== undefined &&
+    typeof candidate.require_idempotency_for_side_effects !== 'boolean'
+  )
+    return 'require_idempotency_for_side_effects must be boolean';
+  return undefined;
+}
+
 function resolvedPolicy(
   policy: ActionControlPolicy | undefined,
 ): Required<
@@ -204,20 +258,9 @@ function resolvedPolicy(
   >
 > &
   Pick<ActionControlPolicy, 'allowed_environments'> {
+  const validationError = actionControlPolicyValidationError(policy);
+  if (validationError) throw new TypeError(validationError);
   const resolved = { ...DEFAULT_POLICY, ...policy };
-  if (
-    !(resolved.max_auto_execute_risk in RISK_RANK) ||
-    !(resolved.max_repaired_auto_execute_risk in RISK_RANK)
-  )
-    throw new TypeError('action policy contains an invalid risk level');
-  if (
-    resolved.allowed_environments !== undefined &&
-    (!Array.isArray(resolved.allowed_environments) ||
-      !resolved.allowed_environments.every((item) => typeof item === 'string' && item.length > 0))
-  )
-    throw new TypeError('allowed_environments must contain non-empty strings');
-  if (typeof resolved.require_idempotency_for_side_effects !== 'boolean')
-    throw new TypeError('require_idempotency_for_side_effects must be boolean');
   return resolved;
 }
 
@@ -292,7 +335,12 @@ export function evaluateActionGate(input: {
   if (!['none', 'reversible', 'irreversible'].includes(input.action.side_effect))
     throw new TypeError('invalid action side effect');
   const policy = resolvedPolicy(input.policy);
-  const binding = actionBinding(input.decision, input.action, input.context.environment);
+  const binding = actionBinding(
+    input.decision,
+    input.action,
+    input.context.environment,
+    input.context.workload_identity_hash,
+  );
   const fingerprint = binding.binding_hash;
   const requiresIdempotency =
     policy.require_idempotency_for_side_effects && input.action.side_effect !== 'none';
@@ -336,6 +384,7 @@ export function evaluateActionGate(input: {
       evidence.challenge.tool_name_hash === binding.tool_name_hash &&
       evidence.challenge.valid_arguments_hash === binding.valid_arguments_hash &&
       evidence.challenge.environment === input.context.environment &&
+      evidence.challenge.workload_identity_hash === input.context.workload_identity_hash &&
       evidence.challenge.risk_level === input.action.risk_level &&
       now <= validDate(evidence.challenge.expires_at, 'approval.expires_at');
     if (!valid)

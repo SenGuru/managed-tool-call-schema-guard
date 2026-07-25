@@ -1043,7 +1043,7 @@ describe('managed local control plane', () => {
     expect((await fetch(`${base}/dashboard/not-a-route`)).status).toBe(401);
     const workbenchOptions =
       dashboardBody.match(/<select id="operation">([\s\S]*?)<\/select>/u)?.[1] ?? '';
-    expect(workbenchOptions.match(/<option value=/gu)).toHaveLength(29);
+    expect(workbenchOptions.match(/<option value=/gu)).toHaveLength(30);
     for (const label of [
       'Validate tool call',
       'Compile provider contract',
@@ -1054,6 +1054,7 @@ describe('managed local control plane', () => {
       'Update schema enforcement',
       'Update organization policy',
       'Set action descriptor',
+      'Update action controls',
       'Create approval challenge',
       'Approve challenge',
       'Cancel challenge',

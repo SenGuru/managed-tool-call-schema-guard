@@ -156,6 +156,97 @@ describe('durable managed action workflow', () => {
     store.close();
   });
 
+  it('enforces an integrity-protected action hold and compares a shadow policy without reserving', async () => {
+    const store = new ManagedStore({ databasePath: await database(), masterSecret: secret });
+    store.bootstrapTenant({ id: 'controls', name: 'Controls', plan: 'trial', apiKey: 'admin' });
+    const admin = store.authenticate('admin')!;
+    store.registerActionDescriptor(admin, 'lookup', 'production', 'low', 'none');
+    const decision = store.recordValidation(
+      admin,
+      validateToolCall({
+        tool_name: 'lookup',
+        tool_schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { query: { type: 'string' } },
+          required: ['query'],
+        },
+        raw_arguments: { query: 'safe' },
+      }),
+    );
+    const configured = store.updateActionControl(admin, {
+      hold: false,
+      reason_code: null,
+      enforced_policy: { max_auto_execute_risk: 'low' },
+      shadow_policy: { max_auto_execute_risk: 'read' },
+    });
+    expect(configured).toMatchObject({
+      hold: false,
+      enforced_policy: { max_auto_execute_risk: 'low' },
+      shadow_policy: { max_auto_execute_risk: 'read' },
+    });
+    expect(
+      store.evaluateManagedAction({
+        principal: admin,
+        decision,
+        toolName: 'lookup',
+        environment: 'production',
+        context: {},
+      }),
+    ).toMatchObject({
+      status: 'allowed',
+      reason_code: 'EXECUTION_ALLOWED',
+      shadow_evaluation: {
+        status: 'approval_required',
+        reason_code: 'APPROVAL_REQUIRED',
+        differs_from_enforced: true,
+      },
+    });
+    expect(
+      store.db
+        .prepare('SELECT count(*) count FROM action_idempotency WHERE tenant_id=?')
+        .get(admin.tenantId),
+    ).toEqual({ count: 0 });
+
+    store.updateActionControl(admin, {
+      hold: true,
+      reason_code: 'operator.emergency',
+      enforced_policy: { max_auto_execute_risk: 'low' },
+      shadow_policy: { max_auto_execute_risk: 'read' },
+    });
+    store.registerActionDescriptor(admin, 'lookup', 'production', 'low', 'reversible');
+    expect(
+      store.evaluateManagedAction({
+        principal: admin,
+        decision,
+        toolName: 'lookup',
+        environment: 'production',
+        context: {
+          approval: { malformed: true } as never,
+          idempotency_key: 'held-action-key',
+        },
+      }),
+    ).toMatchObject({
+      status: 'rejected',
+      reason_code: 'ACTIONS_HELD',
+      requires_idempotency: true,
+    });
+    expect(
+      store.db
+        .prepare('SELECT count(*) count FROM action_idempotency WHERE tenant_id=?')
+        .get(admin.tenantId),
+    ).toEqual({ count: 0 });
+    expect(() =>
+      store.updateActionControl(admin, {
+        hold: false,
+        reason_code: null,
+        enforced_policy: { unsupported: true } as never,
+        shadow_policy: null,
+      }),
+    ).toThrow('unsupported field');
+    store.close();
+  });
+
   it('serves a separately scoped end-to-end approval and reservation workflow', async () => {
     const anchoredPayloads: string[] = [];
     const service = createManagedServer(
@@ -204,6 +295,26 @@ describe('durable managed action workflow', () => {
         }),
       });
       expect(descriptor.status).toBe(200);
+      const defaultControl = await fetch(`${base}/v1/admin/actions/control`, {
+        headers: jsonHeaders('admin-key'),
+      });
+      expect(defaultControl.status).toBe(200);
+      await expect(defaultControl.json()).resolves.toMatchObject({
+        hold: false,
+        enforced_policy: {},
+        shadow_policy: null,
+      });
+      const configuredControl = await fetch(`${base}/v1/admin/actions/control`, {
+        method: 'PUT',
+        headers: jsonHeaders('admin-key'),
+        body: JSON.stringify({
+          hold: false,
+          reason_code: null,
+          enforced_policy: { max_auto_execute_risk: 'low' },
+          shadow_policy: { max_auto_execute_risk: 'read' },
+        }),
+      });
+      expect(configuredControl.status).toBe(200);
 
       const validation = await fetch(`${base}/v1/validate`, {
         method: 'POST',
@@ -220,11 +331,17 @@ describe('durable managed action workflow', () => {
           decision,
           tool_name: 'transfer',
           environment: 'production',
+          workload_identity: 'agent-a/workspace-a/run-1',
           expires_in_seconds: 300,
         }),
       });
       expect(challengeResponse.status).toBe(201);
-      const challenge = (await challengeResponse.json()) as { challenge_id: string };
+      const challenge = (await challengeResponse.json()) as {
+        challenge_id: string;
+        workload_identity_hash: string;
+      };
+      expect(challenge.workload_identity_hash).toMatch(/^hmac-sha256:[0-9a-f]{64}$/u);
+      expect(JSON.stringify(challenge)).not.toContain('agent-a/workspace-a/run-1');
       expect(
         (
           await fetch(`${base}/v1/actions/challenges/${challenge.challenge_id}/approve`, {
@@ -244,6 +361,7 @@ describe('durable managed action workflow', () => {
         decision,
         tool_name: 'transfer',
         environment: 'production',
+        workload_identity: 'agent-a/workspace-a/run-1',
         approval,
         idempotency_key: 'managed-transfer-1',
       };

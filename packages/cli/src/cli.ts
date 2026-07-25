@@ -51,6 +51,7 @@ function managedResourcePath(resource: string, found: Map<string, string>): stri
   if (resource === 'policy') return '/v1/admin/policy';
   if (resource === 'schemas') return '/v1/schemas';
   if (resource === 'action-descriptors') return '/v1/admin/actions/descriptors';
+  if (resource === 'action-control') return '/v1/admin/actions/control';
   if (resource === 'action-challenges') {
     const query = new URLSearchParams();
     if (found.has('status')) query.set('status', required(found, 'status'));
@@ -77,7 +78,7 @@ function managedResourcePath(resource: string, found: Map<string, string>): stri
   if (resource === 'tenant-lifecycle') return '/v1/admin/tenant/lifecycle';
   if (resource === 'tenant-export') return '/v1/admin/tenant/export';
   throw new Error(
-    '--resource must be plans, api-keys, policy, schemas, action-descriptors, action-challenges, usage, audits, audit-verification, alerts, environments, intelligence, evaluation-export, inventory, billing-statement, schema-releases, schema-release-verification, control-plane-integrity, tenant-lifecycle, or tenant-export',
+    '--resource must be plans, api-keys, policy, schemas, action-descriptors, action-control, action-challenges, usage, audits, audit-verification, alerts, environments, intelligence, evaluation-export, inventory, billing-statement, schema-releases, schema-release-verification, control-plane-integrity, tenant-lifecycle, or tenant-export',
   );
 }
 async function managedRequest(
@@ -263,6 +264,21 @@ async function main(): Promise<void> {
     );
     return;
   }
+  if (command === 'managed-set-action-control') {
+    console.log(
+      JSON.stringify(
+        await managedRequest(
+          found,
+          '/v1/admin/actions/control',
+          'PUT',
+          await jsonFile(required(found, 'control')),
+        ),
+        null,
+        2,
+      ),
+    );
+    return;
+  }
   if (command === 'managed-acknowledge-alert') {
     const alertId = required(found, 'alert-id');
     if (!/^[1-9][0-9]*$/u.test(alertId) || !Number.isSafeInteger(Number(alertId)))
@@ -291,7 +307,7 @@ async function main(): Promise<void> {
     return;
   }
   throw new Error(
-    'usage: schemaguard validate --schema FILE --args FILE [--tool NAME] [--policy FILE] [--audit FILE]\n       schemaguard normalize --adapter NAME --input FILE\n       schemaguard drift --before FILE --after FILE\n       schemaguard compile --target openai|anthropic|google_gemini|mcp --schema FILE [--tool NAME] [--description TEXT] [--openai-strict-policy reject|normalize]\n       schemaguard fixture --schema FILE --args FILE --out FILE [--tool NAME] [--policy FILE]\n       schemaguard replay --fixture FILE\n       schemaguard managed --base-url URL --api-key-file FILE --resource NAME [--limit N] [--environment NAME] [--timeout-ms N]\n       schemaguard managed-acknowledge-alert --base-url URL --api-key-file FILE --alert-id ID [--timeout-ms N]\n       schemaguard managed-request-deletion --base-url URL --api-key-file FILE --confirm-tenant-id ID [--timeout-ms N]\n       schemaguard managed-billing-checkout --base-url URL --api-key-file FILE --out OWNER_ONLY_FILE [--timeout-ms N]\n       schemaguard managed-billing-portal --base-url URL --api-key-file FILE --out OWNER_ONLY_FILE [--timeout-ms N]',
+    'usage: schemaguard validate --schema FILE --args FILE [--tool NAME] [--policy FILE] [--audit FILE]\n       schemaguard normalize --adapter NAME --input FILE\n       schemaguard drift --before FILE --after FILE\n       schemaguard compile --target openai|anthropic|google_gemini|mcp --schema FILE [--tool NAME] [--description TEXT] [--openai-strict-policy reject|normalize]\n       schemaguard fixture --schema FILE --args FILE --out FILE [--tool NAME] [--policy FILE]\n       schemaguard replay --fixture FILE\n       schemaguard managed --base-url URL --api-key-file FILE --resource NAME [--limit N] [--environment NAME] [--timeout-ms N]\n       schemaguard managed-set-action-control --base-url URL --api-key-file FILE --control FILE [--timeout-ms N]\n       schemaguard managed-acknowledge-alert --base-url URL --api-key-file FILE --alert-id ID [--timeout-ms N]\n       schemaguard managed-request-deletion --base-url URL --api-key-file FILE --confirm-tenant-id ID [--timeout-ms N]\n       schemaguard managed-billing-checkout --base-url URL --api-key-file FILE --out OWNER_ONLY_FILE [--timeout-ms N]\n       schemaguard managed-billing-portal --base-url URL --api-key-file FILE --out OWNER_ONLY_FILE [--timeout-ms N]',
   );
 }
 main().catch((error: unknown) => {

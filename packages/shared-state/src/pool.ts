@@ -21,5 +21,11 @@ export function createSharedStatePool(connectionString: string, maxConnections =
   // database restart terminates the process instead of letting later queries
   // establish fresh connections and readiness report the transient outage.
   pool.on('error', () => undefined);
+  // A connection can also fail while it is checked out by a readiness or
+  // transactional query. pg emits that failure on the client rather than the
+  // pool, so every new client needs an error listener before it is borrowed.
+  pool.on('connect', (client) => {
+    client.on('error', () => undefined);
+  });
   return pool;
 }

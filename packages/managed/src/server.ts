@@ -3,6 +3,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import { readFileSync } from 'node:fs';
 import {
   assertJsonSafety,
+  actionControlPolicyValidationError,
   compileToolContract,
   createApprovalChallenge,
   JsonResourceLimitError,
@@ -13,6 +14,7 @@ import {
   type CompileContractRequest,
   type ActionGateContext,
   type ActionGateDecision,
+  type ActionControlPolicy,
   type GuardDecision,
   type DriftReport,
   type ValidateRequest,
@@ -1632,6 +1634,67 @@ export function createManagedServer(
         }
         return;
       }
+      if (request.method === 'GET' && url.pathname === '/v1/admin/actions/control') {
+        store.requireScope(principal, 'admin');
+        try {
+          sendJson(
+            response,
+            200,
+            controlState
+              ? await controlState.actionControl(principal.tenantId)
+              : store.actionControl(principal),
+          );
+        } catch (error) {
+          if (error instanceof ManagedError) throw error;
+          throw sharedControlStateUnavailable(error);
+        }
+        return;
+      }
+      if (request.method === 'PUT' && url.pathname === '/v1/admin/actions/control') {
+        store.requireScope(principal, 'admin');
+        const input = asRecord(await guardedBody());
+        if (
+          Object.keys(input).some(
+            (key) => !['hold', 'reason_code', 'enforced_policy', 'shadow_policy'].includes(key),
+          ) ||
+          typeof input.hold !== 'boolean' ||
+          (input.reason_code !== null && typeof input.reason_code !== 'string') ||
+          !object(input.enforced_policy) ||
+          (input.shadow_policy !== null && !object(input.shadow_policy))
+        )
+          throw new ManagedError(
+            400,
+            'invalid_action_control',
+            'hold, reason_code, enforced_policy, and nullable shadow_policy are required',
+          );
+        const enforcedPolicy = input.enforced_policy as ActionControlPolicy;
+        const shadowPolicy = input.shadow_policy as ActionControlPolicy | null;
+        const policyError =
+          actionControlPolicyValidationError(enforcedPolicy) ??
+          actionControlPolicyValidationError(shadowPolicy ?? undefined);
+        if (policyError) throw new ManagedError(400, 'invalid_action_policy', policyError);
+        const update = {
+          hold: input.hold,
+          reason_code: input.reason_code as string | null,
+          enforced_policy: enforcedPolicy,
+          shadow_policy: shadowPolicy,
+        };
+        try {
+          sendJson(
+            response,
+            200,
+            controlState
+              ? await controlState.updateActionControl(principal.tenantId, principal.keyId, update)
+              : store.updateActionControl(principal, update),
+          );
+        } catch (error) {
+          if (error instanceof ManagedError) throw error;
+          if (error instanceof TypeError)
+            throw new ManagedError(400, 'invalid_action_control', error.message);
+          throw sharedControlStateUnavailable(error);
+        }
+        return;
+      }
       if (request.method === 'GET' && url.pathname === '/v1/actions/challenges') {
         store.requireScope(principal, 'approve:action');
         const requestedStatus = url.searchParams.get('status') ?? undefined;
@@ -1679,6 +1742,7 @@ export function createManagedServer(
           typeof input.tool_name !== 'string' ||
           typeof input.environment !== 'string' ||
           !object(input.decision) ||
+          (input.workload_identity !== undefined && typeof input.workload_identity !== 'string') ||
           !Number.isInteger(input.expires_in_seconds) ||
           Number(input.expires_in_seconds) < 60 ||
           Number(input.expires_in_seconds) > 86_400
@@ -1739,6 +1803,14 @@ export function createManagedServer(
           expires_at: new Date(
             createdAt.getTime() + Number(input.expires_in_seconds) * 1_000,
           ).toISOString(),
+          ...(typeof input.workload_identity === 'string'
+            ? {
+                workload_identity_hash: store.actionWorkloadIdentityHash(
+                  principal,
+                  input.workload_identity,
+                ),
+              }
+            : {}),
         });
         if (actionState) {
           try {
@@ -1812,6 +1884,7 @@ export function createManagedServer(
           typeof input.tool_name !== 'string' ||
           typeof input.environment !== 'string' ||
           !object(input.decision) ||
+          (input.workload_identity !== undefined && typeof input.workload_identity !== 'string') ||
           (input.approval !== undefined && !object(input.approval)) ||
           (input.idempotency_key !== undefined && typeof input.idempotency_key !== 'string')
         )
@@ -1827,8 +1900,24 @@ export function createManagedServer(
           ...(typeof input.idempotency_key === 'string'
             ? { idempotency_key: input.idempotency_key }
             : {}),
+          ...(typeof input.workload_identity === 'string'
+            ? {
+                workload_identity_hash: store.actionWorkloadIdentityHash(
+                  principal,
+                  input.workload_identity,
+                ),
+              }
+            : {}),
         };
         let gate: ActionGateDecision;
+        let trustedActionControl: Awaited<ReturnType<ControlState['actionControl']>> | undefined;
+        if (controlState) {
+          try {
+            trustedActionControl = await controlState.actionControl(principal.tenantId);
+          } catch (error) {
+            throw sharedControlStateUnavailable(error);
+          }
+        }
         if (actionState) {
           await actionStateInitialization;
           if (actionStateInitializationFailed) throw sharedStateUnavailable(undefined);
@@ -1881,6 +1970,7 @@ export function createManagedServer(
             environment: input.environment,
             context,
             trustedAction,
+            ...(trustedActionControl ? { trustedActionControl } : {}),
             approvalAlreadyVerified,
           });
           if (
@@ -1914,6 +2004,7 @@ export function createManagedServer(
             toolName: input.tool_name,
             environment: input.environment,
             context,
+            ...(trustedActionControl ? { trustedActionControl } : {}),
           });
         if (gate.status === 'allowed' && gate.reservation && config.actionCheckpointAnchorUrl) {
           if (!(await actionCheckpointAcknowledged(principal)))

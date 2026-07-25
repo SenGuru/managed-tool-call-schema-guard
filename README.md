@@ -61,9 +61,10 @@ The core remains useful if the managed service is unavailable or never adopted. 
   privacy-thresholded aggregate intelligence, Ed25519-signed rulesets, durable
   single-node approvals/idempotency with deletion-evident manifests and
   externally retainable rollback checkpoints plus automatic signed anchor
-  delivery, usage plans, rate limits, local alerts, signed HTTPS webhook outbox
-  delivery, exports, retention, backup/restore, and a
-  functional dashboard.
+  delivery, tenant-wide emergency action hold, enforced and non-mutating shadow
+  action policies, workload-bound approvals/fingerprints, usage plans, rate
+  limits, local alerts, signed HTTPS webhook outbox delivery, exports,
+  retention, backup/restore, and a functional dashboard.
 - A privacy-safe registered-and-observed estate endpoint across API, SDK, CLI
   and dashboard, plus content-addressed value-free evaluation evidence export.
   Schema-registry and action-policy fingerprints remain in separate privacy
@@ -205,7 +206,7 @@ npm run schemaguard -- managed \
 ```
 
 Supported resources are `plans`, `api-keys`, `policy`, `schemas`,
-`action-descriptors`, `action-challenges`, `usage`, `audits`,
+`action-control`, `action-descriptors`, `action-challenges`, `usage`, `audits`,
 `audit-verification`, `alerts`, `environments`, `intelligence`,
 `billing-statement`, `schema-releases`, `schema-release-verification`,
 `control-plane-integrity`, `tenant-lifecycle`, and `tenant-export`.

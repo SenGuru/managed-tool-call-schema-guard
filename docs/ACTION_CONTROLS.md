@@ -16,6 +16,14 @@ execution callback.
 - Approval evidence uses HMAC-SHA-256 and stores only a keyed approver-identity
   hash. Evidence expires after at most 24 hours.
 - Side-effecting actions require an idempotency key and ledger by default.
+- An integrity-protected tenant emergency hold rejects every action before
+  approval lookup or idempotency reservation.
+- One optional shadow policy is evaluated with a non-mutating ledger. Its
+  bounded status/reason/requirement diff is returned beside the enforced
+  decision; it cannot authorize execution or create a reservation.
+- An optional 1-256 character workload identity is tenant-keyed before it
+  reaches the core gate. Its hash is bound into the approval challenge and
+  execution fingerprint; the plaintext identity is not persisted or returned.
 - Duplicate same-action keys are blocked; keys bound to different actions are
   conflicts.
 - The SDK completes a reservation after success and releases it after a thrown
@@ -48,6 +56,11 @@ deletion fail closed instead of erasing duplicate-execution memory.
 
 Daily-use discovery is explicit:
 
+- `GET /v1/admin/actions/control` returns the hold state, enforced policy,
+  optional shadow policy, timestamp, and keyed operator hash.
+- `PUT /v1/admin/actions/control` atomically replaces that record under
+  `admin`. Activating a hold requires a bounded reason code; every change emits
+  a critical, value-free alert.
 - `GET /v1/admin/actions/descriptors` returns tenant-owned descriptor hashes,
   environment, risk, side effect and timestamps under `admin`; plaintext tool
   names remain excluded from persistence and the inventory.
@@ -56,6 +69,12 @@ Daily-use discovery is explicit:
   cancellation do not depend on challenge IDs copied from an earlier response.
 - both read paths verify authenticated state before returning it and fail
   closed on tampering.
+
+The action-control record exists in both the single-node SQLite profile and the
+shared PostgreSQL control plane. It is HMAC-authenticated, included in
+tenant export/deletion, verified by readiness, and read authoritatively from
+shared state in multi-instance mode. Shared-state loss returns `503`; it never
+falls back to a stale local policy.
 
 `GET /v1/actions/idempotency/checkpoint` returns a value-free revision, row
 count, set accumulator, tenant reference, and checkpoint HMAC under the

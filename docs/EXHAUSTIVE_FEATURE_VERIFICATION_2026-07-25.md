@@ -43,7 +43,7 @@ provider was simulated and called proven.
 | PostgreSQL               | disposable `postgres:16-alpine` plus hardened production image |
 | SQLite                   | `3.51.0`                                                       |
 | Trivy                    | `0.72.0`, current local vulnerability database                 |
-| Browser boundary         | Codex in-app browser against `127.0.0.1:8791`                  |
+| Browser boundary         | Codex in-app browser against `127.0.0.1:8788`                  |
 | Test data                | disposable tenant and database; no customer data               |
 
 Secrets were read only from owner-only local files and were not committed to
@@ -75,36 +75,48 @@ test request and is retained here rather than silently omitted.
 4. A long provider-setup boundary string overflowed the Usage page at a
    1280-pixel viewport. The evidence value now wraps and the page has zero
    horizontal overflow at that width.
+5. A responsive breakpoint replaced shrinkable grid columns with intrinsic
+   `1fr` columns. At 390 pixels, overview panels extended the document by two
+   pixels. The breakpoint now retains `minmax(0, 1fr)`; the exact browser
+   retest measured `scrollWidth === clientWidth === 390`.
+6. The first exact-source PostgreSQL restart drill terminated the managed
+   process when a checked-out `pg` client emitted an unhandled connection
+   error. Shared pools now attach a client error listener before checkout;
+   query failures still propagate to fail-closed readiness/admission. The
+   18-test PostgreSQL suite and the full restart/recovery container drill then
+   passed.
 
-All four fixes have focused tests in `tests/dashboard-ui.test.ts`.
+The dashboard fixes have focused tests in `tests/dashboard-ui.test.ts`; the
+restart fix has PostgreSQL and production-container regression evidence.
 
 ## Browser workflow inventory
 
 All 14 routes were opened through the real dashboard router and loaded from a
 persisted disposable tenant:
 
-| Route                     | Purpose-built workflows exercised                                                                      | Result |
-| ------------------------- | ------------------------------------------------------------------------------------------------------ | ------ |
-| `/dashboard/overview`     | readiness remediation, evidence shortcut, alerts shortcut, summary cards                               | Passed |
-| `/dashboard/integrate`    | access, validation, and action-protocol navigation; activation state                                   | Passed |
-| `/dashboard/decisions`    | valid, repaired, rejected, filters, search, clear, signed audit inspection, CSV, four compiler targets | Passed |
-| `/dashboard/schemas`      | schema registration and exact-hash release promotion                                                   | Passed |
-| `/dashboard/environments` | create, policy edit, observe/enforce change, row configuration                                         | Passed |
-| `/dashboard/actions`      | descriptor, action evaluation, complete/release, checkpoint compare, anchor redrive, reconciliation    | Passed |
-| `/dashboard/approvals`    | create, approve, cancel, bound approval evidence                                                       | Passed |
-| `/dashboard/alerts`       | acknowledge, receiver creation, one-time secret handoff, dead-letter redrive, disable                  | Passed |
-| `/dashboard/intelligence` | conformance ingestion, compatibility state, recommendation state, ruleset publication                  | Passed |
-| `/dashboard/evidence`     | audit inspection, audit/release/reconciliation/control/ruleset integrity, CSV and tenant export        | Passed |
-| `/dashboard/access`       | scoped key creation, one-time display, revoke, revoked state                                           | Passed |
-| `/dashboard/usage`        | entitlements, exact paid offer, local plan evaluation, disabled external billing state                 | Passed |
-| `/dashboard/settings`     | policy, export, purge guard, deletion guard and lifecycle lock                                         | Passed |
-| `/dashboard/workbench`    | all 29 presets plus mutation, JSON, placeholder, and path guards                                       | Passed |
+| Route                     | Purpose-built workflows exercised                                                                                                                      | Result |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
+| `/dashboard/overview`     | readiness remediation, evidence shortcut, alerts shortcut, summary cards                                                                               | Passed |
+| `/dashboard/integrate`    | access, validation, and action-protocol navigation; activation state                                                                                   | Passed |
+| `/dashboard/decisions`    | valid, repaired, rejected, filters, search, clear, signed audit inspection, CSV, four compiler targets                                                 | Passed |
+| `/dashboard/schemas`      | schema registration and exact-hash release promotion                                                                                                   | Passed |
+| `/dashboard/environments` | create, policy edit, observe/enforce change, row configuration                                                                                         | Passed |
+| `/dashboard/actions`      | emergency hold, enforced/shadow policy, workload binding, descriptor, evaluation, complete/release, checkpoint compare, anchor redrive, reconciliation | Passed |
+| `/dashboard/approvals`    | create, approve, cancel, bound approval evidence                                                                                                       | Passed |
+| `/dashboard/alerts`       | acknowledge, receiver creation, one-time secret handoff, dead-letter redrive, disable                                                                  | Passed |
+| `/dashboard/intelligence` | conformance ingestion, compatibility state, recommendation state, ruleset publication                                                                  | Passed |
+| `/dashboard/evidence`     | audit inspection, audit/release/reconciliation/control/ruleset integrity, CSV and tenant export                                                        | Passed |
+| `/dashboard/access`       | scoped key creation, one-time display, revoke, revoked state                                                                                           | Passed |
+| `/dashboard/usage`        | entitlements, exact paid offer, local plan evaluation, disabled external billing state                                                                 | Passed |
+| `/dashboard/settings`     | policy, export, purge guard, deletion guard and lifecycle lock                                                                                         | Passed |
+| `/dashboard/workbench`    | all 30 presets plus mutation, JSON, placeholder, and path guards                                                                                       | Passed |
 
 Cross-route shell controls were also exercised: collapse/expand state, global
 settings navigation, key removal/replacement, and reconnect. The deterministic
 browser-DOM suite additionally exercises mobile drawer focus entry, focus trap,
-Escape close, and opener focus restoration because the current in-app browser
-runtime does not expose viewport emulation.
+Escape close, and opener focus restoration. The exact browser run also used a
+390 × 844 viewport override and verified the rendered drawer and zero document
+overflow.
 
 ### Advanced workbench operations
 
@@ -122,26 +134,27 @@ tenant:
 |   7 | Update schema enforcement  | `200`                                                               |
 |   8 | Update organization policy | `200`                                                               |
 |   9 | Set action descriptor      | `200`                                                               |
-|  10 | Create approval challenge  | `201`                                                               |
-|  11 | Approve challenge          | `200`                                                               |
-|  12 | Cancel challenge           | `200`                                                               |
-|  13 | Evaluate action            | `200`; anchor outage path `503` fail closed                         |
-|  14 | Complete reservation       | `200`                                                               |
-|  15 | Release reservation        | `200`                                                               |
-|  16 | Compare checkpoint         | `200`, exact-current status `same`                                  |
-|  17 | Redrive anchor delivery    | `200` during controlled `.invalid` outage                           |
-|  18 | Reconcile uncertain action | `200`, `confirmed_not_executed`, evidence hash retained             |
-|  19 | Ingest conformance run     | `201`                                                               |
-|  20 | Create alert webhook       | `201`                                                               |
-|  21 | Redrive webhook delivery   | `200`                                                               |
-|  22 | Disable webhook            | `200`                                                               |
-|  23 | Publish ruleset            | `201`                                                               |
-|  24 | Create API key             | `201`                                                               |
-|  25 | Revoke API key             | `200`                                                               |
-|  26 | Start Stripe checkout      | `501 billing_integration_required`, expected blocked boundary       |
-|  27 | Open Stripe billing portal | `501 billing_integration_required`, expected blocked boundary       |
-|  28 | Attempt plan change        | `200` in explicitly local evaluation mode                           |
-|  29 | Purge retained audits      | `200`                                                               |
+|  10 | Set action controls        | `200`; emergency hold and shadow policy persisted                   |
+|  11 | Create approval challenge  | `201`                                                               |
+|  12 | Approve challenge          | `200`                                                               |
+|  13 | Cancel challenge           | `200`                                                               |
+|  14 | Evaluate action            | `200`; anchor outage path `503` fail closed                         |
+|  15 | Complete reservation       | `200`                                                               |
+|  16 | Release reservation        | `200`                                                               |
+|  17 | Compare checkpoint         | `200`, exact-current status `same`                                  |
+|  18 | Redrive anchor delivery    | `200` during controlled `.invalid` outage                           |
+|  19 | Reconcile uncertain action | `200`, `confirmed_not_executed`, evidence hash retained             |
+|  20 | Ingest conformance run     | `201`                                                               |
+|  21 | Create alert webhook       | `201`                                                               |
+|  22 | Redrive webhook delivery   | `200`                                                               |
+|  23 | Disable webhook            | `200`                                                               |
+|  24 | Publish ruleset            | `201`                                                               |
+|  25 | Create API key             | `201`                                                               |
+|  26 | Revoke API key             | `200`                                                               |
+|  27 | Start Stripe checkout      | `501 billing_integration_required`, expected blocked boundary       |
+|  28 | Open Stripe billing portal | `501 billing_integration_required`, expected blocked boundary       |
+|  29 | Attempt plan change        | `200` in explicitly local evaluation mode                           |
+|  30 | Purge retained audits      | `200`                                                               |
 
 The workbench refused an unchecked mutation, malformed JSON, an unresolved
 path placeholder, and a path outside `/v1/` before issuing a request.
@@ -160,6 +173,7 @@ as a customer button.
 | Dashboard delivery         | `/dashboard`, 14 dashboard routes, `app.js`, `app.css`, two fonts                         | Support plus router              | route test, browser, CSP/container E2E                              |
 | Tenant lifecycle           | lifecycle, export, deletion request                                                       | Direct                           | wrong/exact confirmation, export hash, `423` lock                   |
 | Validation and compilation | `POST /v1/validate`, `POST /v1/contracts/compile`                                         | Direct                           | all outcomes, malformed/adversarial tests, provider targets         |
+| Action controls            | admin action-control `GET`/`PUT`                                                          | Direct                           | browser, HMAC/migration, SDK/CLI/Python, PostgreSQL/container       |
 | Action descriptors         | admin descriptor `GET`/`PUT`                                                              | Direct                           | browser, SQLite, PostgreSQL, container                              |
 | Approvals                  | challenge `GET`/`POST`, approve, revoke                                                   | Direct                           | browser, RBAC negative, expiry/replay/tamper tests                  |
 | Action execution           | evaluate, complete, release                                                               | Direct                           | browser, idempotency/concurrency tests, outage E2E                  |
@@ -209,11 +223,12 @@ active tab.
 
 | Command                                           | Result                                                                                                                                                |
 | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run check`                                   | format, lint, scripts, package boundary, types, dry provider boundary, conformance; 223 JS/TS passed, 16 PostgreSQL skipped; 5 Python passed          |
+| `npm run check`                                   | format, lint, scripts, package boundary, types, dry provider boundary, conformance; 241 JS/TS passed, 18 PostgreSQL skipped; 5 Python passed          |
+| credentialed PostgreSQL shared-state regression   | 18/18 passed against disposable PostgreSQL 16, including checked-out client error handling                                                            |
 | credentialed `npm run test:coverage`              | 40 files, 239/239 tests passed; 79.51% statements, 73.46% branches, 80.66% functions, 81.36% lines                                                    |
-| `npm test -- --run tests/dashboard-ui.test.ts`    | 12/12 focused dashboard tests passed                                                                                                                  |
-| `npm run audit:container-e2e`                     | passed, 48.917 seconds, fresh PostgreSQL, hardened managed/anchor containers, restart/outage/isolation/secret/log checks                              |
-| `npm run audit:extreme`                           | passed, 43.969 seconds; includes check, dependency audit, conformance, benchmark, recovery, load, managed HTTP                                        |
+| `npx vitest run tests/dashboard-ui.test.ts`       | 15/15 focused dashboard tests passed                                                                                                                  |
+| `npm run audit:container-e2e`                     | passed, 137.416 seconds, fresh PostgreSQL, hardened managed/anchor containers, action controls, restart/outage/isolation/secret/log checks            |
+| `npm run audit:extreme`                           | passed, 53.992 seconds; includes check, dependency audit, conformance, benchmark, recovery, load, managed HTTP                                        |
 | `npm run audit:framework-integrations`            | MCP, OpenAI Agents, PydanticAI and Google ADK runtime boundary passed; rejected calls executed zero tools                                             |
 | `npm run audit:five-repos`                        | 5 repositories, 9 fixtures, 35 derived calls, zero failures; downloaded code not executed                                                             |
 | `npm run audit:benchmarks`                        | 7,699 recorded calls, 30,203 mutations, zero mismatches                                                                                               |
@@ -225,10 +240,10 @@ active tab.
 
 Additional measurements produced inside the extreme audit:
 
-- core benchmark, 10,000 iterations: p50 37.375 µs, p95 59.125 µs,
-  p99 185.959 µs;
-- managed HTTP load, 2,000 requests at concurrency 32: 644.03 requests/s,
-  p50 45.22 ms, p95 58.19 ms, p99 266.98 ms, zero HTTP errors, 2,000 unique
+- core benchmark, 10,000 iterations: p50 54.875 µs, p95 94.875 µs,
+  p99 228.791 µs;
+- managed HTTP load, 2,000 requests at concurrency 32: 482.88 requests/s,
+  p50 53.99 ms, p95 104.89 ms, p99 322.56 ms, zero HTTP errors, 2,000 unique
   audit IDs, valid 2,000-record chain;
 - self-contained backup/restore: source and restored SQLite integrity true,
   row counts equal, control/audit/reconciliation/release chains valid, backup

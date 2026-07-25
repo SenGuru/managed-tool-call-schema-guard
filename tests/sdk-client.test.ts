@@ -115,6 +115,55 @@ describe('SchemaGuardClient remote boundary', () => {
     });
   });
 
+  it('reads and updates managed action controls through the admin boundary', async () => {
+    const observed: Array<{ method: string; body: unknown }> = [];
+    const response = {
+      hold: false,
+      reason_code: null,
+      enforced_policy: { max_auto_execute_risk: 'low' },
+      shadow_policy: { max_auto_execute_risk: 'read' },
+      updated_at: '2026-07-25T00:00:00.000Z',
+      updated_by_hash: `hmac-sha256:${'a'.repeat(64)}`,
+    };
+    const client = new SchemaGuardClient({
+      baseUrl: 'https://guard.example',
+      apiKey: 'admin',
+      fetch: vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        observed.push({
+          method: init?.method ?? 'GET',
+          body: typeof init?.body === 'string' ? (JSON.parse(init.body) as unknown) : undefined,
+        });
+        return Promise.resolve(
+          new Response(JSON.stringify(response), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+        );
+      }) as typeof fetch,
+    });
+    await expect(client.getManagedActionControl()).resolves.toEqual(response);
+    await expect(
+      client.updateManagedActionControl({
+        hold: false,
+        reason_code: null,
+        enforced_policy: { max_auto_execute_risk: 'low' },
+        shadow_policy: { max_auto_execute_risk: 'read' },
+      }),
+    ).resolves.toEqual(response);
+    expect(observed).toEqual([
+      { method: 'GET', body: undefined },
+      {
+        method: 'PUT',
+        body: {
+          hold: false,
+          reason_code: null,
+          enforced_policy: { max_auto_execute_risk: 'low' },
+          shadow_policy: { max_auto_execute_risk: 'read' },
+        },
+      },
+    ]);
+  });
+
   it('exposes the managed reconciliation lifecycle without sending GET bodies', async () => {
     const reservationId = 'res_11111111-1111-4111-8111-111111111111';
     const fingerprint = `sha256:${'2'.repeat(64)}`;

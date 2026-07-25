@@ -878,6 +878,31 @@ try {
       side_effect: 'irreversible',
     },
   });
+  const defaultActionControl = await request(managedBase, '/v1/admin/actions/control', 200, {
+    key: adminKey,
+  });
+  assert(
+    defaultActionControl.body.hold === false && defaultActionControl.body.shadow_policy === null,
+    'shared action control starts enforcing without a hold or shadow policy',
+  );
+  await request(managedBase, '/v1/admin/actions/control', 200, {
+    method: 'PUT',
+    key: adminKey,
+    body: {
+      hold: false,
+      reason_code: null,
+      enforced_policy: {
+        max_auto_execute_risk: 'low',
+        max_repaired_auto_execute_risk: 'read',
+        require_idempotency_for_side_effects: true,
+      },
+      shadow_policy: {
+        max_auto_execute_risk: 'high',
+        max_repaired_auto_execute_risk: 'high',
+        require_idempotency_for_side_effects: true,
+      },
+    },
+  });
   const transferDecision = await request(managedBase, '/v1/validate', 200, {
     method: 'POST',
     key: adminKey,
@@ -895,9 +920,15 @@ try {
       decision: transferDecision.body,
       tool_name: 'transfer',
       environment: 'production',
+      workload_identity: 'container-agent/workspace/run-1',
       expires_in_seconds: 300,
     },
   });
+  assert(
+    /^hmac-sha256:[0-9a-f]{64}$/u.test(challenge.body.workload_identity_hash) &&
+      !JSON.stringify(challenge.body).includes('container-agent/workspace/run-1'),
+    'workload identity is tenant-keyed before approval persistence',
+  );
   const approval = await request(
     managedBase,
     `/v1/actions/challenges/${encodeURIComponent(challenge.body.challenge_id)}/approve`,
@@ -908,6 +939,7 @@ try {
     decision: transferDecision.body,
     tool_name: 'transfer',
     environment: 'production',
+    workload_identity: 'container-agent/workspace/run-1',
     approval: approval.body,
     idempotency_key: 'container-e2e-transfer-1',
   };
@@ -917,6 +949,11 @@ try {
     body: evaluationBody,
   });
   assert(gate.body.status === 'allowed', 'approved irreversible action is admitted once');
+  assert(
+    gate.body.shadow_evaluation?.status === 'allowed' &&
+      gate.body.shadow_evaluation?.differs_from_enforced === true,
+    'shadow action policy reports a non-authorizing diff beside enforced admission',
+  );
   const checkpoint = await request(managedBase, '/v1/actions/idempotency/checkpoint', 200, {
     key: adminKey,
   });
@@ -939,6 +976,59 @@ try {
     body: evaluationBody,
   });
   assert(duplicateGate.body.status === 'duplicate_blocked', 'duplicate side effect is blocked');
+  const checkpointBeforeHold = await request(
+    managedBase,
+    '/v1/actions/idempotency/checkpoint',
+    200,
+    { key: adminKey },
+  );
+  await request(managedBase, '/v1/admin/actions/control', 200, {
+    method: 'PUT',
+    key: adminKey,
+    body: {
+      hold: true,
+      reason_code: 'container.emergency',
+      enforced_policy: {
+        max_auto_execute_risk: 'low',
+        max_repaired_auto_execute_risk: 'read',
+        require_idempotency_for_side_effects: true,
+      },
+      shadow_policy: null,
+    },
+  });
+  const heldGate = await request(managedBase, '/v1/actions/evaluate', 200, {
+    method: 'POST',
+    key: adminKey,
+    body: evaluationBody,
+  });
+  assert(
+    heldGate.body.status === 'rejected' && heldGate.body.reason_code === 'ACTIONS_HELD',
+    'tenant emergency hold rejects before duplicate or execution admission',
+  );
+  const checkpointAfterHold = await request(
+    managedBase,
+    '/v1/actions/idempotency/checkpoint',
+    200,
+    { key: adminKey },
+  );
+  assert(
+    checkpointAfterHold.body.revision === checkpointBeforeHold.body.revision,
+    'emergency hold creates no idempotency reservation',
+  );
+  await request(managedBase, '/v1/admin/actions/control', 200, {
+    method: 'PUT',
+    key: adminKey,
+    body: {
+      hold: false,
+      reason_code: 'container.recovered',
+      enforced_policy: {
+        max_auto_execute_risk: 'low',
+        max_repaired_auto_execute_risk: 'read',
+        require_idempotency_for_side_effects: true,
+      },
+      shadow_policy: null,
+    },
+  });
 
   const outageChallenge = await request(managedBase, '/v1/actions/challenges', 201, {
     method: 'POST',
@@ -947,6 +1037,7 @@ try {
       decision: transferDecision.body,
       tool_name: 'transfer',
       environment: 'production',
+      workload_identity: 'container-agent/workspace/run-outage',
       expires_in_seconds: 300,
     },
   });
@@ -960,6 +1051,7 @@ try {
     decision: transferDecision.body,
     tool_name: 'transfer',
     environment: 'production',
+    workload_identity: 'container-agent/workspace/run-outage',
     approval: outageApproval.body,
     idempotency_key: 'container-e2e-transfer-anchor-outage',
   };

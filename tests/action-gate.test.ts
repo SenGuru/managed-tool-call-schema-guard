@@ -135,6 +135,62 @@ describe('deterministic action gate', () => {
     ).toMatchObject({ status: 'rejected', reason_code: 'VALIDATION_PROOF_INVALID' });
   });
 
+  it('binds approval and execution fingerprints to an optional workload identity hash', () => {
+    const decision = validateToolCall({
+      tool_name: 'transfer',
+      tool_schema: schema,
+      raw_arguments: { amount: 50 },
+    });
+    const workloadIdentityHash = `hmac-sha256:${'a'.repeat(64)}`;
+    const challenge = createApprovalChallenge({
+      decision,
+      action,
+      environment: 'production',
+      workload_identity_hash: workloadIdentityHash,
+      created_at: now,
+      expires_at: '2026-07-20T12:15:00.000Z',
+    });
+    expect(challenge).toMatchObject({
+      challenge_version: '2026-07-25',
+      workload_identity_hash: workloadIdentityHash,
+    });
+    const approval = approveChallenge({
+      challenge,
+      approver_id: 'reviewer',
+      approved_at: now,
+      secret,
+    });
+    const correct = evaluateActionGate({
+      decision,
+      action,
+      context: {
+        environment: 'production',
+        workload_identity_hash: workloadIdentityHash,
+        now,
+        approval,
+        idempotency_key: 'workload-bound-1',
+      },
+      approval_secret: secret,
+      idempotency_ledger: new InMemoryIdempotencyLedger(),
+    });
+    expect(correct).toMatchObject({ status: 'allowed' });
+    expect(
+      evaluateActionGate({
+        decision,
+        action,
+        context: {
+          environment: 'production',
+          workload_identity_hash: `hmac-sha256:${'b'.repeat(64)}`,
+          now,
+          approval,
+          idempotency_key: 'workload-bound-2',
+        },
+        approval_secret: secret,
+        idempotency_ledger: new InMemoryIdempotencyLedger(),
+      }),
+    ).toMatchObject({ status: 'rejected', reason_code: 'APPROVAL_INVALID' });
+  });
+
   it('reserves idempotency only after approval and blocks duplicates and conflicts', () => {
     const decision = validateToolCall({
       tool_name: 'transfer',

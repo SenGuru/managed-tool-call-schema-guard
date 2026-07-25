@@ -153,6 +153,47 @@ class SchemaGuardClient:
             )
         return payload
 
+    def action_control(self) -> Dict[str, Any]:
+        payload = self._request("/v1/admin/actions/control")
+        if (
+            not isinstance(payload, dict)
+            or not isinstance(payload.get("hold"), bool)
+            or not isinstance(payload.get("enforced_policy"), dict)
+            or payload.get("shadow_policy") is not None
+            and not isinstance(payload.get("shadow_policy"), dict)
+            or not isinstance(payload.get("updated_at"), str)
+            or not isinstance(payload.get("updated_by_hash"), str)
+        ):
+            raise SchemaGuardServiceError(
+                "Schema Guard service returned invalid action controls",
+                code="invalid_service_response",
+            )
+        return payload
+
+    def update_action_control(
+        self,
+        hold: bool,
+        reason_code: Optional[str],
+        enforced_policy: Dict[str, Any],
+        shadow_policy: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        payload = self._request(
+            "/v1/admin/actions/control",
+            "PUT",
+            {
+                "hold": hold,
+                "reason_code": reason_code,
+                "enforced_policy": enforced_policy,
+                "shadow_policy": shadow_policy,
+            },
+        )
+        if not isinstance(payload, dict) or not isinstance(payload.get("hold"), bool):
+            raise SchemaGuardServiceError(
+                "Schema Guard service returned invalid updated action controls",
+                code="invalid_service_response",
+            )
+        return payload
+
     def action_challenges(
         self, status: Optional[str] = None, limit: int = 100
     ) -> Dict[str, Any]:

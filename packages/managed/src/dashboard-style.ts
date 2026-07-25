@@ -345,7 +345,7 @@ pre{margin:0;min-height:110px;max-height:360px;padding:15px 16px;overflow:auto;w
 @media(max-width:1120px){
   .metric-strip{grid-template-columns:repeat(3,1fr)}
   .metric:nth-child(4),.metric:nth-child(5){border-top:1px solid var(--line)}
-  .content-grid,.content-grid.equal,.task-grid{grid-template-columns:1fr}
+  .content-grid,.content-grid.equal,.task-grid{grid-template-columns:minmax(0,1fr)}
   .activation-strip{grid-template-columns:1fr}
   .integration-layout{grid-template-columns:1fr}.integration-steps{border-right:0;border-bottom:1px solid var(--line)}
   .inventory-layout{grid-template-columns:1fr}.inventory-runtime{border-top:1px solid var(--line);border-left:0}

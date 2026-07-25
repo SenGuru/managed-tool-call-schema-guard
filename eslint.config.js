@@ -13,6 +13,7 @@ export default tseslint.config(
       '.codex/**',
       'outputs/**',
       'website/**',
+      'apps/**',
       'eslint.config.js',
       'examples/agent-loop/*.mjs',
       'scripts/*.mjs',

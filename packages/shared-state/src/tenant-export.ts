@@ -14,6 +14,7 @@ const CONTROL_TENANT_TABLES = [
   'sg_alert_manifests',
   'sg_alert_webhooks',
   'sg_alerts',
+  'sg_action_controls',
   'sg_conformance_runs',
   'sg_control_api_keys',
   'sg_control_audit_anchors',

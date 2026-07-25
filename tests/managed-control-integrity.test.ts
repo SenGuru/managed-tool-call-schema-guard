@@ -75,9 +75,9 @@ describe('managed control-plane integrity', () => {
 
     const store = new ManagedStore({ databasePath: path, masterSecret: secret });
     const principal = store.authenticate('legacy-key')!;
-    expect(store.db.pragma('user_version', { simple: true })).toBe(15);
+    expect(store.db.pragma('user_version', { simple: true })).toBe(16);
     expect(store.tenantLifecycle(principal)).toMatchObject({ status: 'active' });
-    expect(store.verifyControlPlaneIntegrity(principal)).toEqual({ valid: true, checked: 11 });
+    expect(store.verifyControlPlaneIntegrity(principal)).toEqual({ valid: true, checked: 12 });
     expect(
       store.db
         .prepare(
@@ -234,7 +234,7 @@ describe('managed control-plane integrity', () => {
     store.updateEnvironmentSchemaEnforcement(principal, String(staging.id), 'enforce');
     store.registerActionDescriptor(principal, 'search', 'staging', 'high', 'reversible');
     expect(store.revokeApiKey(principal, issued.key_id)).toBe(true);
-    expect(store.verifyControlPlaneIntegrity(principal)).toEqual({ valid: true, checked: 10 });
+    expect(store.verifyControlPlaneIntegrity(principal)).toEqual({ valid: true, checked: 11 });
     store.close();
 
     const raw = new Database(path);
@@ -258,7 +258,7 @@ describe('managed control-plane integrity', () => {
         "UPDATE environments SET schema_enforcement='enforce' WHERE tenant_id='b' AND name='production'",
       )
       .run();
-    expect(store.verifyControlPlaneIntegrity(tenantA)).toEqual({ valid: true, checked: 8 });
+    expect(store.verifyControlPlaneIntegrity(tenantA)).toEqual({ valid: true, checked: 9 });
     expect(store.verifyControlPlaneIntegrity(tenantB)).toMatchObject({
       valid: false,
       first_invalid_table: 'environments',

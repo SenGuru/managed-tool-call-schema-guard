@@ -67,8 +67,17 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
     await firstAlerts.migrate();
     await firstIntelligence.migrate();
     await first.pool.query(
-      'TRUNCATE sg_billing_events,sg_billing_subscriptions,sg_billing_checkout_sessions,sg_tenant_deletion_receipts,sg_tenant_lifecycle,sg_tenant_rulesets,sg_conformance_runs,sg_failure_observations,sg_intelligence_manifests,sg_alert_deliveries,sg_alert_acknowledgements,sg_alerts,sg_alert_webhooks,sg_alert_manifests,sg_schema_releases,sg_tool_schemas,sg_tool_schema_manifests,sg_schema_environments,sg_schema_release_manifests,sg_control_audit_events,sg_control_audit_anchors,sg_control_audit_manifests,sg_control_api_keys,sg_control_tenants,sg_action_approvals,sg_action_descriptors,sg_accepted_action_decisions,sg_checkpoint_anchor_deliveries,sg_action_reconciliations,sg_action_reconciliation_manifests,sg_action_reservations,sg_action_manifests RESTART IDENTITY',
+      'TRUNCATE sg_billing_events,sg_billing_subscriptions,sg_billing_checkout_sessions,sg_tenant_deletion_receipts,sg_tenant_lifecycle,sg_action_controls,sg_tenant_rulesets,sg_conformance_runs,sg_failure_observations,sg_intelligence_manifests,sg_alert_deliveries,sg_alert_acknowledgements,sg_alerts,sg_alert_webhooks,sg_alert_manifests,sg_schema_releases,sg_tool_schemas,sg_tool_schema_manifests,sg_schema_environments,sg_schema_release_manifests,sg_control_audit_events,sg_control_audit_anchors,sg_control_audit_manifests,sg_control_api_keys,sg_control_tenants,sg_action_approvals,sg_action_descriptors,sg_accepted_action_decisions,sg_checkpoint_anchor_deliveries,sg_action_reconciliations,sg_action_reconciliation_manifests,sg_action_reservations,sg_action_manifests RESTART IDENTITY',
     );
+  });
+
+  it('installs checked-out client error handling for database restart recovery', async () => {
+    const client = await firstPool.connect();
+    try {
+      expect(client.listenerCount('error')).toBeGreaterThan(0);
+    } finally {
+      client.release();
+    }
   });
 
   afterAll(async () => {
@@ -170,6 +179,19 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
     await expect(secondControl.authenticate('control-admin')).resolves.toMatchObject({
       policy: { allowed_repairs: [] },
     });
+    await firstControl.updateActionControl('control-tenant', 'operator-a', {
+      hold: false,
+      reason_code: null,
+      enforced_policy: { max_auto_execute_risk: 'low' },
+      shadow_policy: { max_auto_execute_risk: 'read' },
+    });
+    const sharedActionControl = await secondControl.actionControl('control-tenant');
+    expect(sharedActionControl).toMatchObject({
+      hold: false,
+      enforced_policy: { max_auto_execute_risk: 'low' },
+      shadow_policy: { max_auto_execute_risk: 'read' },
+    });
+    expect(sharedActionControl.updated_by_hash).toMatch(/^hmac-sha256:[0-9a-f]{64}$/u);
 
     const attempts = await Promise.allSettled(
       Array.from({ length: 16 }, (_unused, index) =>
@@ -346,7 +368,7 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
         'SELECT version FROM sg_billing_schema_migrations ORDER BY version',
       ),
     ]);
-    expect(controlHistory.rows.map((row) => row.version)).toEqual([1, 2]);
+    expect(controlHistory.rows.map((row) => row.version)).toEqual([1, 2, 3]);
     expect(billingHistory.rows.map((row) => row.version)).toEqual([1]);
 
     await firstControl.bootstrapTenant({

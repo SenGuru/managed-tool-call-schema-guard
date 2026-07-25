@@ -2,9 +2,11 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Pool, type PoolClient } from 'pg';
 import {
   canonicalJson,
+  actionControlPolicyValidationError,
   policyValidationError,
   sha256,
   type AuditEnvelope,
+  type ActionControlPolicy,
   type GuardDecision,
   type GuardPolicy,
 } from '@schema-guard/core';
@@ -21,6 +23,15 @@ export interface SharedTenantLifecycle {
   reason_code: string | null;
   deletion_requested_at: string | null;
   updated_at: string;
+}
+
+export interface SharedActionControl {
+  hold: boolean;
+  reason_code: string | null;
+  enforced_policy: ActionControlPolicy;
+  shadow_policy: ActionControlPolicy | null;
+  updated_at: string;
+  updated_by_hash: string;
 }
 
 export type SharedScope =
@@ -149,6 +160,17 @@ export interface ControlState {
     reasonCode: string | null,
   ): Promise<SharedTenantLifecycle>;
   updateTenantPolicy(tenantId: string, policy: GuardPolicy): Promise<void>;
+  actionControl(tenantId: string): Promise<SharedActionControl>;
+  updateActionControl(
+    tenantId: string,
+    operatorId: string,
+    input: {
+      hold: boolean;
+      reason_code: string | null;
+      enforced_policy: ActionControlPolicy;
+      shadow_policy: ActionControlPolicy | null;
+    },
+  ): Promise<SharedActionControl>;
   updatePlan(tenantId: string, plan: SharedPlanId): Promise<void>;
   consumeRateLimit(
     tenantId: string,
@@ -211,6 +233,16 @@ type TenantDeletionReceiptRow = {
   export_sha256: string;
   deleted_at: Date;
   receipt_hmac: string;
+};
+type ActionControlRow = {
+  tenant_id: string;
+  hold: boolean;
+  reason_code: string | null;
+  enforced_policy_json: string;
+  shadow_policy_json: string | null;
+  updated_at: Date;
+  updated_by_hash: string;
+  control_hmac: string;
 };
 type AuditRow = {
   sequence: string;
@@ -367,6 +399,18 @@ const CONTROL_LIFECYCLE_SCHEMA = `
     receipt_hmac TEXT NOT NULL
   );
 `;
+const ACTION_CONTROL_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS sg_action_controls (
+    tenant_id TEXT PRIMARY KEY REFERENCES sg_control_tenants(id) ON DELETE CASCADE,
+    hold BOOLEAN NOT NULL DEFAULT FALSE,
+    reason_code TEXT,
+    enforced_policy_json TEXT NOT NULL DEFAULT '{}',
+    shadow_policy_json TEXT,
+    updated_at TIMESTAMPTZ NOT NULL,
+    updated_by_hash TEXT NOT NULL,
+    control_hmac TEXT NOT NULL
+  );
+`;
 
 export class PostgresControlState implements ControlState {
   readonly pool: Pool;
@@ -473,6 +517,29 @@ export class PostgresControlState implements ControlState {
       tenant_ref: row.tenant_ref,
       export_sha256: row.export_sha256,
       deleted_at: row.deleted_at.toISOString(),
+    });
+  }
+  private actionControlUnsigned(row: ActionControlRow): Omit<ActionControlRow, 'control_hmac'> {
+    return {
+      tenant_id: row.tenant_id,
+      hold: row.hold,
+      reason_code: row.reason_code,
+      enforced_policy_json: row.enforced_policy_json,
+      shadow_policy_json: row.shadow_policy_json,
+      updated_at: row.updated_at,
+      updated_by_hash: row.updated_by_hash,
+    };
+  }
+  private actionControlHmac(row: Omit<ActionControlRow, 'control_hmac'>): string {
+    return hmac(this.masterSecret, 'shared-managed-action-control-v1', {
+      ...row,
+      updated_at: row.updated_at.toISOString(),
+    });
+  }
+  private actionControlOperatorHash(tenantId: string, operatorId: string): string {
+    return hmac(this.masterSecret, 'shared-managed-action-control-operator-v1', {
+      tenant_id: tenantId,
+      operator_id: operatorId,
     });
   }
   private auditAnchorHmac(row: Omit<AuditAnchorRow, 'control_hmac'>): string {
@@ -617,6 +684,38 @@ export class PostgresControlState implements ControlState {
     )
       throw new SharedStateIntegrityError('shared tenant deletion receipt integrity failed');
   }
+  private assertActionControl(row: ActionControlRow): void {
+    let enforced: unknown;
+    let shadow: unknown = null;
+    try {
+      enforced = JSON.parse(row.enforced_policy_json) as unknown;
+      if (row.shadow_policy_json !== null) shadow = JSON.parse(row.shadow_policy_json) as unknown;
+    } catch {
+      throw new SharedStateIntegrityError('shared action control policy is malformed');
+    }
+    if (
+      !equal(row.control_hmac, this.actionControlHmac(this.actionControlUnsigned(row))) ||
+      (row.reason_code !== null && !/^[a-z0-9][a-z0-9_.-]{0,63}$/u.test(row.reason_code)) ||
+      (row.hold && row.reason_code === null) ||
+      actionControlPolicyValidationError(enforced) ||
+      (shadow !== null && actionControlPolicyValidationError(shadow))
+    )
+      throw new SharedStateIntegrityError('shared action control integrity failed');
+  }
+  private publicActionControl(row: ActionControlRow): SharedActionControl {
+    this.assertActionControl(row);
+    return {
+      hold: row.hold,
+      reason_code: row.reason_code,
+      enforced_policy: JSON.parse(row.enforced_policy_json) as ActionControlPolicy,
+      shadow_policy:
+        row.shadow_policy_json === null
+          ? null
+          : (JSON.parse(row.shadow_policy_json) as ActionControlPolicy),
+      updated_at: row.updated_at.toISOString(),
+      updated_by_hash: row.updated_by_hash,
+    };
+  }
   private parsePolicy(value: string): GuardPolicy {
     try {
       const policy = JSON.parse(value) as GuardPolicy;
@@ -746,6 +845,7 @@ export class PostgresControlState implements ControlState {
       await client.query(CONTROL_SCHEMA);
       const checksum = sha256(CONTROL_SCHEMA);
       const lifecycleChecksum = sha256(CONTROL_LIFECYCLE_SCHEMA);
+      const actionControlChecksum = sha256(ACTION_CONTROL_SCHEMA);
       const billingChecksum = sha256(BILLING_SCHEMA);
       const rows = await client.query<{ version: number; checksum: string }>(
         'SELECT version,checksum FROM sg_control_schema_migrations ORDER BY version',
@@ -753,6 +853,7 @@ export class PostgresControlState implements ControlState {
       const expectedChecksums = new Map([
         [1, checksum],
         [2, lifecycleChecksum],
+        [3, actionControlChecksum],
       ]);
       if (
         rows.rows.some(
@@ -794,6 +895,34 @@ export class PostgresControlState implements ControlState {
           [lifecycleChecksum, timestamp],
         );
       }
+      await client.query(ACTION_CONTROL_SCHEMA);
+      if (!rows.rows.some((row) => row.version === 3)) {
+        const timestamp = new Date();
+        const tenants = await client.query<{ id: string }>(
+          'SELECT id FROM sg_control_tenants ORDER BY id FOR UPDATE',
+        );
+        for (const tenant of tenants.rows) {
+          const unsigned: Omit<ActionControlRow, 'control_hmac'> = {
+            tenant_id: tenant.id,
+            hold: false,
+            reason_code: null,
+            enforced_policy_json: '{}',
+            shadow_policy_json: null,
+            updated_at: timestamp,
+            updated_by_hash: this.actionControlOperatorHash(tenant.id, 'migration'),
+          };
+          await client.query(
+            `INSERT INTO sg_action_controls(tenant_id,hold,reason_code,enforced_policy_json,shadow_policy_json,updated_at,updated_by_hash,control_hmac)
+             VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
+            [...Object.values(unsigned), this.actionControlHmac(unsigned)],
+          );
+        }
+        await client.query(
+          `INSERT INTO sg_control_schema_migrations(version,migration_name,checksum,applied_at)
+           VALUES(3,'tenant_action_controls',$1,$2)`,
+          [actionControlChecksum, timestamp],
+        );
+      }
       await client.query(BILLING_SCHEMA);
       const billingRows = await client.query<{ version: number; checksum: string }>(
         'SELECT version,checksum FROM sg_billing_schema_migrations ORDER BY version',
@@ -829,6 +958,15 @@ export class PostgresControlState implements ControlState {
         ).rows[0];
         if (!lifecycle) throw new SharedStateIntegrityError('shared tenant lifecycle is missing');
         this.assertTenantLifecycle(lifecycle);
+        const actionControl = (
+          await client.query<ActionControlRow>(
+            'SELECT * FROM sg_action_controls WHERE tenant_id=$1',
+            [tenant.id],
+          )
+        ).rows[0];
+        if (!actionControl)
+          throw new SharedStateIntegrityError('shared tenant action control is missing');
+        this.assertActionControl(actionControl);
         if (!(await this.verifyAuditWithClient(client, tenant.id)).valid)
           throw new SharedStateIntegrityError('shared audit readiness failed');
       }
@@ -932,6 +1070,32 @@ export class PostgresControlState implements ControlState {
         ).rows[0];
         if (!lifecycle) throw new SharedStateIntegrityError('shared tenant lifecycle is missing');
         this.assertTenantLifecycle(lifecycle);
+      }
+      if (!existing) {
+        const actionControl: Omit<ActionControlRow, 'control_hmac'> = {
+          tenant_id: input.id,
+          hold: false,
+          reason_code: null,
+          enforced_policy_json: '{}',
+          shadow_policy_json: null,
+          updated_at: timestamp,
+          updated_by_hash: this.actionControlOperatorHash(input.id, 'bootstrap'),
+        };
+        await client.query(
+          `INSERT INTO sg_action_controls(tenant_id,hold,reason_code,enforced_policy_json,shadow_policy_json,updated_at,updated_by_hash,control_hmac)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
+          [...Object.values(actionControl), this.actionControlHmac(actionControl)],
+        );
+      } else {
+        const actionControl = (
+          await client.query<ActionControlRow>(
+            'SELECT * FROM sg_action_controls WHERE tenant_id=$1 FOR UPDATE',
+            [input.id],
+          )
+        ).rows[0];
+        if (!actionControl)
+          throw new SharedStateIntegrityError('shared tenant action control is missing');
+        this.assertActionControl(actionControl);
       }
       if (!existing) {
         const manifest: Omit<AuditManifestRow, 'control_hmac'> = {
@@ -1307,6 +1471,92 @@ export class PostgresControlState implements ControlState {
       policy_json: canonicalJson(policy),
       updated_at: new Date(),
     }));
+  }
+  async actionControl(tenantId: string): Promise<SharedActionControl> {
+    const row = (
+      await this.pool.query<ActionControlRow>(
+        'SELECT * FROM sg_action_controls WHERE tenant_id=$1',
+        [tenantId],
+      )
+    ).rows[0];
+    if (!row) throw new SharedStateIntegrityError('shared tenant action control is missing');
+    return this.publicActionControl(row);
+  }
+  async updateActionControl(
+    tenantId: string,
+    operatorId: string,
+    input: {
+      hold: boolean;
+      reason_code: string | null;
+      enforced_policy: ActionControlPolicy;
+      shadow_policy: ActionControlPolicy | null;
+    },
+  ): Promise<SharedActionControl> {
+    if (
+      !operatorId ||
+      operatorId.length > 256 ||
+      typeof input.hold !== 'boolean' ||
+      (input.reason_code !== null && !/^[a-z0-9][a-z0-9_.-]{0,63}$/u.test(input.reason_code)) ||
+      (input.hold && input.reason_code === null)
+    )
+      throw new TypeError('shared action control is invalid');
+    const enforcedError = actionControlPolicyValidationError(input.enforced_policy);
+    const shadowError = actionControlPolicyValidationError(input.shadow_policy ?? undefined);
+    if (enforcedError || shadowError)
+      throw new TypeError(enforcedError ?? shadowError ?? 'shared action policy is invalid');
+    return this.transaction(async (client) => {
+      const current = (
+        await client.query<ActionControlRow>(
+          'SELECT * FROM sg_action_controls WHERE tenant_id=$1 FOR UPDATE',
+          [tenantId],
+        )
+      ).rows[0];
+      if (!current) throw new SharedStateIntegrityError('shared tenant action control is missing');
+      this.assertActionControl(current);
+      const updated: Omit<ActionControlRow, 'control_hmac'> = {
+        tenant_id: tenantId,
+        hold: input.hold,
+        reason_code: input.reason_code,
+        enforced_policy_json: canonicalJson(input.enforced_policy),
+        shadow_policy_json:
+          input.shadow_policy === null ? null : canonicalJson(input.shadow_policy),
+        updated_at: new Date(),
+        updated_by_hash: this.actionControlOperatorHash(tenantId, operatorId),
+      };
+      await client.query(
+        `UPDATE sg_action_controls
+         SET hold=$1,reason_code=$2,enforced_policy_json=$3,shadow_policy_json=$4,updated_at=$5,updated_by_hash=$6,control_hmac=$7
+         WHERE tenant_id=$8`,
+        [
+          updated.hold,
+          updated.reason_code,
+          updated.enforced_policy_json,
+          updated.shadow_policy_json,
+          updated.updated_at,
+          updated.updated_by_hash,
+          this.actionControlHmac(updated),
+          tenantId,
+        ],
+      );
+      if (this.options.alertWriter)
+        await this.options.alertWriter.recordAlertWithClient(
+          client,
+          tenantId,
+          'action_control_changed',
+          'critical',
+          {
+            hold: input.hold,
+            reason_code: input.reason_code,
+            enforced_policy_hash: sha256(input.enforced_policy),
+            shadow_policy_hash: input.shadow_policy === null ? null : sha256(input.shadow_policy),
+          },
+          `action-control:${updated.updated_at.toISOString()}`,
+        );
+      return this.publicActionControl({
+        ...updated,
+        control_hmac: this.actionControlHmac(updated),
+      });
+    });
   }
   async updatePlan(tenantId: string, plan: SharedPlanId): Promise<void> {
     await this.updateTenant(tenantId, (row) => ({

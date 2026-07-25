@@ -162,9 +162,11 @@ Validation requests may add bounded operational labels under `context` so failur
 - `GET /v1/schema-releases`, `GET /v1/schema-releases/verify`
 - `POST /v1/conformance-runs`
 - `PUT /v1/admin/actions/descriptors`
+- `GET /v1/admin/actions/control`, `PUT /v1/admin/actions/control`
 - `POST /v1/actions/challenges`
 - `POST /v1/actions/challenges/:id/approve`, `DELETE /v1/actions/challenges/:id`
-- `POST /v1/actions/evaluate`
+- `POST /v1/actions/evaluate` (optional `workload_identity`; only its
+  tenant-keyed hash is bound and persisted)
 - `POST /v1/actions/idempotency/complete`, `POST /v1/actions/idempotency/release`
 - `GET /v1/actions/idempotency/checkpoint`
 - `POST /v1/actions/idempotency/checkpoint/compare`

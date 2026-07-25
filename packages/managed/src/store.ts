@@ -5,6 +5,7 @@ import { appendFile, chmod, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import {
   approveChallenge,
+  actionControlPolicyValidationError,
   canonicalJson,
   detectSchemaDrift,
   evaluateActionGate,
@@ -13,6 +14,7 @@ import {
   sha256,
   verifyRepairReceipt,
   type ActionDescriptor,
+  type ActionControlPolicy,
   type ActionGateContext,
   type ActionGateDecision,
   type ApprovalChallenge,
@@ -48,6 +50,7 @@ import {
   ALL_SCOPES,
   type ManagedConfig,
   type ManagedOperationalMetrics,
+  type ManagedActionControl,
   type ActionCheckpointAnchorDelivery,
   type ActionIdempotencyCheckpoint,
   type ActionIdempotencyCheckpointComparison,
@@ -75,6 +78,7 @@ const text = (value: unknown, fallback = ''): string =>
   typeof value === 'string' ? value : fallback;
 const EMPTY_IDEMPOTENCY_ACCUMULATOR = `xor256:${'0'.repeat(64)}`;
 const TENANT_EXPORT_TABLES = [
+  'action_controls',
   'action_approvals',
   'action_descriptors',
   'action_idempotency',
@@ -174,12 +178,14 @@ function privacySafeAlertDetail(kind: string, detail: unknown): Record<string, u
       'compatibility',
     ],
     schema_enforcement_changed: ['environment', 'mode'],
+    action_control_changed: ['hold', 'reason_code', 'enforced_policy_hash', 'shadow_policy_hash'],
     validation_rejected: ['audit_id', 'reason_code'],
   };
   const safe: Record<string, unknown> = {};
   for (const key of allowedByKind[kind] ?? []) {
     const value = source[key];
     if (typeof value === 'string' && value.length <= 512) safe[key] = value;
+    else if (typeof value === 'boolean' || value === null) safe[key] = value;
     else if (
       Array.isArray(value) &&
       value.length <= 100 &&
@@ -358,6 +364,7 @@ export class ManagedStore {
           if (migration.version === 12) this.backfillControlPlaneIntegrity();
           if (migration.version === 13) this.backfillActionIdempotencyManifests();
           if (migration.version === 15) this.backfillTenantLifecycle();
+          if (migration.version === 16) this.backfillActionControls();
           this.db.pragma(`user_version = ${migration.version}`);
         })();
         current = migration.version;
@@ -422,6 +429,51 @@ export class ManagedStore {
       export_sha256: row.export_sha256,
       deleted_at: row.deleted_at,
     });
+  }
+  private actionControlHmac(row: Row): string {
+    return hmac(this.config.masterSecret, 'managed-action-control-v1', {
+      tenant_id: row.tenant_id,
+      hold: Number(row.hold),
+      reason_code: row.reason_code ?? null,
+      enforced_policy_json: row.enforced_policy_json,
+      shadow_policy_json: row.shadow_policy_json ?? null,
+      updated_at: row.updated_at,
+      updated_by_hash: row.updated_by_hash,
+    });
+  }
+  private actionControlOperatorHash(tenantId: string, keyId: string): string {
+    return hmac(this.config.masterSecret, 'managed-action-control-operator-v1', {
+      tenant_id: tenantId,
+      key_id: keyId,
+    });
+  }
+  private backfillActionControls(): void {
+    const timestamp = now();
+    const insert = this.db.prepare(
+      `INSERT OR IGNORE INTO action_controls(tenant_id,hold,reason_code,enforced_policy_json,shadow_policy_json,updated_at,updated_by_hash,control_hmac)
+       VALUES(?,?,?,?,?,?,?,?)`,
+    );
+    for (const tenant of this.db.prepare('SELECT id FROM tenants ORDER BY id').all() as Row[]) {
+      const row: Row = {
+        tenant_id: tenant.id,
+        hold: 0,
+        reason_code: null,
+        enforced_policy_json: '{}',
+        shadow_policy_json: null,
+        updated_at: timestamp,
+        updated_by_hash: this.actionControlOperatorHash(text(tenant.id), 'migration'),
+      };
+      insert.run(
+        row.tenant_id,
+        row.hold,
+        row.reason_code,
+        row.enforced_policy_json,
+        row.shadow_policy_json,
+        row.updated_at,
+        row.updated_by_hash,
+        this.actionControlHmac(row),
+      );
+    }
   }
   private inspectTenantDeletionReceipts(): boolean {
     for (const row of this.db
@@ -944,6 +996,13 @@ export class ManagedStore {
         signature: 'control_hmac',
       },
       {
+        table: 'action_controls',
+        tenantColumn: 'tenant_id',
+        digest: (row: Row) => this.actionControlHmac(row),
+        id: 'tenant_id',
+        signature: 'control_hmac',
+      },
+      {
         table: 'alert_webhooks',
         tenantColumn: 'tenant_id',
         digest: (row: Row) => this.alertWebhookControlHmac(row),
@@ -1213,6 +1272,30 @@ export class ManagedStore {
           lifecycleRow.deletion_requested_at,
           lifecycleRow.updated_at,
           this.tenantLifecycleControlHmac(lifecycleRow),
+        );
+      const actionControlRow: Row = {
+        tenant_id: input.id,
+        hold: 0,
+        reason_code: null,
+        enforced_policy_json: '{}',
+        shadow_policy_json: null,
+        updated_at: tenantCreatedAt,
+        updated_by_hash: this.actionControlOperatorHash(input.id, 'bootstrap'),
+      };
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO action_controls(tenant_id,hold,reason_code,enforced_policy_json,shadow_policy_json,updated_at,updated_by_hash,control_hmac)
+           VALUES(?,?,?,?,?,?,?,?)`,
+        )
+        .run(
+          actionControlRow.tenant_id,
+          actionControlRow.hold,
+          actionControlRow.reason_code,
+          actionControlRow.enforced_policy_json,
+          actionControlRow.shadow_policy_json,
+          actionControlRow.updated_at,
+          actionControlRow.updated_by_hash,
+          this.actionControlHmac(actionControlRow),
         );
       const manifest: Row = {
         tenant_id: input.id,
@@ -1951,6 +2034,144 @@ export class ManagedStore {
     });
   }
 
+  private actionControlRecord(tenantId: string): Row {
+    const row = this.db.prepare('SELECT * FROM action_controls WHERE tenant_id=?').get(tenantId) as
+      Row | undefined;
+    if (!row)
+      throw new ManagedError(
+        503,
+        'action_control_unavailable',
+        'tenant action controls are unavailable; action execution is disabled',
+      );
+    this.assertControlHmac(row, this.actionControlHmac(row), 'action control');
+    const enforced = parse(row.enforced_policy_json);
+    const shadow = row.shadow_policy_json === null ? null : parse(row.shadow_policy_json);
+    if (
+      actionControlPolicyValidationError(enforced) ||
+      (shadow !== null && actionControlPolicyValidationError(shadow))
+    )
+      throw new ManagedError(
+        503,
+        'action_control_integrity_invalid',
+        'tenant action policy is invalid; action execution is disabled',
+      );
+    return row;
+  }
+
+  private publicActionControl(row: Row): ManagedActionControl {
+    return {
+      hold: Number(row.hold) === 1,
+      reason_code: row.reason_code === null ? null : text(row.reason_code),
+      enforced_policy: parse(row.enforced_policy_json) as ActionControlPolicy,
+      shadow_policy:
+        row.shadow_policy_json === null
+          ? null
+          : (parse(row.shadow_policy_json) as ActionControlPolicy),
+      updated_at: text(row.updated_at),
+      updated_by_hash: text(row.updated_by_hash),
+    };
+  }
+
+  actionControl(principal: Principal): ManagedActionControl {
+    this.requireScope(principal, 'admin');
+    return this.publicActionControl(this.actionControlRecord(principal.tenantId));
+  }
+
+  actionWorkloadIdentityHash(principal: Principal, identity: string): string {
+    this.requireScope(principal, 'evaluate:action');
+    if (
+      identity.length < 1 ||
+      identity.length > 256 ||
+      identity.trim().length === 0 ||
+      Array.from(identity).some((character) => {
+        const codePoint = character.codePointAt(0) ?? 0;
+        return codePoint <= 31 || codePoint === 127;
+      })
+    )
+      throw new ManagedError(
+        400,
+        'invalid_workload_identity',
+        'workload_identity must contain 1-256 printable characters',
+      );
+    return hmac(this.config.masterSecret, 'tenant-action-workload-identity-v1', {
+      tenant_id: principal.tenantId,
+      identity,
+    });
+  }
+
+  updateActionControl(
+    principal: Principal,
+    input: {
+      hold: boolean;
+      reason_code: string | null;
+      enforced_policy: ActionControlPolicy;
+      shadow_policy: ActionControlPolicy | null;
+    },
+  ): ManagedActionControl {
+    this.requireScope(principal, 'admin');
+    if (
+      typeof input.hold !== 'boolean' ||
+      (input.reason_code !== null && !/^[a-z0-9][a-z0-9_.-]{0,63}$/u.test(input.reason_code)) ||
+      (input.hold && input.reason_code === null)
+    )
+      throw new ManagedError(
+        400,
+        'invalid_action_control',
+        'hold requires a bounded reason_code; a cleared hold requires null or a bounded reason_code',
+      );
+    const enforcedError = actionControlPolicyValidationError(input.enforced_policy);
+    const shadowError = actionControlPolicyValidationError(input.shadow_policy ?? undefined);
+    if (enforcedError || shadowError)
+      throw new ManagedError(
+        400,
+        'invalid_action_policy',
+        enforcedError ?? shadowError ?? 'action policy is invalid',
+      );
+    const previous = this.actionControlRecord(principal.tenantId);
+    const timestamp = now();
+    const updated: Row = {
+      tenant_id: principal.tenantId,
+      hold: input.hold ? 1 : 0,
+      reason_code: input.reason_code,
+      enforced_policy_json: canonicalJson(input.enforced_policy),
+      shadow_policy_json: input.shadow_policy === null ? null : canonicalJson(input.shadow_policy),
+      updated_at: timestamp,
+      updated_by_hash: this.actionControlOperatorHash(principal.tenantId, principal.keyId),
+    };
+    this.db.transaction(() => {
+      const result = this.db
+        .prepare(
+          `UPDATE action_controls
+           SET hold=?,reason_code=?,enforced_policy_json=?,shadow_policy_json=?,updated_at=?,updated_by_hash=?,control_hmac=?
+           WHERE tenant_id=? AND control_hmac=?`,
+        )
+        .run(
+          updated.hold,
+          updated.reason_code,
+          updated.enforced_policy_json,
+          updated.shadow_policy_json,
+          updated.updated_at,
+          updated.updated_by_hash,
+          this.actionControlHmac(updated),
+          principal.tenantId,
+          previous.control_hmac,
+        );
+      if (result.changes !== 1)
+        throw new ManagedError(
+          409,
+          'action_control_conflict',
+          'action controls changed concurrently; reload before retrying',
+        );
+      this.insertAlert(principal.tenantId, 'action_control_changed', 'critical', {
+        hold: input.hold,
+        reason_code: input.reason_code,
+        enforced_policy_hash: sha256(input.enforced_policy),
+        shadow_policy_hash: input.shadow_policy === null ? null : sha256(input.shadow_policy),
+      });
+    })();
+    return this.publicActionControl(updated);
+  }
+
   verifyActionDecision(principal: Principal, decision: GuardDecision, toolName: string): boolean {
     if (decision.decision === 'rejected' || !decision.audit.validated_arguments_hash) return false;
     const row = this.db
@@ -2391,8 +2612,17 @@ export class ManagedStore {
     toolName: string;
     environment: string;
     context: Omit<ActionGateContext, 'environment'>;
+    trustedActionControl?: ManagedActionControl;
   }): ActionGateDecision {
-    return this.evaluateManagedActionInternal(input, true);
+    return this.evaluateManagedActionInternal(
+      input,
+      true,
+      false,
+      undefined,
+      false,
+      false,
+      input.trustedActionControl,
+    );
   }
 
   evaluateManagedActionPreflightForSharedState(input: {
@@ -2402,6 +2632,7 @@ export class ManagedStore {
     environment: string;
     context: Omit<ActionGateContext, 'environment'>;
     trustedAction: ActionDescriptor & { environment: string };
+    trustedActionControl?: ManagedActionControl;
     approvalAlreadyVerified?: boolean;
   }): ActionGateDecision {
     return this.evaluateManagedActionInternal(
@@ -2411,6 +2642,7 @@ export class ManagedStore {
       input.trustedAction,
       true,
       input.approvalAlreadyVerified ?? false,
+      input.trustedActionControl,
     );
   }
 
@@ -2427,6 +2659,7 @@ export class ManagedStore {
     trustedAction?: ActionDescriptor & { environment: string },
     decisionAlreadyVerified = false,
     approvalAlreadyVerified = false,
+    trustedActionControl?: ManagedActionControl,
   ): ActionGateDecision {
     this.requireScope(input.principal, 'evaluate:action');
     if (
@@ -2440,6 +2673,41 @@ export class ManagedStore {
       );
     const action =
       trustedAction ?? this.actionDescriptor(input.principal, input.toolName, input.environment);
+    const actionControl =
+      trustedActionControl ??
+      this.publicActionControl(this.actionControlRecord(input.principal.tenantId));
+    const nonMutatingLedger: IdempotencyLedger = {
+      reserve: () => 'new',
+      complete: () => {
+        throw new TypeError('non-mutating action evaluation cannot complete a reservation');
+      },
+      release: () => {
+        throw new TypeError('non-mutating action evaluation cannot release a reservation');
+      },
+    };
+    if (actionControl.hold) {
+      const heldCandidate = evaluateActionGate({
+        decision: input.decision,
+        action,
+        context: {
+          environment: action.environment,
+          ...(input.context.workload_identity_hash
+            ? { workload_identity_hash: input.context.workload_identity_hash }
+            : {}),
+        },
+        policy: actionControl.enforced_policy,
+        approval_secret: this.actionApprovalSecret(input.principal),
+        idempotency_ledger: nonMutatingLedger,
+      });
+      return {
+        status: 'rejected',
+        reason_code: 'ACTIONS_HELD',
+        reason: `Tenant action execution is held (${actionControl.reason_code ?? 'emergency_hold'}).`,
+        execution_fingerprint: heldCandidate.execution_fingerprint,
+        requires_approval: heldCandidate.requires_approval,
+        requires_idempotency: heldCandidate.requires_idempotency,
+      };
+    }
     const approval = input.context.approval;
     if (approval && !approvalAlreadyVerified) {
       const row = this.db
@@ -2459,6 +2727,7 @@ export class ManagedStore {
       decision: input.decision,
       action,
       context: { ...input.context, environment: action.environment },
+      policy: actionControl.enforced_policy,
       approval_secret: this.actionApprovalSecret(input.principal),
       idempotency_ledger: sharedStatePreflight
         ? {
@@ -2476,7 +2745,35 @@ export class ManagedStore {
             environment: action.environment,
           }),
     });
-    if (sharedStatePreflight) return gate;
+    const shadow =
+      actionControl.shadow_policy === null
+        ? undefined
+        : evaluateActionGate({
+            decision: input.decision,
+            action,
+            context: { ...input.context, environment: action.environment },
+            policy: actionControl.shadow_policy,
+            approval_secret: this.actionApprovalSecret(input.principal),
+            idempotency_ledger: nonMutatingLedger,
+          });
+    const decoratedGate: ActionGateDecision =
+      shadow === undefined
+        ? gate
+        : {
+            ...gate,
+            shadow_evaluation: {
+              status: shadow.status,
+              reason_code: shadow.reason_code,
+              requires_approval: shadow.requires_approval,
+              requires_idempotency: shadow.requires_idempotency,
+              differs_from_enforced:
+                shadow.status !== gate.status ||
+                shadow.reason_code !== gate.reason_code ||
+                shadow.requires_approval !== gate.requires_approval ||
+                shadow.requires_idempotency !== gate.requires_idempotency,
+            },
+          };
+    if (sharedStatePreflight) return decoratedGate;
     if (
       gate.status === 'allowed' &&
       gate.reservation &&
@@ -2501,7 +2798,7 @@ export class ManagedStore {
           'managed reservation was created without an operator-safe identifier',
         );
       const managedGate: ActionGateDecision = {
-        ...gate,
+        ...decoratedGate,
         reservation: { ...gate.reservation, reservation_id: text(row.reservation_id) },
       };
       if (this.config.actionCheckpointAnchorUrl && !serverWillConfirmAnchor)
@@ -2512,7 +2809,7 @@ export class ManagedStore {
         );
       return managedGate;
     }
-    return gate;
+    return decoratedGate;
   }
 
   private reconciliationEvidenceHash(principal: Principal, evidenceReference: string): string {

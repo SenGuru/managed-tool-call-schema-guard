@@ -12,5 +12,8 @@ skills-lock.json
 # lint, build, and test gates.
 website/
 
+# Independent user workspaces may coexist under this repository root.
+apps/
+
 # Generated deployment evidence must remain byte-for-byte as emitted.
 audit-results/*.cdx.json

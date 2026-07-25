@@ -21,6 +21,8 @@ const countedTables = [
   'failure_clusters',
   'conformance_runs',
   'environments',
+  'tenant_lifecycle',
+  'action_controls',
   'action_approvals',
   'action_descriptors',
   'action_idempotency',

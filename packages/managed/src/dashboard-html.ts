@@ -299,6 +299,17 @@ await dispatchTool(decision.valid_arguments);</code></pre>
 
     <section class="route-view" data-route-view="actions" hidden>
       <div class="page-head"><div class="page-head-copy"><span class="page-kicker">Protect / Side effects</span><h2>Make execution accountable.</h2><p>Classify tools, evaluate approved calls once, and preserve an independently anchored execution ledger.</p></div><span class="integrity-label" id="checkpoint-label">Checkpoint not loaded</span></div>
+      <form class="panel task-form" id="action-control-form">
+        <div class="panel-head"><div><h3>Execution control plane</h3><p>Hold all tenant actions immediately, enforce a reviewed policy, and compare one candidate policy without executing it.</p></div><span class="integrity-label" id="action-control-label">Control not loaded</span></div>
+        <div class="panel-body form-grid">
+          <label class="confirm span-2"><input id="action-control-hold" type="checkbox">Emergency hold — reject every action before approval or reservation.</label>
+          <label class="span-2">Reason code<input class="field mono-input" id="action-control-reason" placeholder="operator.emergency"></label>
+          <label class="span-2">Enforced action policy JSON<textarea class="field code-field compact" id="action-control-enforced" required spellcheck="false">{}</textarea></label>
+          <label class="span-2">Shadow action policy JSON <span class="muted">(blank disables comparison)</span><textarea class="field code-field compact" id="action-control-shadow" spellcheck="false"></textarea></label>
+          <label class="confirm span-2"><input id="action-control-confirm" type="checkbox" required>I reviewed the hold state and both policies.</label>
+          <div class="form-actions span-2"><button class="btn" type="submit">Save action controls</button><span class="form-status" id="action-control-status" role="status"></span></div>
+        </div>
+      </form>
       <div class="task-grid">
         <form class="panel task-form" id="descriptor-form">
           <div class="panel-head"><div><h3>Classify tool action</h3><p>Risk and side-effect semantics are signed control state.</p></div><span class="method-badge">PUT /v1/admin/actions/descriptors</span></div>
@@ -316,6 +327,7 @@ await dispatchTool(decision.valid_arguments);</code></pre>
           <div class="panel-body form-grid">
             <label>Tool name<input class="field" id="action-tool" required></label>
             <label>Environment<select class="field" id="action-environment" required></select></label>
+            <label class="span-2">Workload identity <span class="muted">(optional; stored only as a tenant-keyed hash)</span><input class="field mono-input" id="action-workload-identity" placeholder="agent/workspace/run identity"></label>
             <label class="span-2">Idempotency key<input class="field mono-input" id="action-idempotency-key" required></label>
             <label class="span-2">Accepted decision JSON<textarea class="field code-field compact" id="action-decision" required spellcheck="false"></textarea></label>
             <label class="span-2">Approved challenge JSON<textarea class="field code-field compact" id="action-approval" required spellcheck="false"></textarea></label>
@@ -360,6 +372,7 @@ await dispatchTool(decision.valid_arguments);</code></pre>
           <label>Tool name<input class="field" id="challenge-tool" required></label>
           <label>Environment<select class="field" id="challenge-environment" required></select></label>
           <label>Expires in seconds<input class="field" id="challenge-expires" type="number" min="60" max="86400" value="300" required></label>
+          <label class="span-all">Workload identity <span class="muted">(optional; must match evaluation)</span><input class="field mono-input" id="challenge-workload-identity" placeholder="agent/workspace/run identity"></label>
           <label class="span-all">Accepted decision JSON<textarea class="field code-field compact" id="challenge-decision" required spellcheck="false"></textarea></label>
           <label class="confirm span-all"><input id="challenge-confirm" type="checkbox" required>I reviewed the exact decision and challenge lifetime.</label>
           <div class="form-actions span-all"><button class="btn" type="submit">Create challenge</button><span class="form-status" id="challenge-status" role="status"></span></div>
@@ -425,13 +438,13 @@ await dispatchTool(decision.valid_arguments);</code></pre>
     </section>
 
     <section class="route-view" data-route-view="workbench" hidden>
-      <div class="page-head"><div class="page-head-copy"><span class="page-kicker">Operate / Advanced</span><h2>Managed API workbench</h2><p>All 29 managed operations remain available as editable examples. Replace every placeholder and review the exact request before execution.</p></div></div>
+      <div class="page-head"><div class="page-head-copy"><span class="page-kicker">Operate / Advanced</span><h2>Managed API workbench</h2><p>All 30 managed operations remain available as editable examples. Replace every placeholder and review the exact request before execution.</p></div></div>
       <section class="panel workbench" id="workbench"><div class="panel-body">
         <div class="workbench-grid">
           <label for="operation">Operation</label><div><select id="operation">
             <option value="validate">Validate tool call</option><option value="compile_contract">Compile provider contract</option><option value="register_schema">Register schema</option><option value="release_schema">Release schema</option>
             <option value="create_environment">Create environment</option><option value="environment_policy">Update environment policy</option><option value="environment_enforcement">Update schema enforcement</option><option value="organization_policy">Update organization policy</option>
-            <option value="action_descriptor">Set action descriptor</option><option value="action_challenge">Create approval challenge</option><option value="action_approve">Approve challenge</option><option value="action_cancel">Cancel challenge</option><option value="action_evaluate">Evaluate action</option>
+            <option value="action_descriptor">Set action descriptor</option><option value="action_control">Update action controls</option><option value="action_challenge">Create approval challenge</option><option value="action_approve">Approve challenge</option><option value="action_cancel">Cancel challenge</option><option value="action_evaluate">Evaluate action</option>
             <option value="action_complete">Complete reservation</option><option value="action_release">Release reservation</option><option value="checkpoint_compare">Compare checkpoint</option><option value="anchor_redrive">Redrive anchor delivery</option><option value="reconcile">Reconcile uncertain action</option>
             <option value="conformance_run">Ingest conformance run</option><option value="webhook_create">Create alert webhook</option><option value="webhook_redrive">Redrive webhook delivery</option><option value="webhook_disable">Disable webhook</option>
             <option value="publish_ruleset">Publish ruleset</option><option value="create_api_key">Create API key</option><option value="revoke_api_key">Revoke API key</option><option value="billing_checkout">Start Stripe checkout</option><option value="billing_portal">Open Stripe billing portal</option><option value="plan_change">Attempt plan change</option><option value="retention_purge">Purge retained audits</option>

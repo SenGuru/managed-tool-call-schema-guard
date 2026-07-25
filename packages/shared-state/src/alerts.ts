@@ -266,12 +266,14 @@ const safeDetail = (kind: string, detail: unknown): Record<string, unknown> => {
       'compatibility',
     ],
     schema_enforcement_changed: ['environment', 'mode'],
+    action_control_changed: ['hold', 'reason_code', 'enforced_policy_hash', 'shadow_policy_hash'],
     validation_rejected: ['audit_id', 'reason_code'],
   };
   const result: Record<string, unknown> = {};
   for (const name of allowed[kind] ?? []) {
     const value = source[name];
     if (typeof value === 'string' && value.length <= 512) result[name] = value;
+    else if (typeof value === 'boolean' || value === null) result[name] = value;
     else if (
       Array.isArray(value) &&
       value.length <= 100 &&

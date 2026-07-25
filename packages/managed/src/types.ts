@@ -1,4 +1,4 @@
-import type { GuardPolicy } from '@schema-guard/core';
+import type { ActionControlPolicy, GuardPolicy } from '@schema-guard/core';
 
 export type PlanId = 'trial' | 'team';
 export type TenantLifecycleStatus = 'active' | 'suspended' | 'canceled' | 'deletion_pending';
@@ -8,6 +8,15 @@ export interface TenantLifecycle {
   reason_code: string | null;
   deletion_requested_at: string | null;
   updated_at: string;
+}
+
+export interface ManagedActionControl {
+  hold: boolean;
+  reason_code: string | null;
+  enforced_policy: ActionControlPolicy;
+  shadow_policy: ActionControlPolicy | null;
+  updated_at: string;
+  updated_by_hash: string;
 }
 
 export type Scope =

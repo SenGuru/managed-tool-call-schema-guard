@@ -25,8 +25,8 @@ Deterministic evidence:
   before the workbench fallback and exercises routing, stale-credential
   suppression, lifecycle lockout, and a dedicated validation workflow.
 - `tests/managed.test.ts` verifies all 14 routes, unique DOM IDs, CSP-safe
-  assets, and the complete 29-operation advanced fallback.
-- `npm run check` passed with 222 JavaScript/TypeScript tests, 5 Python tests,
+  assets, and the complete 30-operation advanced fallback.
+- `npm run check` passed with 241 JavaScript/TypeScript tests, 5 Python tests,
   conformance, package-boundary, formatting, lint, type and script gates.
 
 ### 2026-07-25 customer-value completion
@@ -47,11 +47,14 @@ technically present but not adequately productized:
   price, 250,000 validations/month, retention, included workflows, support and
   manual-enrollment boundary.
 
-The first route-reachability test correctly failed because the Integration
-Guide had not been added to the server allowlist. The allowlist was corrected,
-then the dashboard tests (34/34) and complete `npm run check` gate (222
-TypeScript tests plus 5 Python tests) passed without weakening authentication
-or failure behavior.
+The current exact-source browser pass additionally exercised the signed action
+control plane: emergency hold, enforced and shadow policies, workload identity
+binding, the custom in-product confirmation dialog, and hold recovery. All 14
+SPA routes retained the connected tenant. Desktop collapse/expand and the
+390-pixel mobile drawer both animated correctly. A narrow-grid defect found by
+that pass was fixed with shrinkable columns; the browser then measured a
+390-pixel document width with no horizontal overflow, and a focused regression
+test was added.
 
 Production-like evidence:
 
@@ -67,8 +70,8 @@ Production-like evidence:
   also exercised scoped key issue/revoke, conformance ingestion, signed
   ruleset publication, local plan rollback, tenant policy, audit CSV UI,
   unsafe-webhook rejection and unconfigured-billing rejection.
-- `npm run audit:managed-load` passed 2,000 requests at 311.21 requests/second
-  with p95 113.83 ms, zero errors and a valid 2,000-record audit chain.
+- `npm run audit:managed-load` passed 2,000 requests at 482.88 requests/second
+  with p95 104.89 ms, zero errors and a valid 2,000-record audit chain.
 - `npm run audit:recovery` restored a clean copy with matching row counts and
   valid control, audit, reconciliation and schema-release chains.
 - `npm run audit:images` found zero HIGH/CRITICAL vulnerabilities and zero
@@ -136,6 +139,8 @@ Status vocabulary:
 
 | Capability                        | HTTP evidence                                                 | Required frontend treatment           | Baseline status |
 | --------------------------------- | ------------------------------------------------------------- | ------------------------------------- | --------------- |
+| Action control state              | `GET /v1/admin/actions/control`                               | Hold/enforced/shadow policy state     | direct          |
+| Update action controls            | `PUT /v1/admin/actions/control`                               | Reviewed form and emergency confirm   | direct          |
 | Action descriptors                | `GET /v1/admin/actions/descriptors`                           | Risk/side-effect table                | partial         |
 | Upsert descriptor                 | `PUT /v1/admin/actions/descriptors`                           | Tool/environment/risk form            | workbench-only  |
 | Approval challenges               | `GET /v1/actions/challenges`                                  | Pending/approved/revoked inbox        | partial         |

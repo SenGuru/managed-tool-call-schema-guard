@@ -94,6 +94,27 @@ class SchemaGuardClientTest(unittest.TestCase):
                         ]
                     }
                 )
+            if request.full_url.endswith("/v1/admin/actions/control"):
+                if request.method == "PUT":
+                    self.assertEqual(
+                        json.loads(request.data),
+                        {
+                            "hold": False,
+                            "reason_code": None,
+                            "enforced_policy": {"max_auto_execute_risk": "low"},
+                            "shadow_policy": {"max_auto_execute_risk": "read"},
+                        },
+                    )
+                return JsonResponse(
+                    {
+                        "hold": False,
+                        "reason_code": None,
+                        "enforced_policy": {"max_auto_execute_risk": "low"},
+                        "shadow_policy": {"max_auto_execute_risk": "read"},
+                        "updated_at": "2026-07-25T00:00:00.000Z",
+                        "updated_by_hash": "hmac-sha256:" + "a" * 64,
+                    }
+                )
             if "/v1/actions/challenges?" in request.full_url:
                 return JsonResponse(
                     {
@@ -171,6 +192,16 @@ class SchemaGuardClientTest(unittest.TestCase):
             self.assertEqual(
                 client.action_descriptors()["descriptors"][0]["risk_level"], "high"
             )
+            self.assertFalse(client.action_control()["hold"])
+            self.assertEqual(
+                client.update_action_control(
+                    False,
+                    None,
+                    {"max_auto_execute_risk": "low"},
+                    {"max_auto_execute_risk": "read"},
+                )["shadow_policy"]["max_auto_execute_risk"],
+                "read",
+            )
             self.assertEqual(
                 client.action_challenges("pending", 25)["challenges"][0]["status"],
                 "pending",
@@ -191,7 +222,7 @@ class SchemaGuardClientTest(unittest.TestCase):
                 client.request_tenant_deletion("tenant-a")["status"],
                 "deletion_pending",
             )
-        self.assertEqual(len(paths), 18)
+        self.assertEqual(len(paths), 20)
         self.assertIn(
             "environment=production",
             next(path for path in paths if "/v1/schema-releases?" in path),

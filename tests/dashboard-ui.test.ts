@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { dashboardHtml } from '../packages/managed/src/dashboard-html.js';
 import { dashboardScript } from '../packages/managed/src/dashboard-script.js';
+import { dashboardStyle } from '../packages/managed/src/dashboard-style.js';
 
 const windows: Window[] = [];
 const operationalResponses: Record<string, unknown> = {
@@ -296,6 +297,15 @@ describe('managed dashboard interactions', () => {
     window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(document.getElementById('app-shell')!.dataset.mobileNav).toBe('closed');
     expect(document.activeElement).toBe(toggle);
+  });
+
+  it('keeps responsive single-column grids shrinkable instead of overflowing narrow viewports', () => {
+    expect(dashboardStyle).toContain(
+      '.content-grid,.content-grid.equal,.task-grid{grid-template-columns:minmax(0,1fr)}',
+    );
+    expect(dashboardStyle).not.toContain(
+      '.content-grid,.content-grid.equal,.task-grid{grid-template-columns:1fr}',
+    );
   });
 
   it('does not show a connected state for a locked tenant', async () => {

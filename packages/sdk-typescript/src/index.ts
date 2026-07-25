@@ -313,6 +313,15 @@ export interface ManagedActionDescriptorSummary {
   updated_at: string;
 }
 
+export interface ManagedActionControl {
+  hold: boolean;
+  reason_code: string | null;
+  enforced_policy: ActionControlPolicy;
+  shadow_policy: ActionControlPolicy | null;
+  updated_at: string;
+  updated_by_hash: string;
+}
+
 export interface ManagedActionChallengeSummary {
   challenge_id: string;
   status: 'pending' | 'approved' | 'revoked';
@@ -488,11 +497,72 @@ export class SchemaGuardClient {
       );
     return payload as ActionDescriptor & { environment: string };
   }
+  async getManagedActionControl(
+    callOptions: SchemaGuardValidateOptions = {},
+  ): Promise<ManagedActionControl> {
+    const { payload, status } = await this.post(
+      '/v1/admin/actions/control',
+      undefined,
+      callOptions,
+      'GET',
+    );
+    if (
+      payload === null ||
+      typeof payload !== 'object' ||
+      Array.isArray(payload) ||
+      typeof (payload as Record<string, unknown>).hold !== 'boolean' ||
+      typeof (payload as Record<string, unknown>).enforced_policy !== 'object' ||
+      !(
+        (payload as Record<string, unknown>).shadow_policy === null ||
+        typeof (payload as Record<string, unknown>).shadow_policy === 'object'
+      ) ||
+      typeof (payload as Record<string, unknown>).updated_at !== 'string' ||
+      !/^hmac-sha256:[0-9a-f]{64}$/u.test(
+        String((payload as Record<string, unknown>).updated_by_hash),
+      )
+    )
+      throw new SchemaGuardServiceError(
+        'Schema Guard service returned invalid action controls',
+        status,
+        'invalid_service_response',
+      );
+    return payload as ManagedActionControl;
+  }
+  async updateManagedActionControl(
+    input: {
+      hold: boolean;
+      reason_code: string | null;
+      enforced_policy: ActionControlPolicy;
+      shadow_policy: ActionControlPolicy | null;
+    },
+    callOptions: SchemaGuardValidateOptions = {},
+  ): Promise<ManagedActionControl> {
+    const { payload, status } = await this.post(
+      '/v1/admin/actions/control',
+      input,
+      callOptions,
+      'PUT',
+    );
+    if (
+      payload === null ||
+      typeof payload !== 'object' ||
+      Array.isArray(payload) ||
+      typeof (payload as Record<string, unknown>).hold !== 'boolean' ||
+      typeof (payload as Record<string, unknown>).updated_at !== 'string'
+    )
+      throw new SchemaGuardServiceError(
+        'Schema Guard service returned invalid updated action controls',
+        status,
+        'invalid_service_response',
+      );
+    return payload as ManagedActionControl;
+  }
   async createManagedActionChallenge(
     input: {
       decision: GuardDecision;
       tool_name: string;
       environment: string;
+      workload_identity?: string;
       expires_in_seconds: number;
     },
     callOptions: SchemaGuardValidateOptions = {},
@@ -539,6 +609,7 @@ export class SchemaGuardClient {
       decision: GuardDecision;
       tool_name: string;
       environment: string;
+      workload_identity?: string;
       approval?: ApprovalEvidence;
       idempotency_key?: string;
     },
@@ -1615,6 +1686,7 @@ export async function executeManagedApprovedAction<T>(options: {
   decision: GuardDecision;
   toolName: string;
   environment: string;
+  workloadIdentity?: string;
   approval: ApprovalEvidence;
   idempotencyKey: string;
   execute: (validArguments: JsonObject) => Promise<T> | T;
@@ -1629,6 +1701,7 @@ export async function executeManagedApprovedAction<T>(options: {
     decision: options.decision,
     tool_name: options.toolName,
     environment: options.environment,
+    ...(options.workloadIdentity ? { workload_identity: options.workloadIdentity } : {}),
     approval: options.approval,
     idempotency_key: options.idempotencyKey,
   });

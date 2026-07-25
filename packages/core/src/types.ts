@@ -259,13 +259,14 @@ export interface ActionControlPolicy {
   require_idempotency_for_side_effects?: boolean;
 }
 export interface ApprovalChallenge {
-  challenge_version: '2026-07-20';
+  challenge_version: '2026-07-20' | '2026-07-25';
   challenge_id: string;
   binding_hash: string;
   tool_name_hash: string;
   valid_arguments_hash: string;
   risk_level: ActionRiskLevel;
   environment: string;
+  workload_identity_hash?: string;
   created_at: string;
   expires_at: string;
 }
@@ -277,6 +278,7 @@ export interface ApprovalEvidence {
 }
 export interface ActionGateContext {
   environment: string;
+  workload_identity_hash?: string;
   now?: string;
   approval?: ApprovalEvidence;
   idempotency_key?: string;
@@ -285,6 +287,7 @@ export type ActionGateReasonCode =
   | 'EXECUTION_ALLOWED'
   | 'VALIDATION_REJECTED'
   | 'VALIDATION_PROOF_INVALID'
+  | 'ACTIONS_HELD'
   | 'ENVIRONMENT_DENIED'
   | 'APPROVAL_REQUIRED'
   | 'APPROVAL_INVALID'
@@ -303,5 +306,12 @@ export interface ActionGateDecision {
     key_hash: string;
     state: 'pending';
     reservation_id?: string;
+  };
+  shadow_evaluation?: {
+    status: ActionGateDecision['status'];
+    reason_code: ActionGateReasonCode;
+    requires_approval: boolean;
+    requires_idempotency: boolean;
+    differs_from_enforced: boolean;
   };
 }

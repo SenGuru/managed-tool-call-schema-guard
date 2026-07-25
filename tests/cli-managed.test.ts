@@ -77,6 +77,66 @@ describe('managed CLI workflow', () => {
     }
   });
 
+  it('reads and updates action controls from reviewed files', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'schema-guard-cli-action-control-'));
+    temporaryDirectories.push(directory);
+    const keyFile = join(directory, 'api-key');
+    const controlFile = join(directory, 'action-control.json');
+    await writeFile(keyFile, 'admin-key\n', { mode: 0o600 });
+    const control = {
+      hold: false,
+      reason_code: null,
+      enforced_policy: { max_auto_execute_risk: 'low' },
+      shadow_policy: { max_auto_execute_risk: 'read' },
+    };
+    await writeFile(controlFile, JSON.stringify(control), { mode: 0o600 });
+    const observed: Array<{ method: string; body: unknown }> = [];
+    const server = createServer((request, response) => {
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => {
+        observed.push({
+          method: request.method ?? '',
+          body: chunks.length
+            ? (JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown)
+            : undefined,
+        });
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(
+          JSON.stringify({
+            ...control,
+            updated_at: '2026-07-25T00:00:00.000Z',
+            updated_by_hash: `hmac-sha256:${'a'.repeat(64)}`,
+          }),
+        );
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === 'string') throw new Error('missing CLI test address');
+      const common = ['--base-url', `http://127.0.0.1:${address.port}`, '--api-key-file', keyFile];
+      const read = await runCli(['managed', ...common, '--resource', 'action-control']);
+      const update = await runCli([
+        'managed-set-action-control',
+        ...common,
+        '--control',
+        controlFile,
+      ]);
+      expect(read).toMatchObject({ code: 0, stderr: '' });
+      expect(update).toMatchObject({ code: 0, stderr: '' });
+      expect(observed).toEqual([
+        { method: 'GET', body: undefined },
+        { method: 'PUT', body: control },
+      ]);
+      expect(`${read.stdout}${update.stdout}`).not.toContain('admin-key');
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+
   it('rejects API-key files readable by other users before making a request', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'schema-guard-cli-managed-'));
     temporaryDirectories.push(directory);
