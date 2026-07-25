@@ -104,6 +104,7 @@ npm run audit:extreme
 npm run audit:release-candidate -- --output release-candidate-report.json
 npm run audit:commercial-release -- \
   --target private-beta \
+  --source-revision 0123456789abcdef0123456789abcdef01234567 \
   --evidence-dir /owner-only/path/to/evidence \
   --output /owner-only/path/to/private-beta-verdict.json
 ```

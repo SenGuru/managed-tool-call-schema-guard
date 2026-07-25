@@ -1,4 +1,4 @@
-name: Release candidate certification
+name: Internal and live-provider release certification
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   certify:
-    name: Non-skippable release certification
+    name: Internal and live-provider certification (not commercial approval)
     runs-on: ubuntu-latest
     timeout-minutes: 45
     services:

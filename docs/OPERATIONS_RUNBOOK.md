@@ -360,6 +360,7 @@ operator evidence described in
 ```bash
 npm run audit:commercial-release -- \
   --target private-beta \
+  --source-revision 0123456789abcdef0123456789abcdef01234567 \
   --evidence-dir /owner-only/path/to/evidence \
   --output /owner-only/path/to/private-beta-verdict.json
 ```
@@ -369,3 +370,9 @@ configured-only, stale, secret-bearing, un-hashed, symlinked, or incomplete
 evidence returns `no_go`. Never bypass the command by editing the verdict,
 relaxing a required check, or treating a dry-run/provider contract test as live
 evidence.
+
+Every evidence report must bind `source_revision` to the exact 40-character
+commit SHA supplied on the command line. For CI, dispatch
+`.github/workflows/commercial-release.yml` on that exact revision and select the
+immutable run ID and artifact name containing the reviewed redacted evidence.
+Do not use the internal release-candidate workflow as a commercial approval.

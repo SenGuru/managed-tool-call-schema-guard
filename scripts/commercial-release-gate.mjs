@@ -112,6 +112,7 @@ function argumentsFrom(argv) {
     const item = argv[index];
     if (item === '--target') options.target = argv[++index];
     else if (item === '--evidence-dir') options.evidenceDir = argv[++index];
+    else if (item === '--source-revision') options.sourceRevision = argv[++index];
     else if (item === '--max-age-days') options.maxAgeDays = Number(argv[++index]);
     else if (item === '--output') options.output = argv[++index];
     else throw new TypeError(`unknown argument: ${item}`);
@@ -120,6 +121,8 @@ function argumentsFrom(argv) {
     throw new TypeError('--target must be private-beta or public-production');
   if (typeof options.evidenceDir !== 'string' || options.evidenceDir.trim().length === 0)
     throw new TypeError('--evidence-dir is required');
+  if (typeof options.sourceRevision !== 'string' || !/^[0-9a-f]{40}$/u.test(options.sourceRevision))
+    throw new TypeError('--source-revision must be an exact lowercase 40-character Git SHA');
   if (!Number.isInteger(options.maxAgeDays) || options.maxAgeDays < 1 || options.maxAgeDays > 365)
     throw new TypeError('--max-age-days must be an integer from 1 through 365');
   if (options.output !== undefined && String(options.output).trim().length === 0)
@@ -184,7 +187,7 @@ function readOwnerOnlyJson(path, label) {
   return parsed;
 }
 
-function validateGateReport({ evidenceRoot, gate, target, maxAgeMs, now }) {
+function validateGateReport({ evidenceRoot, gate, target, sourceRevision, maxAgeMs, now }) {
   const reportPath = resolve(evidenceRoot, `${gate.id}.json`);
   let report;
   try {
@@ -200,6 +203,8 @@ function validateGateReport({ evidenceRoot, gate, target, maxAgeMs, now }) {
   const failures = [];
   if (report.report_version !== REPORT_VERSION) failures.push('report_version must be 1');
   if (report.gate_id !== gate.id) failures.push('gate_id mismatch');
+  if (report.source_revision !== sourceRevision)
+    failures.push('source_revision does not match the certified revision');
   if (report.status !== 'proven') failures.push('status must be proven');
   if (report.redacted !== true) failures.push('redacted must be true');
   if (!ALLOWED_EVIDENCE_KINDS.has(report.evidence_kind)) failures.push('evidence_kind is invalid');
@@ -263,6 +268,7 @@ function validateGateReport({ evidenceRoot, gate, target, maxAgeMs, now }) {
 export function evaluateCommercialRelease({
   target,
   evidenceDir,
+  sourceRevision,
   maxAgeDays = DEFAULT_MAX_AGE_DAYS,
   now = Date.now(),
 }) {
@@ -270,6 +276,8 @@ export function evaluateCommercialRelease({
     throw new TypeError('target must be private-beta or public-production');
   if (!Number.isInteger(maxAgeDays) || maxAgeDays < 1 || maxAgeDays > 365)
     throw new TypeError('maxAgeDays must be an integer from 1 through 365');
+  if (typeof sourceRevision !== 'string' || !/^[0-9a-f]{40}$/u.test(sourceRevision))
+    throw new TypeError('sourceRevision must be an exact lowercase 40-character Git SHA');
 
   const evidenceRoot = realpathSync(resolve(evidenceDir));
   const evidenceRootMetadata = statSync(evidenceRoot);
@@ -280,6 +288,7 @@ export function evaluateCommercialRelease({
       evidenceRoot,
       gate,
       target,
+      sourceRevision,
       maxAgeMs: maxAgeDays * 86_400_000,
       now,
     }),
@@ -289,6 +298,7 @@ export function evaluateCommercialRelease({
     report_version: REPORT_VERSION,
     executed_at: new Date(now).toISOString(),
     target,
+    source_revision: sourceRevision,
     passed,
     verdict: passed
       ? target === 'public-production'
@@ -318,6 +328,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const report = evaluateCommercialRelease({
       target: options.target,
       evidenceDir: options.evidenceDir,
+      sourceRevision: options.sourceRevision,
       maxAgeDays: options.maxAgeDays,
     });
     writeReport(options.output, report);

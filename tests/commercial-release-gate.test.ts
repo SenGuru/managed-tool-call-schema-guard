@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import { evaluateCommercialRelease } from '../scripts/commercial-release-gate.mjs';
 
 const NOW = Date.parse('2026-07-26T12:00:00.000Z');
+const SOURCE_REVISION = '1234567890abcdef1234567890abcdef12345678';
 
 const requirements = {
   internal: ['full_regression', 'postgres', 'container_e2e', 'sdk_cli', 'security_scans'],
@@ -52,6 +53,7 @@ function writeGate(
   const report = {
     report_version: '1',
     gate_id: gateId,
+    source_revision: SOURCE_REVISION,
     status: 'proven',
     redacted: true,
     evidence_kind: 'external_provider',
@@ -77,6 +79,7 @@ describe('commercial release gate', () => {
     const report = evaluateCommercialRelease({
       target: 'private-beta',
       evidenceDir: directory,
+      sourceRevision: SOURCE_REVISION,
       now: NOW,
     });
     expect(report).toMatchObject({ passed: false, verdict: 'no_go' });
@@ -102,6 +105,7 @@ describe('commercial release gate', () => {
     const report = evaluateCommercialRelease({
       target: 'private-beta',
       evidenceDir: directory,
+      sourceRevision: SOURCE_REVISION,
       now: NOW,
     });
     const gate = report.gate_results.find((item) => item.gate_id === 'identity');
@@ -112,6 +116,27 @@ describe('commercial release gate', () => {
         'evidence is stale',
         'required check is not proven: mfa',
       ]),
+    );
+  });
+
+  it('rejects evidence bound to a different source revision', () => {
+    const directory = evidenceDirectory();
+    completePrivateEvidence(directory);
+    const identityPath = join(directory, 'identity.json');
+    const identity = JSON.parse(readFileSync(identityPath, 'utf8')) as {
+      source_revision: string;
+    };
+    identity.source_revision = 'abcdef1234567890abcdef1234567890abcdef12';
+    writeFileSync(identityPath, `${JSON.stringify(identity)}\n`, { mode: 0o600 });
+
+    const report = evaluateCommercialRelease({
+      target: 'private-beta',
+      evidenceDir: directory,
+      sourceRevision: SOURCE_REVISION,
+      now: NOW,
+    });
+    expect(report.failures.join('\n')).toContain(
+      'identity: source_revision does not match the certified revision',
     );
   });
 
@@ -126,6 +151,7 @@ describe('commercial release gate', () => {
     const report = evaluateCommercialRelease({
       target: 'private-beta',
       evidenceDir: directory,
+      sourceRevision: SOURCE_REVISION,
       now: NOW,
     });
     expect(report.failures.join('\n')).toContain('website report must be owner-only');
@@ -140,6 +166,7 @@ describe('commercial release gate', () => {
       evaluateCommercialRelease({
         target: 'private-beta',
         evidenceDir: directory,
+        sourceRevision: SOURCE_REVISION,
         now: NOW,
       }),
     ).toThrow('evidenceDir must be owner-only');
@@ -166,6 +193,7 @@ describe('commercial release gate', () => {
     const report = evaluateCommercialRelease({
       target: 'private-beta',
       evidenceDir: directory,
+      sourceRevision: SOURCE_REVISION,
       now: NOW,
     });
     expect(report.failures.join('\n')).toContain('website report must not be a symbolic link');
@@ -178,6 +206,7 @@ describe('commercial release gate', () => {
     const report = evaluateCommercialRelease({
       target: 'private-beta',
       evidenceDir: directory,
+      sourceRevision: SOURCE_REVISION,
       now: NOW,
     });
     expect(report).toMatchObject({
@@ -192,6 +221,7 @@ describe('commercial release gate', () => {
     const privateReport = evaluateCommercialRelease({
       target: 'public-production',
       evidenceDir: directory,
+      sourceRevision: SOURCE_REVISION,
       now: NOW,
     });
     expect(privateReport).toMatchObject({ passed: false, verdict: 'no_go' });
@@ -238,6 +268,7 @@ describe('commercial release gate', () => {
     const report = evaluateCommercialRelease({
       target: 'public-production',
       evidenceDir: directory,
+      sourceRevision: SOURCE_REVISION,
       now: NOW,
     });
     expect(report).toMatchObject({

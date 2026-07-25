@@ -1,0 +1,78 @@
+name: Commercial release certification
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Commercial boundary to certify
+        required: true
+        type: choice
+        options:
+          - private-beta
+          - public-production
+      evidence_run_id:
+        description: Workflow run ID containing the redacted commercial-evidence artifact
+        required: true
+        type: string
+      evidence_artifact_name:
+        description: Exact evidence artifact name
+        required: true
+        default: commercial-evidence
+        type: string
+      max_age_days:
+        description: Maximum accepted evidence age in days
+        required: true
+        default: 30
+        type: number
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: commercial-release-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  certify:
+    name: Fail-closed commercial certification
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: commercial-${{ inputs.target }}
+      deployment: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Download immutable redacted evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: ${{ inputs.evidence_artifact_name }}
+          path: commercial-evidence
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.evidence_run_id }}
+          digest-mismatch: error
+      - name: Restore owner-only evidence permissions
+        run: chmod -R go-rwx commercial-evidence
+      - run: npm ci
+      - name: Evaluate exact-revision commercial evidence
+        run: >-
+          npm run audit:commercial-release --
+          --target "${{ inputs.target }}"
+          --source-revision "${GITHUB_SHA}"
+          --evidence-dir commercial-evidence
+          --max-age-days "${{ inputs.max_age_days }}"
+          --output commercial-release-verdict.json
+      - name: Preserve commercial verdict
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: commercial-release-verdict-${{ inputs.target }}-${{ github.sha }}
+          path: commercial-release-verdict.json
+          if-no-files-found: error
+          retention-days: 90

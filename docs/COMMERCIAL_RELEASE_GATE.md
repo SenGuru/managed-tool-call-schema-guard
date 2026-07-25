@@ -20,6 +20,7 @@ unexercised provider configuration into proof.
 ```bash
 npm run audit:commercial-release -- \
   --target private-beta \
+  --source-revision 0123456789abcdef0123456789abcdef01234567 \
   --evidence-dir /owner-only/path/to/evidence \
   --output /owner-only/path/to/private-beta-verdict.json
 ```
@@ -27,6 +28,7 @@ npm run audit:commercial-release -- \
 ```bash
 npm run audit:commercial-release -- \
   --target public-production \
+  --source-revision 0123456789abcdef0123456789abcdef01234567 \
   --evidence-dir /owner-only/path/to/evidence \
   --output /owner-only/path/to/public-production-verdict.json
 ```
@@ -41,6 +43,10 @@ policy:
 Exit code `0` means every required gate passed. Any missing or invalid evidence
 returns exit code `1` and verdict `no_go`.
 
+`--source-revision` must be the exact lowercase 40-character commit SHA being
+certified. Every gate report must name that same revision. Evidence reviewed
+for another build cannot pass.
+
 ## Evidence directory contract
 
 The evidence directory, every gate report, and every referenced artifact must
@@ -53,6 +59,7 @@ Each `<gate-id>.json` report has this shape:
 {
   "report_version": "1",
   "gate_id": "identity",
+  "source_revision": "0123456789abcdef0123456789abcdef01234567",
   "status": "proven",
   "redacted": true,
   "evidence_kind": "external_provider",
@@ -123,6 +130,34 @@ Public production additionally requires:
 
 The gate never enables live billing, publishes DNS, changes site access, or
 deploys code. Those remain separately approved operator actions.
+
+## GitHub commercial certification
+
+`.github/workflows/commercial-release.yml` is a manual, read-only certification
+workflow. It:
+
+1. checks out the exact workflow revision;
+2. downloads one immutable evidence artifact from an explicitly selected run
+   in this repository;
+3. rejects an artifact-service digest mismatch;
+4. restores owner-only permissions removed by artifact ZIP transport;
+5. binds every report to `GITHUB_SHA`;
+6. runs this gate; and
+7. retains the verdict even when certification fails.
+
+The existing release-candidate workflow is explicitly named
+**Internal and live-provider release certification** and is not commercial
+approval.
+
+Repository-owner console setup is still required. Create the
+`commercial-private-beta` and `commercial-public-production` GitHub
+environments, restrict eligible branches, and configure required reviewers,
+self-review prevention, and administrator-bypass prevention where the
+repository plan supports them. [GitHub's environment documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments)
+states that a job referencing an environment is held until its protection rules
+pass, but required reviewers for private repositories depend on the account
+plan. Until the protection settings are observed in a real run, the workflow is
+implemented but its independent-approval property is **configured only**.
 
 ## Current observed verdict
 

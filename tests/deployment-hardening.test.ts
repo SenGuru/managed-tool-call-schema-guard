@@ -166,4 +166,24 @@ describe('release audit resilience', () => {
     expect(audit).toContain("'python3.10'");
     expect(audit).toContain('.find(supportedPython)');
   });
+
+  test('commercial certification is exact-revision, approval-scoped, and fail-closed', () => {
+    const workflow = read('.github/workflows/commercial-release.yml');
+    const internalWorkflow = read('.github/workflows/release-candidate.yml');
+
+    expect(workflow).toContain('actions: read');
+    expect(workflow).toContain('contents: read');
+    expect(workflow).toContain('environment:');
+    expect(workflow).toContain('name: commercial-${{ inputs.target }}');
+    expect(workflow).toContain('deployment: false');
+    expect(workflow).toContain(
+      'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c',
+    );
+    expect(workflow).toContain('digest-mismatch: error');
+    expect(workflow).toContain('chmod -R go-rwx commercial-evidence');
+    expect(workflow).toContain('--source-revision "${GITHUB_SHA}"');
+    expect(workflow).toContain('npm run audit:commercial-release');
+    expect(workflow).toContain('if: always()');
+    expect(internalWorkflow).toContain('not commercial approval');
+  });
 });
