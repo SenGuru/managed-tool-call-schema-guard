@@ -384,6 +384,8 @@ evidence.
 
 Every evidence report must bind `source_revision` to the exact 40-character
 commit SHA supplied on the command line. For CI, dispatch
-`.github/workflows/commercial-release.yml` on that exact revision and select the
+`.github/workflows/commercial-release.yml`, set `candidate_revision` to the
+exact source revision of the image/environment being admitted, and select the
 immutable run ID and artifact name containing the reviewed redacted evidence.
+The workflow checks out and compares that exact candidate before evaluating.
 Do not use the internal release-candidate workflow as a commercial approval.

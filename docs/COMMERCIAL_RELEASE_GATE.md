@@ -159,12 +159,13 @@ deploys code. Those remain separately approved operator actions.
 `.github/workflows/commercial-release.yml` is a manual, read-only certification
 workflow. It:
 
-1. checks out the exact workflow revision;
+1. validates and checks out the exact 40-character candidate revision selected
+   by the operator;
 2. downloads one immutable evidence artifact from an explicitly selected run
    in this repository;
 3. rejects an artifact-service digest mismatch;
 4. restores owner-only permissions removed by artifact ZIP transport;
-5. binds every report to `GITHUB_SHA`;
+5. binds every report to that checked-out candidate SHA;
 6. runs this gate; and
 7. retains the verdict even when certification fails.
 
@@ -181,6 +182,11 @@ states that a job referencing an environment is held until its protection rules
 pass, but required reviewers for private repositories depend on the account
 plan. Until the protection settings are observed in a real run, the workflow is
 implemented but its independent-approval property is **configured only**.
+
+When dispatching the workflow, `candidate_revision` must be the exact source
+revision of the image/environment being admitted, not merely the branch head or
+the commit containing the latest documentation. The checkout is compared with
+that input before the gate runs.
 
 ## Current observed verdict
 

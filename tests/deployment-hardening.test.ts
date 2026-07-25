@@ -181,9 +181,18 @@ describe('release audit resilience', () => {
     );
     expect(workflow).toContain('digest-mismatch: error');
     expect(workflow).toContain('chmod -R go-rwx commercial-evidence');
-    expect(workflow).toContain('--source-revision "${GITHUB_SHA}"');
+    expect(workflow).toContain('ref: ${{ inputs.candidate_revision }}');
+    expect(workflow).toContain('if [[ ! "$AKRIVEN_CANDIDATE_REVISION" =~ ^[0-9a-f]{40}$ ]]');
+    expect(workflow).toContain('if [[ "$checked_out_revision" != "$AKRIVEN_CANDIDATE_REVISION" ]]');
+    expect(workflow).toContain('--source-revision "${AKRIVEN_CANDIDATE_REVISION}"');
     expect(workflow).toContain('npm run audit:commercial-release');
     expect(workflow).toContain('if: always()');
     expect(internalWorkflow).toContain('not commercial approval');
+    expect(workflow.indexOf('Validate candidate input before checkout')).toBeLessThan(
+      workflow.indexOf('actions/checkout@'),
+    );
+    expect(workflow.indexOf('Verify exact candidate checkout')).toBeLessThan(
+      workflow.indexOf('- run: npm ci'),
+    );
   });
 });

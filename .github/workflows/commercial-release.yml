@@ -10,6 +10,10 @@ on:
         options:
           - private-beta
           - public-production
+      candidate_revision:
+        description: Exact 40-character Git SHA of the deploy candidate
+        required: true
+        type: string
       evidence_run_id:
         description: Workflow run ID containing the redacted commercial-evidence artifact
         required: true
@@ -42,8 +46,27 @@ jobs:
       name: commercial-${{ inputs.target }}
       deployment: false
     steps:
+      - name: Validate candidate input before checkout
+        env:
+          AKRIVEN_CANDIDATE_REVISION: ${{ inputs.candidate_revision }}
+        run: |
+          if [[ ! "$AKRIVEN_CANDIDATE_REVISION" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "candidate_revision must be an exact lowercase 40-character Git SHA" >&2
+            exit 1
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with: { persist-credentials: false }
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.candidate_revision }}
+      - name: Verify exact candidate checkout
+        env:
+          AKRIVEN_CANDIDATE_REVISION: ${{ inputs.candidate_revision }}
+        run: |
+          checked_out_revision="$(git rev-parse HEAD)"
+          if [[ "$checked_out_revision" != "$AKRIVEN_CANDIDATE_REVISION" ]]; then
+            echo "checked-out revision does not match candidate_revision" >&2
+            exit 1
+          fi
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
@@ -61,10 +84,12 @@ jobs:
         run: chmod -R go-rwx commercial-evidence
       - run: npm ci
       - name: Evaluate exact-revision commercial evidence
+        env:
+          AKRIVEN_CANDIDATE_REVISION: ${{ inputs.candidate_revision }}
         run: >-
           npm run audit:commercial-release --
           --target "${{ inputs.target }}"
-          --source-revision "${GITHUB_SHA}"
+          --source-revision "${AKRIVEN_CANDIDATE_REVISION}"
           --evidence-dir commercial-evidence
           --max-age-days "${{ inputs.max_age_days }}"
           --output commercial-release-verdict.json
@@ -72,7 +97,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: commercial-release-verdict-${{ inputs.target }}-${{ github.sha }}
+          name: commercial-release-verdict-${{ inputs.target }}-${{ inputs.candidate_revision }}
           path: commercial-release-verdict.json
           if-no-files-found: error
           retention-days: 90
