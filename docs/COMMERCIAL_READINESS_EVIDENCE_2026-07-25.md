@@ -110,10 +110,28 @@ switching running services:
 - DreamHost uses default-drop IPv4 and IPv6 host-firewall policies. Only SSH,
   HTTP, HTTPS, and HTTPS/QUIC are admitted; the managed API listener is bound to
   loopback behind the edge proxy. Fail2Ban is active for SSH.
-- The running managed container is still the previous reviewed release. The
-  exact `6055990` amd64 candidate was transferred, loaded under a unique
-  immutable tag, and scanned with zero High/Critical vulnerabilities or
-  embedded secrets, but it was not activated.
+- The running managed container is still the previous reviewed
+  `schema-guard-managed:0.2.0` release. Exact commit `dd60b4e` managed and
+  anchor images were built locally for `linux/amd64`, run as UID/GID 65532,
+  and scanned with zero High/Critical vulnerabilities or embedded secrets.
+  Their local image IDs are
+  `sha256:1c244d892e85e98e2a2fa1bbf7b7d8866a7f717ac4c42ff8f457a3e2d81700fb`
+  and
+  `sha256:0dab2046729a75d75c68b0e4e9c4290b192ed50b6e23db3477b884d033ead9a2`.
+- The exact `dd60b4e` managed archive was transferred to DreamHost with
+  matching SHA-256
+  `3bf6b47f38ed1064221ab49dcfbc8b4b4de916ca3a19352652a191a445fc3ae1`
+  and loaded under the immutable `schema-guard-managed:dd60b4e-amd64`
+  tag. Its remote image ID, platform, and user match the local image. Zero
+  running containers use it.
+- The current production Compose file predates the monitoring-only bearer
+  required by the new public-mode image. A versioned `dd60b4e` Compose
+  candidate and a rollback copy of the deployment environment were staged.
+  A fresh monitoring credential was generated directly into a root-owned,
+  mode-0600 host file; only its file path was added to the deployment
+  environment. The complete managed, PostgreSQL, and edge overlay renders
+  successfully under the root operator context with the exact candidate tag.
+  No container was recreated.
 - The previous DreamHost image has an immutable rollback tag.
 - DreamHost can reach the independently hosted anchor readiness endpoint using
   the pinned private CA.
@@ -126,16 +144,20 @@ switching running services:
   backup-freshness monitor most recently exited successfully and recorded a
   healthy state. External paging delivery and escalation have not been
   deliberately triggered or acknowledged.
-- The DigitalOcean Droplet is reported active in the provider panel, but no
-  DigitalOcean Cloud Firewall is assigned and provider automated backups are
-  not enabled.
+- The authenticated DigitalOcean provider console confirms Droplet
+  `akriven-anchor-prod-01` is Active at `147.182.213.242`, in NYC1, on Ubuntu
+  24.04 x64, with the expected `akriven`, `production`, and `audit-anchor`
+  tags. No DigitalOcean Cloud Firewall is assigned and provider automated
+  backups are not enabled.
 - The DigitalOcean ED25519 fingerprint observed over the network agrees with
   the existing local known-hosts entry. Its authoritative value has not yet
-  been confirmed from the provider console, so no further DigitalOcean SSH
-  operation is permitted.
-- An exact `6055990` amd64 anchor candidate was built and scanned locally with
-  zero High/Critical vulnerabilities or embedded secrets. It has not been
-  transferred or deployed.
+  been confirmed from the Droplet itself through the provider Web Console. The
+  control panel exposes the correct console launch flow, but its terminal opens
+  in a popup that the controlled in-app browser cannot claim. No further
+  DigitalOcean SSH operation is permitted until the non-secret
+  `/etc/ssh/ssh_host_ed25519_key.pub` fingerprint is read through that
+  control-plane terminal and matched. The exact `dd60b4e` anchor candidate has
+  not been transferred or deployed.
 
 The Compose profiles now accept explicit reviewed managed and anchor image
 identities. The operator runbook requires immutable selections, a preserved
