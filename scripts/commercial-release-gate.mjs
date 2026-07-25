@@ -23,12 +23,19 @@ const ALLOWED_EVIDENCE_KINDS = new Set([
 ]);
 const FORBIDDEN_KEY =
   /(?:^|[_-])(?:secret|password|token|api[_-]?key|authorization|cookie)(?:[_-]|$)/iu;
-const SAFE_SECURITY_EVIDENCE_KEYS = new Set(['secret_scan', 'security_scans']);
+const SAFE_SECURITY_EVIDENCE_KEYS = new Set(['secret_custody', 'secret_scan', 'security_scans']);
 
 const PRIVATE_BETA_GATES = [
   {
     id: 'internal',
-    checks: ['full_regression', 'postgres', 'container_e2e', 'sdk_cli', 'security_scans'],
+    checks: [
+      'full_regression',
+      'postgres',
+      'container_e2e',
+      'sdk_cli',
+      'security_scans',
+      'migration_rollback',
+    ],
   },
   {
     id: 'website',
@@ -52,11 +59,25 @@ const PRIVATE_BETA_GATES = [
   },
   {
     id: 'operations',
-    checks: ['monitoring', 'paging_delivery', 'restore_drill', 'runbooks'],
+    checks: [
+      'monitoring',
+      'paging_delivery',
+      'restore_drill',
+      'runbooks',
+      'support_owner',
+      'incident_owner',
+    ],
   },
   {
     id: 'security',
-    checks: ['dependency_scan', 'secret_scan', 'image_scan', 'auth_abuse', 'tenant_isolation'],
+    checks: [
+      'dependency_scan',
+      'secret_scan',
+      'image_scan',
+      'auth_abuse',
+      'tenant_isolation',
+      'secret_custody',
+    ],
   },
   {
     id: 'model_providers',
@@ -66,11 +87,14 @@ const PRIVATE_BETA_GATES = [
 ];
 
 const PUBLIC_PRODUCTION_ADDITIONS = new Map([
+  ['internal', ['sbom', 'provenance', 'consumer_install']],
   ['website', ['public_domain_tls']],
+  ['staging', ['database_failover', 'rolling_release', 'multi_instance']],
   ['identity', ['invitation', 'revocation', 'cross_organization_isolation']],
   ['human_email', ['independent_recipient']],
   ['transactional_email', ['dmarc_observation', 'provider_outage_recovery']],
-  ['operations', ['second_responder', 'sustained_soak', 'incident_drill']],
+  ['operations', ['second_responder', 'sustained_soak', 'incident_drill', 'status_page']],
+  ['security', ['key_rotation_drill', 'recovery_escrow']],
 ]);
 
 const PUBLIC_ONLY_GATES = [
@@ -81,6 +105,14 @@ const PUBLIC_ONLY_GATES = [
   {
     id: 'independent_review',
     checks: ['penetration_test', 'findings_disposition', 'remediation_retest'],
+  },
+  {
+    id: 'customer_integration',
+    checks: ['owned_webhook', 'downstream_ledger', 'outage_reconciliation'],
+  },
+  {
+    id: 'market_validation',
+    checks: ['design_partner', 'real_workflow', 'willingness_to_pay', 'retention_signal'],
   },
 ];
 

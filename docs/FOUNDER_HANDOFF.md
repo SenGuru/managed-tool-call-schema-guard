@@ -32,8 +32,8 @@ monotonic anchor receiver, exports, retention, encrypted cross-host backup and
 clean restore. Real separate-host outage, redrive, restart, rollback,
 checkpoint, deletion and restore drills pass.
 
-What remains deferred is payment settlement, hosted human signup/session/MFA
-and recovery, transactional email, hosted secret custody, an external paging
+What remains deferred is payment settlement, complete live certification of
+hosted human signup/session/MFA and recovery, transactional email, hosted secret custody, an external paging
 receiver and acknowledged escalation, customer-owned webhook/downstream-ledger
 evidence, a scaled multi-instance deployment, multi-region recovery, production
 reliability certification, a live provider-version probe fleet, and an
@@ -51,3 +51,7 @@ The paid wedge may never be invoked; framework adapters may become a
 maintenance treadmill; safe-looking coercions may still be contextually wrong;
 hashes may leak low-entropy facts; and private staging must not be mistaken for
 customer-production reliability.
+
+The exact commercial decision is machine-checked by
+[`COMMERCIAL_RELEASE_GATE.md`](COMMERCIAL_RELEASE_GATE.md). Internal tests or a
+healthy staging deployment cannot override a `no_go` verdict.

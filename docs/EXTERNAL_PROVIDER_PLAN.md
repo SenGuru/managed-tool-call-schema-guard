@@ -32,36 +32,52 @@ send/webhook boundary backed by an encrypted, leased, retry-bounded durable
 notification outbox. These are deterministic local and PostgreSQL evidence,
 not live-provider proof. Use this order for the remaining account work:
 
-1. Create the 1Password production vault and vault-scoped service account.
-   Prove a clean operator session can render owner-only files after reboot.
-2. Configure Better Stack public API/anchor monitors, backup heartbeats, an
-   actual on-call contact and an escalation policy. Trigger and acknowledge one
-   service incident and one missed-heartbeat incident.
-3. Obtain the first design partner's owned HTTPS webhook receiver and
-   downstream side-effect ledger, plus sandbox credentials for only the exact
-   model/provider versions that partner will use. Run the customer-bound
-   callback and five-trial provider gates.
-4. Complete independent security review, legal/privacy retention approval,
-   vulnerability-disclosure routing, and named incident/support ownership.
-   These four steps gate action-mutating private-beta traffic.
-5. Finish certification of the deployed WorkOS staging environment against the
-   implemented organization/role/session boundary: verified-email
-   callback/session/logout, invitation, MFA/recovery, membership removal,
-   provider revocation and cross-organization isolation. The real public login
-   redirect and secure state cookie are already observed.
-6. Configure Postmark only after the identity flows define their verification,
-   invitation, recovery and security-message requirements. Exercise the
-   implemented durable outbox through real inbox delivery, bounce,
-   duplicate/reordering, outage, dead-letter and redrive before Akriven-owned
-   mandatory messages are a launch claim.
-7. Rotate the previously exposed Stripe test credential in the Stripe console,
-   store the replacement only through 1Password-rendered owner-only files, and
-   run the complete test-mode lifecycle. Do not enable live mode.
-8. Add Backblaze B2 Object Lock after legal approves retention. The current
-   encrypted cross-host daily backup/clean-restore boundary is already proven;
-   B2 adds independent WORM/ransomware resistance.
-9. Add privacy-scrubbed Sentry diagnostics before expanding the cohort. It is
-   recommended, not a substitute for Better Stack paging.
+1. Finish the currently open WorkOS MFA enrollment with the owner present.
+   Then exercise callback/session, CSRF, logout, relogin, recovery, invitation,
+   membership removal, provider revocation and cross-organization isolation.
+   Rotate the staging test-user credential afterward; the previously handled
+   value is not launch evidence.
+2. Activate protected secret custody before installing more provider
+   credentials. Complete the 1Password production vault/service-account
+   handoff, or retain the existing owner-only mounted-file boundary with
+   documented recovery for the private cohort. Prove clean retrieval after
+   reboot without printing values.
+3. Obtain owner confirmation for the permanent one-mailbox address
+   (`support@akriven.com` is recommended), provision the already-purchased
+   GoDaddy/Titan mailbox, reconcile MX/SPF/DKIM/DMARC, and prove inbound,
+   outbound, reply and recovery behavior from an independent provider.
+4. Configure separate Postmark staging/production message streams and the
+   WorkOS custom-email boundary. Exercise verification, invitation, recovery,
+   delivery, bounce, complaint, duplicate/reordering, outage, dead-letter and
+   redrive through real inboxes and the implemented durable outbox.
+5. Install sandbox credentials and exact pinned model versions for OpenAI,
+   Anthropic and Gemini through protected files. Run the live non-executing
+   provider probes, retain redacted reports, and verify drift/failure alerts.
+6. Finish the private-beta operating boundary: name the support and incident
+   owners, re-run Better Stack delivery/acknowledgement, and preserve current
+   backup/restore evidence. A second independent responder and multi-channel
+   escalation remain public-production requirements.
+7. Select the private-beta billing variant. For manual billing, approve and
+   exercise the manual invoice, entitlement, cancellation and no-automated-
+   charge procedures. For automated billing, rotate the previously exposed
+   Stripe test credential in the Stripe console and complete the full sandbox
+   lifecycle. Never enable live mode during certification.
+8. Assemble redacted, content-addressed evidence bound to the exact candidate
+   SHA and run `npm run audit:commercial-release -- --target private-beta`.
+   Admit no design-partner action traffic unless the verdict is
+   `private_beta_ready`.
+9. With the first design partner, exercise its owned HTTPS webhook and
+   downstream side-effect ledger, including timeout, duplicate,
+   uncertain-result reconciliation and outage recovery. This is customer
+   evidence, not a local substitute.
+10. Before public production, complete independent security review,
+    legal/privacy/DPA/refund/tax approval, vulnerability-disclosure routing,
+    SBOM/provenance and consumer-install proof, multi-instance rolling/failover
+    drills, sustained soak, a status page, key-rotation/recovery-escrow drills,
+    and real willingness-to-pay/continued-use evidence.
+11. Add Backblaze B2 Object Lock only after legal approves retention. Add
+    privacy-scrubbed Sentry diagnostics before expanding the cohort. Neither
+    substitutes for paging, restore, or customer evidence.
 
 Only non-secret identifiers such as callback URLs, provider environment names,
 price IDs and selected model versions belong in the evidence record. Do not
@@ -80,7 +96,9 @@ unless explicitly described as identifiers.
      an `owner` membership.
    - The replacement staging key and supporting identity secrets are stored in
      owner-only files outside source control. The default key exposed on the
-     initial quick-start screen was expired and is not used.
+     initial quick-start screen was expired and is not used. Rotate the current
+     staging test-user credential after MFA certification; do not treat it as a
+     durable launch credential.
    - Before cohort expansion, define and exercise the remaining `admin`,
      `operator`, `auditor`, and `billing` memberships, invitation and recovery
      flows, revocation, organization switching and BOLA isolation.

@@ -16,14 +16,35 @@ const NOW = Date.parse('2026-07-26T12:00:00.000Z');
 const SOURCE_REVISION = '1234567890abcdef1234567890abcdef12345678';
 
 const requirements = {
-  internal: ['full_regression', 'postgres', 'container_e2e', 'sdk_cli', 'security_scans'],
+  internal: [
+    'full_regression',
+    'postgres',
+    'container_e2e',
+    'sdk_cli',
+    'security_scans',
+    'migration_rollback',
+  ],
   website: ['private_hosted', 'route_inventory', 'onboarding_handoff'],
   staging: ['tls_edge', 'separate_anchor', 'outage_recovery', 'backup_restore'],
   identity: ['callback_session', 'mfa', 'logout_revoke', 'recovery', 'tenant_isolation'],
   human_email: ['mailbox_ready', 'inbound', 'outbound', 'recovery'],
   transactional_email: ['domain_auth', 'delivery', 'bounce', 'retry_dead_letter', 'privacy'],
-  operations: ['monitoring', 'paging_delivery', 'restore_drill', 'runbooks'],
-  security: ['dependency_scan', 'secret_scan', 'image_scan', 'auth_abuse', 'tenant_isolation'],
+  operations: [
+    'monitoring',
+    'paging_delivery',
+    'restore_drill',
+    'runbooks',
+    'support_owner',
+    'incident_owner',
+  ],
+  security: [
+    'dependency_scan',
+    'secret_scan',
+    'image_scan',
+    'auth_abuse',
+    'tenant_isolation',
+    'secret_custody',
+  ],
   model_providers: ['openai_live', 'anthropic_live', 'gemini_live'],
   billing: [
     'manual_invoice_policy',
@@ -43,7 +64,12 @@ function evidenceDirectory(): string {
 
 function writeGate(
   directory: string,
-  gateId: keyof typeof requirements | 'legal' | 'independent_review',
+  gateId:
+    | keyof typeof requirements
+    | 'legal'
+    | 'independent_review'
+    | 'customer_integration'
+    | 'market_validation',
   checks: string[],
   overrides: Record<string, unknown> = {},
 ): void {
@@ -215,7 +241,7 @@ describe('commercial release gate', () => {
     });
   });
 
-  it('requires stronger identity, email, operations, legal, review, and Stripe evidence publicly', () => {
+  it('requires stronger operational, customer, market, review, and Stripe evidence publicly', () => {
     const directory = evidenceDirectory();
     completePrivateEvidence(directory);
     const privateReport = evaluateCommercialRelease({
@@ -230,13 +256,18 @@ describe('commercial release gate', () => {
     );
     expect(privateReport.failures.join('\n')).toContain('legal:');
     expect(privateReport.failures.join('\n')).toContain('independent_review:');
+    expect(privateReport.failures.join('\n')).toContain('customer_integration:');
+    expect(privateReport.failures.join('\n')).toContain('market_validation:');
 
     const publicAdditions = {
+      internal: ['sbom', 'provenance', 'consumer_install'],
       website: ['public_domain_tls'],
+      staging: ['database_failover', 'rolling_release', 'multi_instance'],
       identity: ['invitation', 'revocation', 'cross_organization_isolation'],
       human_email: ['independent_recipient'],
       transactional_email: ['dmarc_observation', 'provider_outage_recovery'],
-      operations: ['second_responder', 'sustained_soak', 'incident_drill'],
+      operations: ['second_responder', 'sustained_soak', 'incident_drill', 'status_page'],
+      security: ['key_rotation_drill', 'recovery_escrow'],
     };
     for (const [gateId, extraChecks] of Object.entries(publicAdditions))
       writeGate(directory, gateId as keyof typeof requirements, [
@@ -263,6 +294,17 @@ describe('commercial release gate', () => {
       'penetration_test',
       'findings_disposition',
       'remediation_retest',
+    ]);
+    writeGate(directory, 'customer_integration', [
+      'owned_webhook',
+      'downstream_ledger',
+      'outage_reconciliation',
+    ]);
+    writeGate(directory, 'market_validation', [
+      'design_partner',
+      'real_workflow',
+      'willingness_to_pay',
+      'retention_signal',
     ]);
 
     const report = evaluateCommercialRelease({

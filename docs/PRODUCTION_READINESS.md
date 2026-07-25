@@ -253,7 +253,7 @@ passes 64/64 HTTPS requests in 21.593 seconds. The public browser also executed
 all 29/29 presets, parsed all 14/14 panels, verified locked-state export, and
 finished with exact-hash deletion from both stores.
 
-The current managed candidate is exact source `089c86f`, image
+The historical managed candidate captured by this section was exact source `089c86f`, image
 `sha256:6beebfa958bc7090e7f34f1f81e3abea0d119b14f5aed691f6e98c355a5f88e0`;
 the current independent anchor is exact source `dd60b4e`, image
 `sha256:0dab2046729a75d75c68b0e4e9c4290b192ed50b6e23db3477b884d033ead9a2`.
@@ -295,8 +295,11 @@ port probes found only 22/80/443 open; PostgreSQL, managed loopback, anchor and
 Portainer ports were closed. Public audit/control integrity remained valid and
 checkpoint revision 5 was retained.
 
-The machine-readable launch position and the evidence still required before a
-public server are tracked in [ENTERPRISE_LAUNCH_GATES.md](ENTERPRISE_LAUNCH_GATES.md).
+The current machine-readable launch position and the evidence still required
+before commercial admission are tracked in
+[COMMERCIAL_RELEASE_GATE.md](COMMERCIAL_RELEASE_GATE.md) and
+[ENTERPRISE_LAUNCH_GATES.md](ENTERPRISE_LAUNCH_GATES.md). The historical
+revision labels above are not the current repository head.
 
 ## Launch checklist
 
@@ -354,6 +357,8 @@ evidence passes.
 - `npm run audit:extreme` passes on the exact deploy candidate.
 - `npm run audit:release-candidate -- --output release-candidate-report.json`
   passes in the protected manual workflow, with the resulting report retained.
+- `npm run audit:commercial-release` passes for the exact source revision and
+  target with current, owner-only, redacted, content-addressed evidence.
 - `npm run audit:real-repos` is run and reviewed, then promoted into checked-in
   fixtures for any real provider/framework shapes it discovers.
 

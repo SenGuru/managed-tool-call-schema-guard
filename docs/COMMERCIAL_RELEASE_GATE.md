@@ -93,18 +93,18 @@ evidence tree.
 
 ## Private-beta gates
 
-| Report                     | Required proven checks                                                     |
-| -------------------------- | -------------------------------------------------------------------------- |
-| `internal.json`            | full regression, PostgreSQL, container E2E, SDK/CLI, security scans        |
-| `website.json`             | private hosted site, route inventory, onboarding handoff                   |
-| `staging.json`             | TLS edge, separate anchor, outage recovery, backup/restore                 |
-| `identity.json`            | callback/session, MFA, logout/revoke, recovery, tenant isolation           |
-| `human_email.json`         | mailbox ready, inbound, outbound, recovery                                 |
-| `transactional_email.json` | domain authentication, delivery, bounce, retry/dead-letter, privacy        |
-| `operations.json`          | monitoring, delivered paging, restore drill, runbooks                      |
-| `security.json`            | dependency, secret and image scans, authentication abuse, tenant isolation |
-| `model_providers.json`     | live pinned OpenAI, Anthropic and Gemini probes                            |
-| `billing.json`             | one of the billing variants below                                          |
+| Report                     | Required proven checks                                                                               |
+| -------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `internal.json`            | full regression, PostgreSQL, container E2E, SDK/CLI, security scans, migration rollback              |
+| `website.json`             | private hosted site, route inventory, onboarding handoff                                             |
+| `staging.json`             | TLS edge, separate anchor, outage recovery, backup/restore                                           |
+| `identity.json`            | callback/session, MFA, logout/revoke, recovery, tenant isolation                                     |
+| `human_email.json`         | mailbox ready, inbound, outbound, recovery                                                           |
+| `transactional_email.json` | domain authentication, delivery, bounce, retry/dead-letter, privacy                                  |
+| `operations.json`          | monitoring, delivered paging, restore drill, runbooks, named support owner, named incident owner     |
+| `security.json`            | dependency, secret and image scans, authentication abuse, tenant isolation, protected secret custody |
+| `model_providers.json`     | live pinned OpenAI, Anthropic and Gemini probes                                                      |
+| `billing.json`             | one of the billing variants below                                                                    |
 
 Private beta may use a documented `manual` billing variant only when manual
 invoice policy, operator entitlement, cancellation policy, and absence of
@@ -115,15 +115,23 @@ variant. Manual billing is not accepted for public production.
 
 Public production additionally requires:
 
+- SBOMs, provenance/attestation, and a verified consumer installation;
 - public-domain TLS;
+- database failover, rolling release, and multi-instance operation;
 - invitation, revocation, and cross-organization isolation;
 - delivery to an independent human-email recipient;
 - DMARC observation and transactional-provider outage recovery;
-- a second responder, sustained soak, and incident drill;
+- a second responder, sustained soak, incident drill, and operated status
+  page;
+- a key-rotation drill and independently recoverable credential escrow;
 - `legal.json` proving reviewed terms, privacy, DPA, retention, and refund/tax
   positions;
 - `independent_review.json` proving penetration testing, findings disposition,
-  and remediation retest; and
+  and remediation retest;
+- `customer_integration.json` proving a customer-owned webhook, downstream
+  side-effect ledger, and outage reconciliation;
+- `market_validation.json` proving a design partner's real workflow,
+  willingness to pay, and a retention/continued-use signal; and
 - Stripe test-mode Checkout, Portal, signature, replay/reordering,
   failed-payment recovery, cancellation, entitlement reconciliation, and test
   clock evidence.
