@@ -253,14 +253,18 @@ passes 64/64 HTTPS requests in 21.593 seconds. The public browser also executed
 all 29/29 presets, parsed all 14/14 panels, verified locked-state export, and
 finished with exact-hash deletion from both stores.
 
-The current managed candidate is exact source `887274c`, image
-`sha256:53470b39049d3f09e707bede7e47fe1b8dea13587ae1558fe7004fd3af7ef199`;
+The current managed candidate is exact source `089c86f`, image
+`sha256:6beebfa958bc7090e7f34f1f81e3abea0d119b14f5aed691f6e98c355a5f88e0`;
 the current independent anchor is exact source `dd60b4e`, image
 `sha256:0dab2046729a75d75c68b0e4e9c4290b192ed50b6e23db3477b884d033ead9a2`.
-Both run with zero restarts after the final drills. The current pass repeated
-separate-host outage/recovery, receiver and PostgreSQL restart, exact
-checkpoint acknowledgement, schema-compatible rollback and return, fresh
-cross-host backup, isolated clean restore, and bounded host-monitor execution.
+Both run with zero restarts. The `089c86f` activation used a clean Git archive,
+matching transfer checksum, pre/post off-machine backups, shared control
+migration v3, public and loopback readiness, authenticated action-control
+verification, and exact DreamHost/DigitalOcean revision-9 checkpoint
+comparison. The separate-host outage/recovery, receiver and PostgreSQL restart,
+schema-compatible rollback and return, cross-host restore, and bounded
+host-monitor measurements remain historical evidence for their explicitly
+named predecessor revision; they are not silently promoted to `089c86f`.
 The authoritative measurements and remaining external blockers are in
 [`COMMERCIAL_READINESS_EVIDENCE_2026-07-25.md`](COMMERCIAL_READINESS_EVIDENCE_2026-07-25.md).
 

@@ -162,9 +162,10 @@ Strictly pinned SSH checks and controlled staging operations established:
   encrypted off-machine backup completed in 8 seconds with 8 seconds of
   measured receiver downtime. Pre/post activation database integrity, row
   counts, revision range, and checkpoint/event digests matched.
-- The `887274c` managed image is running on DreamHost behind trusted TLS with
-  zero restarts after a deliberate clean recreation. The `dd60b4e` image and
-  the previous release are retained under immutable rollback tags. SQLite
+- The `887274c` managed image ran on DreamHost behind trusted TLS with zero
+  restarts during this named historical drill. It is now retained as the
+  schema-compatible rollback image after the later exact `089c86f` activation
+  recorded at the start of this report. SQLite
   integrity is `ok`, schema version 15 and persisted counts survived
   activation, the PostgreSQL migration families remained current, and the
   action checkpoint remained revision 9 with two rows. The exact image is
@@ -198,7 +199,8 @@ Strictly pinned SSH checks and controlled staging operations established:
   checkpoint exactly. The first observed readiness response was `500` rather
   than the intended `503`; this was classified as a defect, fixed so transient
   dependency exceptions degrade readiness and metrics deterministically, and
-  covered by a focused regression. After `887274c` activation, the repeated
+  covered by a focused regression. During the historical `887274c` activation,
+  the repeated
   outage returned liveness `200`, readiness `503`, unauthenticated metrics
   `401`, authenticated degraded metrics `200`, and recovered in 5.753 seconds
   with the checkpoint unchanged.
@@ -230,6 +232,12 @@ Strictly pinned SSH checks and controlled staging operations established:
   incident creation, email delivery and recovery for that route. It does not
   prove paid phone/SMS/push delivery, multi-person escalation or a sustained
   missed-heartbeat drill.
+- A subsequent read-only provider-console recertification again showed the
+  public readiness monitor and both daily backup heartbeats `Up`. It also
+  showed no on-call schedule and no escalation policy. Scheduled on-call
+  requires an account upgrade, and no second independently owned responder is
+  present. This strengthens the blocker evidence rather than promoting paging
+  to proven.
 - The separate-host outage runner now requires an owner-only SSH identity,
   a non-group/other-writable known-hosts file, `IdentitiesOnly`, and strict
   host-key checking. It no longer relies on ambient SSH trust.
@@ -282,7 +290,7 @@ unavailable identity/email/billing/model providers.
 
 What is proven is a substantial deterministic checkpoint, managed control
 plane, operator dashboard, API/SDK/CLI surface, hardened container topology,
-provider-independent operational program, exact `887274c` managed plus
+provider-independent operational program, exact `089c86f` managed plus
 `dd60b4e` anchor cross-host staging operation, and real backup/restore,
 anchor-outage, deletion, restart, rollback, and checkpoint evidence. What is
 not proven is a public SaaS business, a customer-production SLO, external

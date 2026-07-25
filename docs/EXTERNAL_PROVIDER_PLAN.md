@@ -183,6 +183,12 @@ Observed on 2026-07-25:
   `0600` URL files; both real backup jobs delivered an **Up** heartbeat.
 - Controlled heartbeat failure: external incident and owner email observed;
   healthy recovery recorded after 23 seconds.
+- A fresh read-only provider-console check found the readiness monitor and both
+  daily backup heartbeats `Up`. It also confirmed that the account has no
+  on-call schedule and no escalation policy; Better Stack requires an account
+  upgrade for scheduled on-call duties and still needs at least one additional
+  independently owned responder before acknowledgement/escalation can be
+  proven.
 - Second responder, explicit acknowledgement drill, and multi-channel
   escalation: blocked on an additional responder and paid notification route.
 - 1Password Teams registration and email verification: reached the
