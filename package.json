@@ -22,6 +22,7 @@
     "benchmark": "npm run build --silent && tsx benchmarks/core.ts",
     "audit:recovery": "npm run build --silent && node scripts/managed-recovery-drill.mjs",
     "audit:managed-load": "npm run build --silent && node scripts/managed-load-audit.mjs",
+    "audit:managed-load:container": "docker build --file Dockerfile.load-audit --tag schema-guard-managed-load-audit:local . && docker run --rm --read-only --network none --tmpfs /tmp:rw,nosuid,nodev,noexec,size=1g --cap-drop ALL --security-opt no-new-privileges --pids-limit 256 --cpus 2 --memory 2g schema-guard-managed-load-audit:local",
     "audit:container-e2e": "node scripts/container-e2e-audit.mjs",
     "audit:public-anchor-outage": "node scripts/public-anchor-outage-audit.mjs",
     "audit:public-managed": "node scripts/public-managed-e2e.mjs",
