@@ -175,6 +175,26 @@ startup and billing traffic are intentionally fail closed.
 - A clean host restores an Object-Locked backup, compares audit and anchor
   checkpoints, measures RPO/RTO, and removes all plaintext drill material.
 
+Observed on 2026-07-25:
+
+- Better Stack free-plan account and public readiness monitor: configured;
+  `https://api.akriven.com/readyz` observed **Up**.
+- Main and anchor daily backup heartbeats: configured through root-owned
+  `0600` URL files; both real backup jobs delivered an **Up** heartbeat.
+- Controlled heartbeat failure: external incident and owner email observed;
+  healthy recovery recorded after 23 seconds.
+- Second responder, explicit acknowledgement drill, and multi-channel
+  escalation: blocked on an additional responder and paid notification route.
+- 1Password Teams registration and email verification: reached the
+  owner-controlled master-password/Secret-Key step. Vault activation is blocked
+  until the owner chooses the master password and retains the Emergency Kit.
+- Sentry and WorkOS Google signup: blocked at Google's device passkey
+  verification. No project, data region or irreversible retention choice was
+  created.
+- Postmark, Stripe, Backblaze and live model credentials: not configured.
+  Stripe live mode, customer-facing DNS, Backblaze Object Lock and any paid
+  commitment remain deliberately untouched.
+
 ## Evidence handling
 
 Retain timestamps, provider event IDs, HTTP statuses, pseudonymous tenant

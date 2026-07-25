@@ -188,8 +188,20 @@ Strictly pinned SSH checks and controlled staging operations established:
   volume, and decrypted workspace were removed.
 - Both host monitor timers are enabled and healthy. The monitor now bounds each
   TLS connection and has a 120-second systemd limit; reviewed copies completed
-  in 334 ms on DreamHost and 584 ms on DigitalOcean. No external webhook is
-  configured, so paging delivery or acknowledgement is not claimed.
+  in 334 ms on DreamHost and 584 ms on DigitalOcean. Their optional local
+  state-change webhook remains unconfigured.
+- A Better Stack free-plan workspace now independently checks
+  `https://api.akriven.com/readyz`; its first observed result was **Up**.
+  Separate daily main- and anchor-backup heartbeats are installed as
+  root-owned `0600` secret files on their respective hosts. Fresh real backup
+  runs completed successfully and both heartbeats changed from Pending to
+  **Up**.
+- A controlled main-backup heartbeat failure created an external incident and
+  delivered its failure email to the owner inbox. A subsequent healthy
+  heartbeat resolved the incident after 23 seconds. This proves provider
+  incident creation, email delivery and recovery for that route. It does not
+  prove paid phone/SMS/push delivery, multi-person escalation or a sustained
+  missed-heartbeat drill.
 - The separate-host outage runner now requires an owner-only SSH identity,
   a non-group/other-writable known-hosts file, `IdentitiesOnly`, and strict
   host-key checking. It no longer relies on ambient SSH trust.
@@ -202,9 +214,9 @@ unavailable identity/email/billing/model providers.
 
 ### Before first design-partner action traffic
 
-1. Configure an external paging destination for the already-running independent
-   uptime and backup-heartbeat monitors, then observe delivery,
-   acknowledgement, and escalation.
+1. Add a second independently owned responder and exercise acknowledgement and
+   escalation. Better Stack email incident delivery and recovery are proven,
+   but the free plan does not provide the required paid call/SMS/push route.
 2. Exercise a customer-owned HTTPS webhook receiver and downstream side-effect
    ledger through acknowledgement, completion, timeout, duplicate, ambiguous,
    and reconciliation paths.

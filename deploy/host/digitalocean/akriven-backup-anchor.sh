@@ -24,6 +24,23 @@ LOCAL_DIRECTORY=${AKRIVEN_BACKUP_LOCAL_DIRECTORY:-/var/lib/akriven-backup-anchor
 STATUS_FILE=${AKRIVEN_BACKUP_STATUS_FILE:-/var/lib/akriven-backup-anchor/status.json}
 REMOTE_DIRECTORY=${AKRIVEN_BACKUP_REMOTE_DIRECTORY:-.}
 KNOWN_HOSTS=${AKRIVEN_BACKUP_KNOWN_HOSTS:-/etc/akriven/schema-guard-anchor/backup-ssh/known_hosts}
+HEARTBEAT_URL_FILE=${AKRIVEN_BACKUP_HEARTBEAT_URL_FILE:-}
+
+send_success_heartbeat() {
+  if [ -z "$HEARTBEAT_URL_FILE" ]; then return 0; fi
+  if [ ! -r "$HEARTBEAT_URL_FILE" ]; then
+    echo "backup heartbeat URL file is unreadable" >&2
+    return 1
+  fi
+  heartbeat_url=$(tr -d '\r\n' < "$HEARTBEAT_URL_FILE")
+  if ! printf '%s\n' "$heartbeat_url" |
+    grep -Eq '^https://[^[:space:]"\\]+$'; then
+    echo "backup heartbeat URL is invalid" >&2
+    return 1
+  fi
+  curl --fail --silent --show-error --max-time 10 --output /dev/null \
+    "$heartbeat_url"
+}
 
 install -d -m 0700 "$LOCAL_DIRECTORY"
 work=$(mktemp -d /run/akriven-anchor-backup.XXXXXX)
@@ -97,4 +114,5 @@ jq -cn \
 chmod 0600 "$status_tmp"
 mv "$status_tmp" "$STATUS_FILE"
 find "$LOCAL_DIRECTORY" -xdev -type f -name 'akriven-anchor-*.age' -mtime +2 -delete
+send_success_heartbeat
 echo "backup=anchor status=complete bytes=$size downtime_seconds=$downtime_seconds off_machine=true"

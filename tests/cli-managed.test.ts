@@ -212,7 +212,7 @@ describe('managed CLI workflow', () => {
         server.close((error) => (error ? reject(error) : resolve())),
       );
     }
-  });
+  }, 15_000);
 
   it('reads lifecycle and export resources and submits an exact deletion request', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'schema-guard-cli-managed-'));

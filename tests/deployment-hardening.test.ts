@@ -99,9 +99,22 @@ describe('deployment environment templates', () => {
       'AKRIVEN_BACKUP_REMOTE_DIRECTORY',
       'AKRIVEN_BACKUP_LOCAL_DIRECTORY',
       'AKRIVEN_BACKUP_STATUS_FILE',
+      'AKRIVEN_BACKUP_HEARTBEAT_URL_FILE',
     ])
       expect(declared.has(key), key).toBe(true);
     expect(read(path)).not.toMatch(/-----BEGIN [A-Z ]*PRIVATE KEY-----/u);
+  });
+
+  test.each([
+    'deploy/host/dreamhost/akriven-backup-main.sh',
+    'deploy/host/digitalocean/akriven-backup-anchor.sh',
+  ])('%s submits successful backup heartbeats from a secret file', (path) => {
+    const script = read(path);
+
+    expect(script).toContain('AKRIVEN_BACKUP_HEARTBEAT_URL_FILE');
+    expect(script).toContain('grep -Eq');
+    expect(script).toContain('curl --fail --silent --show-error --max-time 10');
+    expect(script).not.toMatch(/uptime\.betterstack\.com\/api\/v1\/heartbeat\/[A-Za-z0-9]+/u);
   });
 
   test.each([
