@@ -95,6 +95,9 @@ switching running services:
   matches the separately pinned local known-hosts entry.
 - The DreamHost managed service, PostgreSQL, and edge proxy are healthy; the
   public readiness endpoint presents trusted TLS.
+- DreamHost uses default-drop IPv4 and IPv6 host-firewall policies. Only SSH,
+  HTTP, HTTPS, and HTTPS/QUIC are admitted; the managed API listener is bound to
+  loopback behind the edge proxy. Fail2Ban is active for SSH.
 - The running managed container is still the previous reviewed release. The
   exact `6055990` amd64 candidate was transferred, loaded under a unique
   immutable tag, and scanned with zero High/Critical vulnerabilities or
@@ -102,6 +105,15 @@ switching running services:
 - The previous DreamHost image has an immutable rollback tag.
 - DreamHost can reach the independently hosted anchor readiness endpoint using
   the pinned private CA.
+- DreamHost's daily encrypted main-backup job most recently exited successfully
+  and recorded an off-machine transfer. Its inbound anchor-backup ingest and
+  retention jobs also exited successfully, and the root-owned archive contains
+  recent owner-read-only encrypted anchor bundles. This proves recent encrypted
+  bidirectional transfer, not a clean-host restore.
+- The DreamHost cross-domain readiness, container-health, TLS-expiry, and
+  backup-freshness monitor most recently exited successfully and recorded a
+  healthy state. External paging delivery and escalation have not been
+  deliberately triggered or acknowledged.
 - The DigitalOcean Droplet is reported active in the provider panel, but no
   DigitalOcean Cloud Firewall is assigned and provider automated backups are
   not enabled.
