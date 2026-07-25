@@ -11,14 +11,43 @@ It does not promote historical staging evidence to exact-source evidence.
 
 Final checkpoint inventory:
 
-- managed runtime source/image: commit `887274c`, immutable image
-  `sha256:53470b39049d3f09e707bede7e47fe1b8dea13587ae1558fe7004fd3af7ef199`;
+- managed runtime source/image: commit `089c86f`, immutable image
+  `sha256:6beebfa958bc7090e7f34f1f81e3abea0d119b14f5aed691f6e98c355a5f88e0`;
 - independent anchor source/image: commit `dd60b4e`, immutable image
   `sha256:0dab2046729a75d75c68b0e4e9c4290b192ed50b6e23db3477b884d033ead9a2`;
 - bounded host monitoring first committed at `09f7724`; final handoff is the
   branch HEAD containing this report;
 - branch `codex/production-readiness-2026-07-24` is pushed. The tracked tree is
   clean; the unrelated untracked `apps/` directory was preserved and excluded.
+
+### Action-control and restart-recovery completion
+
+The final runtime checkpoint adds tenant emergency action hold, reviewed
+enforced and non-mutating shadow policies, workload-bound approval/execution
+fingerprints, the complete API/SDK/CLI/Python/dashboard surface, and
+integrity-protected SQLite/shared-PostgreSQL state. The exact-source container
+program exercised hold before approval/reservation, shadow comparison,
+workload binding, anchor outage/recovery, PostgreSQL restart and container
+restart.
+
+That restart drill first caught an unhandled checked-out PostgreSQL client
+error. Shared pools now attach client error handling before checkout while
+queries continue to fail closed. The 18-test PostgreSQL suite and the full
+137.416-second container program then passed.
+
+The exact `linux/amd64` managed image was built from a clean Git archive,
+scanned with zero High/Critical vulnerabilities or embedded secrets, transferred
+with matching archive SHA-256, and deployed on DreamHost after a successful
+off-machine backup. It runs as UID/GID 65532, read-only, with all capabilities
+dropped and zero restarts. Loopback and public health/readiness are `200`.
+Shared control migrations are `1,2,3`, including the populated action-control
+table. The post-activation backup and both host monitors succeeded.
+
+The DigitalOcean anchor code had no delta and remained on its previously
+scanned `dd60b4e` image. Its pinned ED25519 host fingerprint exactly matched
+the owner-provided value before SSH. The DreamHost checkpoint at revision 9,
+two rows, and its complete checkpoint hash matched the independently read
+DigitalOcean record exactly.
 
 ## Provider-independent completion delta
 
@@ -55,27 +84,26 @@ The commercial-completeness audit added and exercised:
 
 The commands below ran on 2026-07-25 after the operational-metrics delta:
 
-| Command                                                                                           | Observed result                                                                                                                                                                                                                                                                                                                                                    |
-| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Product-targeted build, ESLint, typecheck, script-syntax, package-boundary, and conformance gates | Passed; conformance covered 8 cases, 4 adapters, and 8 probes. The root aggregate `npm run check` is not a valid exact-source result because an unrelated, concurrently created untracked `apps/trade-signal-lab/` directory is outside the root TypeScript/format configuration. That directory was preserved and excluded from this checkpoint.                  |
-| Serial uncredentialed test suite                                                                  | Current source: 234 passed and 17 credentialed PostgreSQL cases skipped; the one parallel resource-contention timeout from the earlier pass was rerun focused and the complete suite then passed serially                                                                                                                                                          |
-| Credentialed PostgreSQL coverage                                                                  | Current source against a fresh isolated PostgreSQL 16 instance: 43 files and 251/251 tests passed; the prior coverage-instrumented run measured 79.86% statements, 73.31% branches, 81.33% functions, and 81.62% lines                                                                                                                                             |
-| Python client tests                                                                               | 5/5 passed                                                                                                                                                                                                                                                                                                                                                         |
-| `npm audit`                                                                                       | 0 known vulnerabilities                                                                                                                                                                                                                                                                                                                                            |
-| `npm run audit:container-e2e`                                                                     | Passed in 93.703 seconds against exact current source, fresh PostgreSQL 16, hardened managed and independent TLS-anchor images, two tenants, authoritative operational metrics, tracing, inventory/export, all decision paths, release admission, approvals/idempotency, outage/redrive, restart/persistence, tenant isolation, secret-file and log-privacy checks |
-| `npm run audit:images`                                                                            | Managed, anchor, and PostgreSQL images: 0 High/Critical vulnerabilities and 0 embedded secrets                                                                                                                                                                                                                                                                     |
-| `trivy fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL --exit-code 1 .`              | 0 High/Critical npm vulnerabilities, embedded secrets, or Dockerfile misconfigurations                                                                                                                                                                                                                                                                             |
-| `npm run audit:framework-integrations`                                                            | MCP SDK 1.29.0, OpenAI Agents 0.13.5, PydanticAI 2.13.0, and Google ADK 2.5.0 boundaries passed; rejected calls executed zero tools                                                                                                                                                                                                                                |
-| `npm run audit:five-repos` / `audit:benchmarks` / `audit:real-data`                               | 5 repositories / 9 native fixtures / 35 derived calls passed; 7,699 recorded calls and 30,203 mutations matched; 2,501 real-data rows, 3,302 expected calls, and 15,702 mutations matched. Downloaded repository code was not executed.                                                                                                                            |
-| `npm run audit:real-repos`                                                                        | 20 repositories inspected, 106 fixtures extracted, and no downloaded repository code executed                                                                                                                                                                                                                                                                      |
-| `npm run probe:live:dry`                                                                          | OpenAI, Anthropic, and Gemini request/profile construction passed in dry-run mode; zero live trials were claimed                                                                                                                                                                                                                                                   |
+| Command                                                                              | Observed result                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run check`                                                                      | Passed on the exact checkpoint after independent-workspace ignores were made explicit: format, build, ESLint, script syntax, dry provider boundary, package boundary, typecheck, conformance, 241 tests passed, 18 PostgreSQL tests skipped, and 5 Python tests passed. The unrelated untracked `apps/` tree was preserved.                                   |
+| Credentialed PostgreSQL regression                                                   | 18/18 shared-state tests passed against a fresh PostgreSQL 16 instance, including checked-out client error handling. The earlier complete coverage run passed 257 tests at 79.66% statements, 70.93% branches, 81.05% functions, and 81.43% lines.                                                                                                            |
+| Python client tests                                                                  | 5/5 passed                                                                                                                                                                                                                                                                                                                                                    |
+| `npm audit`                                                                          | 0 known vulnerabilities                                                                                                                                                                                                                                                                                                                                       |
+| `npm run audit:container-e2e`                                                        | Passed in 137.416 seconds against exact current source, fresh PostgreSQL 16, hardened managed and independent TLS-anchor images, two tenants, action hold/shadow/workload binding, all decision paths, release admission, approvals/idempotency, outage/redrive, database/container restart persistence, tenant isolation, secret-file and log-privacy checks |
+| `npm run audit:images`                                                               | Managed, anchor, and PostgreSQL images: 0 High/Critical vulnerabilities and 0 embedded secrets                                                                                                                                                                                                                                                                |
+| `trivy fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL --exit-code 1 .` | 0 High/Critical npm vulnerabilities, embedded secrets, or Dockerfile misconfigurations                                                                                                                                                                                                                                                                        |
+| `npm run audit:framework-integrations`                                               | MCP SDK 1.29.0, OpenAI Agents 0.13.5, PydanticAI 2.13.0, and Google ADK 2.5.0 boundaries passed; rejected calls executed zero tools                                                                                                                                                                                                                           |
+| `npm run audit:five-repos` / `audit:benchmarks` / `audit:real-data`                  | 5 repositories / 9 native fixtures / 35 derived calls passed; 7,699 recorded calls and 30,203 mutations matched; 2,501 real-data rows, 3,302 expected calls, and 15,702 mutations matched. Downloaded repository code was not executed.                                                                                                                       |
+| `npm run audit:real-repos`                                                           | 20 repositories inspected, 106 fixtures extracted, and no downloaded repository code executed                                                                                                                                                                                                                                                                 |
+| `npm run probe:live:dry`                                                             | OpenAI, Anthropic, and Gemini request/profile construction passed in dry-run mode; zero live trials were claimed                                                                                                                                                                                                                                              |
 
 Current serial measurements:
 
-- core benchmark, 10,000 iterations: p50 45.5 µs, p95 97.917 µs,
-  p99 290.792 µs;
+- core benchmark, 10,000 iterations: p50 54.875 µs, p95 94.875 µs,
+  p99 228.791 µs;
 - managed HTTP load, 2,000 requests at concurrency 32 and four API keys:
-  411.16 requests/s, p50 65.91 ms, p95 86.75 ms, p99 594.94 ms, zero HTTP errors, 2,000
+  482.88 requests/s, p50 53.99 ms, p95 104.89 ms, p99 322.56 ms, zero HTTP errors, 2,000
   unique audit IDs, valid 2,000-record audit chain, and no private sentinel in
   the database;
 - self-contained backup/restore: source and restored SQLite integrity true,

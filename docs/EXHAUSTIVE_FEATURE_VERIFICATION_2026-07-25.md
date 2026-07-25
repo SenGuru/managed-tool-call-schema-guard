@@ -275,13 +275,12 @@ and anchor persistence, and independent HTTPS checkpoint acknowledgement.
    require the selected identity provider.
 4. Transactional email and bounce/retry evidence require the selected email
    provider and verified sender/domain.
-5. Independent paging/uptime delivery requires the selected monitoring and
-   on-call provider.
-6. Public TLS/DNS and exact-source separate-host staging require the verified
-   DreamHost target and a console-verified DigitalOcean SSH fingerprint.
-7. Immutable off-machine backup and a clean-host restore require the selected
-   object-storage retention configuration.
-8. A real customer’s side-effect ledger, webhook endpoint, workload corpus,
+5. Independent second-responder acknowledgement and paid call/SMS/push
+   escalation require the selected on-call provider; the existing uptime and
+   backup-heartbeat email incident path is proven.
+6. Object Lock/immutable object storage or an RPO tighter than the accepted
+   daily encrypted cross-host backup remains an external choice.
+7. A real customer’s side-effect ledger, webhook endpoint, workload corpus,
    willingness to pay, renewal behavior, and support burden cannot be proven
    internally.
 
