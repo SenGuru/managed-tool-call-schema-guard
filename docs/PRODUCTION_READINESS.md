@@ -207,9 +207,10 @@ removed. The owner reported that the recovery identity was copied into
 off-workstation escrow on 2026-07-23. A clean-machine retrieval/decryption drill
 has not been observed, so escrow availability remains owner-attested.
 
-The exact r7 managed image
+The historical exact r7 managed image
 `sha256:516b0869f9bb507641ddd5ae602a02b43fc620375f5134409776fe374970239d`
-is now deployed. It retains the r3 correction for the production-observed
+was deployed for the lifecycle drill and is retained as a rollback artifact. It
+retains the r3 correction for the production-observed
 shared deletion-request defect: r2 updated PostgreSQL but left the local SQLite
 projection active, while r3 through r7 synchronize both signed lifecycle stores and
 roll local state back if the shared transaction fails.
@@ -251,6 +252,17 @@ scanned r7 image is healthy with zero restarts; and the corrected public run
 passes 64/64 HTTPS requests in 21.593 seconds. The public browser also executed
 all 29/29 presets, parsed all 14/14 panels, verified locked-state export, and
 finished with exact-hash deletion from both stores.
+
+The current managed candidate is exact source `887274c`, image
+`sha256:53470b39049d3f09e707bede7e47fe1b8dea13587ae1558fe7004fd3af7ef199`;
+the current independent anchor is exact source `dd60b4e`, image
+`sha256:0dab2046729a75d75c68b0e4e9c4290b192ed50b6e23db3477b884d033ead9a2`.
+Both run with zero restarts after the final drills. The current pass repeated
+separate-host outage/recovery, receiver and PostgreSQL restart, exact
+checkpoint acknowledgement, schema-compatible rollback and return, fresh
+cross-host backup, isolated clean restore, and bounded host-monitor execution.
+The authoritative measurements and remaining external blockers are in
+[`COMMERCIAL_READINESS_EVIDENCE_2026-07-25.md`](COMMERCIAL_READINESS_EVIDENCE_2026-07-25.md).
 
 The first r4 rollout omitted the PostgreSQL TLS/CA Compose overlay and readiness
 failed closed. r3 was restored using both reviewed Compose files without

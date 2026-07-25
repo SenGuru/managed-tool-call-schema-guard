@@ -20,9 +20,10 @@ this report and the fixes are committed.
 
 **Verdict: conditional private-beta candidate for operator-onboarded design
 partners.** This is not a public-production verdict. Live identity, email,
-Stripe, model-provider, paging, immutable off-machine backup, public TLS/DNS,
-and separate-host staging evidence remain blocked on external configuration or
-owner-controlled infrastructure gates.
+Stripe, model-provider and external paging evidence remain blocked. The later
+supplement records the now-proven encrypted cross-host backup/restore, public
+API TLS edge and exact DreamHost/DigitalOcean staging boundary; the private
+website remains unpublished.
 
 The phrase “exhaustive” in this report means every repository-owned managed
 route, every purpose-built dashboard workflow, every advanced-workbench
@@ -271,37 +272,31 @@ and anchor persistence, and independent HTTPS checkpoint acknowledgement.
 
 ## External-provider sequence
 
-Execute these gates in order after the owner-controlled accounts are ready:
+The owner-controlled infrastructure gates are now complete: authoritative
+DigitalOcean fingerprint verification, pinned DreamHost and DigitalOcean SSH
+trust, owner-only secret files, exact image deployment, private anchor TLS,
+outage/redrive/restart/rollback drills, encrypted cross-host backups, and an
+isolated clean restore with checkpoint comparison.
 
-1. Verify the DigitalOcean SSH fingerprint in the provider console. Do not
-   perform another SSH operation until it matches.
-2. Confirm the DreamHost panel’s exact `debian@208.113.209.209` application
-   target and install reviewed SSH host keys.
-3. Install production secrets from an owner-controlled secret manager or
-   owner-only files; never place secrets in chat, source, shell history, or a
-   shared text file.
-4. Deploy the exact committed images privately to DreamHost and the exact
-   anchor image to DigitalOcean; keep customer-facing DNS unchanged.
-5. Configure private main-to-anchor TLS, then repeat readiness, exact-revision
-   acknowledgement, outage, redrive, reconciliation, restart, and checkpoint
-   comparison.
-6. Configure encrypted immutable off-machine backups and complete a clean-host
-   restore before enabling action traffic.
-7. Configure independent uptime, backup-heartbeat, and paging delivery and
+Execute the remaining external gates in this order:
+
+1. Configure an external paging destination for the active independent uptime
+   and backup-heartbeat monitors, then
    observe a real acknowledgement/escalation.
-8. Configure and test WorkOS (or the selected identity provider), then Postmark
+2. Configure and test WorkOS (or the selected identity provider), then Postmark
    (or the selected email provider), including recovery and outage paths.
-9. Configure Stripe test mode only; test Checkout, Portal, signatures,
+3. Configure Stripe test mode only; test Checkout, Portal, signatures,
    duplicates, reordering, failed payment, cancellation, and entitlement
    reconciliation.
-10. Configure pinned model-provider test credentials and run the five-trial
-    live provider release gate.
-11. Run a customer-owned test webhook and side-effect ledger through
-    acknowledge-before-execution, completion, timeout, duplicate, and
-    reconciliation paths.
-12. Review all retained evidence, perform the release-candidate audit, and seek
-    explicit owner approval before any public DNS, live payment, package
-    publication, or customer traffic change.
+4. Configure pinned model-provider test credentials and run the five-trial
+   live provider release gate.
+5. Run a customer-owned test webhook and side-effect ledger through
+   acknowledge-before-execution, completion, timeout, duplicate, and
+   reconciliation paths.
+6. Complete independent security/legal review and support ownership, review all
+   retained evidence, perform the release-candidate audit, and seek explicit
+   owner approval before any public DNS, live payment, package publication, or
+   customer traffic change.
 
 ## What was actually proven
 
@@ -314,13 +309,14 @@ local and credentialed PostgreSQL evidence.
 
 ### Production-like network evidence
 
-Hardened exact-source containers exercised managed HTTP, fresh PostgreSQL, and
-an independent TLS checkpoint receiver on one Docker host. Restart, outage,
-redrive, persistence, isolation, fail-closed execution, log redaction, and
+The exact managed image runs on DreamHost and the exact anchor image on
+DigitalOcean across pinned private TLS. Restart, PostgreSQL/anchor outage,
+redrive, rollback, persistence, isolation, fail-closed execution, log
+redaction, encrypted off-machine clean restore, checkpoint comparison, and
 container hardening passed.
 
 ### Real external/customer evidence
 
-None was added by this pass. No live model call, real email, external page,
-automated payment, public deployment, paying customer, renewal, or customer
-incident is represented as proven.
+Purchased-host and public API TLS evidence was added, but no live model call,
+real email, external page acknowledgement, automated payment, paying customer,
+renewal, or customer incident is represented as proven.

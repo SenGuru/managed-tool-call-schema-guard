@@ -24,11 +24,19 @@ esac
 
 MAX_BACKUP_AGE=${AKRIVEN_MAX_BACKUP_AGE_SECONDS:-93600}
 TLS_MIN_SECONDS=${AKRIVEN_TLS_MIN_SECONDS:-1209600}
+TLS_CONNECT_TIMEOUT=${AKRIVEN_TLS_CONNECT_TIMEOUT_SECONDS:-10}
 STATE_DIRECTORY=${AKRIVEN_MONITOR_STATE_DIRECTORY:-/var/lib/akriven-monitor}
 WEBHOOK_FILE=${AKRIVEN_MONITOR_WEBHOOK_FILE:-/etc/akriven/monitor-webhook-url}
 CURL_CA_FILE=${AKRIVEN_MONITOR_CURL_CA_FILE:-}
 if [ -n "$CURL_CA_FILE" ] && [ ! -r "$CURL_CA_FILE" ]; then
   echo "monitor CA bundle is unreadable" >&2
+  exit 1
+fi
+case "$TLS_CONNECT_TIMEOUT" in
+  *[!0-9]*|'') echo "monitor TLS timeout is invalid" >&2; exit 1 ;;
+esac
+if [ "$TLS_CONNECT_TIMEOUT" -lt 1 ] || [ "$TLS_CONNECT_TIMEOUT" -gt 60 ]; then
+  echo "monitor TLS timeout must be between 1 and 60 seconds" >&2
   exit 1
 fi
 install -d -m 0700 "$STATE_DIRECTORY"
@@ -72,9 +80,14 @@ for target in $AKRIVEN_TLS_HOSTS; do
     *:*) port=${target##*:} ;;
     *) port=443 ;;
   esac
-  if ! printf '' |
-    openssl s_client -connect "$host:$port" -servername "$host" 2>/dev/null |
-    openssl x509 -checkend "$TLS_MIN_SECONDS" -noout >/dev/null 2>&1; then
+  certificate=$(
+    timeout --signal=TERM --kill-after=2s "${TLS_CONNECT_TIMEOUT}s" \
+      openssl s_client -connect "$host:$port" -servername "$host" </dev/null 2>/dev/null ||
+      true
+  )
+  if [ -z "$certificate" ] ||
+    ! printf '%s\n' "$certificate" |
+      openssl x509 -checkend "$TLS_MIN_SECONDS" -noout >/dev/null 2>&1; then
     failures="$failures certificate"
   fi
 done

@@ -47,8 +47,8 @@ The commands below ran on 2026-07-25 after the operational-metrics delta:
 | Command                                                                                           | Observed result                                                                                                                                                                                                                                                                                                                                                    |
 | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Product-targeted build, ESLint, typecheck, script-syntax, package-boundary, and conformance gates | Passed; conformance covered 8 cases, 4 adapters, and 8 probes. The root aggregate `npm run check` is not a valid exact-source result because an unrelated, concurrently created untracked `apps/trade-signal-lab/` directory is outside the root TypeScript/format configuration. That directory was preserved and excluded from this checkpoint.                  |
-| Serial uncredentialed test suite                                                                  | 232 passed and 17 credentialed PostgreSQL cases skipped; the one parallel resource-contention timeout was rerun focused (5/5) and the complete suite then passed serially                                                                                                                                                                                          |
-| Credentialed PostgreSQL coverage                                                                  | 42 files and 249/249 tests passed; 79.86% statements, 73.31% branches, 81.33% functions, and 81.62% lines                                                                                                                                                                                                                                                          |
+| Serial uncredentialed test suite                                                                  | Current source: 234 passed and 17 credentialed PostgreSQL cases skipped; the one parallel resource-contention timeout from the earlier pass was rerun focused and the complete suite then passed serially                                                                                                                                                          |
+| Credentialed PostgreSQL coverage                                                                  | Current source against a fresh isolated PostgreSQL 16 instance: 43 files and 251/251 tests passed; the prior coverage-instrumented run measured 79.86% statements, 73.31% branches, 81.33% functions, and 81.62% lines                                                                                                                                             |
 | Python client tests                                                                               | 5/5 passed                                                                                                                                                                                                                                                                                                                                                         |
 | `npm audit`                                                                                       | 0 known vulnerabilities                                                                                                                                                                                                                                                                                                                                            |
 | `npm run audit:container-e2e`                                                                     | Passed in 93.703 seconds against exact current source, fresh PostgreSQL 16, hardened managed and independent TLS-anchor images, two tenants, authoritative operational metrics, tracing, inventory/export, all decision paths, release admission, approvals/idempotency, outage/redrive, restart/persistence, tenant isolation, secret-file and log-privacy checks |
@@ -123,12 +123,14 @@ Strictly pinned SSH checks and controlled staging operations established:
   encrypted off-machine backup completed in 8 seconds with 8 seconds of
   measured receiver downtime. Pre/post activation database integrity, row
   counts, revision range, and checkpoint/event digests matched.
-- The `dd60b4e` managed image is running on DreamHost behind trusted TLS with
-  zero restarts after a deliberate clean recreation. The previous image is
-  retained under an immutable rollback tag. SQLite integrity is `ok`, schema
-  version 15 and persisted counts survived activation, the PostgreSQL migration
-  families remained current, and the action checkpoint remained revision 9
-  with two rows.
+- The `887274c` managed image is running on DreamHost behind trusted TLS with
+  zero restarts after a deliberate clean recreation. The `dd60b4e` image and
+  the previous release are retained under immutable rollback tags. SQLite
+  integrity is `ok`, schema version 15 and persisted counts survived
+  activation, the PostgreSQL migration families remained current, and the
+  action checkpoint remained revision 9 with two rows. The exact image is
+  `linux/amd64`, UID/GID 65532, and its Trivy scan reported zero
+  High/Critical vulnerabilities or embedded secrets.
 - A fresh encrypted main backup completed in 2 seconds and recorded an
   off-machine transfer before managed activation. The backup is online and
   therefore recorded no application downtime.
@@ -157,35 +159,47 @@ Strictly pinned SSH checks and controlled staging operations established:
   checkpoint exactly. The first observed readiness response was `500` rather
   than the intended `503`; this was classified as a defect, fixed so transient
   dependency exceptions degrade readiness and metrics deterministically, and
-  covered by a focused regression before rebuilding the next candidate.
+  covered by a focused regression. After `887274c` activation, the repeated
+  outage returned liveness `200`, readiness `503`, unauthenticated metrics
+  `401`, authenticated degraded metrics `200`, and recovered in 5.753 seconds
+  with the checkpoint unchanged.
+- The preserved `dd60b4e` rollback image recovered in 6.503 seconds with
+  identical SQLite/checkpoint state. Returning to `887274c` took 6.412 seconds
+  and again retained identical state and zero restarts.
+- The newest main archive was recovered from its DigitalOcean off-machine copy
+  and the anchor archive from its DreamHost off-machine copy. The owner-only
+  age identity matched the configured recipient; every bundled checksum
+  passed; restored SQLite and anchor integrity were `ok`; and the restored
+  revision 9 checkpoint had exactly one matching anchor acknowledgement.
+  PostgreSQL started in an isolated, no-network, read-only-root, non-root
+  container in 3.791 seconds and restored the custom dump in 1.429 seconds
+  with all migration families and row counts present. The disposable container,
+  volume, and decrypted workspace were removed.
+- Both host monitor timers are enabled and healthy. The monitor now bounds each
+  TLS connection and has a 120-second systemd limit; reviewed copies completed
+  in 334 ms on DreamHost and 584 ms on DigitalOcean. No external webhook is
+  configured, so paging delivery or acknowledgement is not claimed.
 - The separate-host outage runner now requires an owner-only SSH identity,
   a non-group/other-writable known-hosts file, `IdentitiesOnly`, and strict
   host-key checking. It no longer relies on ambient SSH trust.
 
 These are production-like staging observations on the purchased hosts. They do
-not prove customer-production traffic, external paging acknowledgement, a
-clean-host encrypted restore, or unavailable identity/email/billing/model
-providers.
+not prove customer-production traffic, external paging acknowledgement, or
+unavailable identity/email/billing/model providers.
 
 ## Remaining launch blockers
 
 ### Before first design-partner action traffic
 
-1. Build and activate the dependency-readiness correction identified by the
-   real PostgreSQL outage, then repeat the PostgreSQL outage and exact
-   checkpoint comparison.
-2. Exercise the preserved rollback image and return to the exact candidate
-   without data divergence.
-3. Restore the encrypted main and anchor backups on an isolated clean host and
-   compare audit and anchor checkpoints before resuming action traffic.
-4. Configure independent uptime, backup-heartbeat, and paging delivery and
-   observe acknowledgement/escalation.
-5. Exercise a customer-owned HTTPS webhook receiver and downstream side-effect
+1. Configure an external paging destination for the already-running independent
+   uptime and backup-heartbeat monitors, then observe delivery,
+   acknowledgement, and escalation.
+2. Exercise a customer-owned HTTPS webhook receiver and downstream side-effect
    ledger through acknowledgement, completion, timeout, duplicate, ambiguous,
    and reconciliation paths.
-6. Pin and live-test the exact OpenAI, Anthropic, and Gemini versions intended
+3. Pin and live-test the exact OpenAI, Anthropic, and Gemini versions intended
    for the cohort, including timeout, malformed output, and drift behavior.
-7. Complete an independent security review, ASVS requirement record, incident
+4. Complete an independent security review, ASVS requirement record, incident
    drill, legal/privacy review, vulnerability-disclosure path, and support
    ownership.
 
@@ -217,9 +231,9 @@ providers.
 
 What is proven is a substantial deterministic checkpoint, managed control
 plane, operator dashboard, API/SDK/CLI surface, hardened container topology,
-provider-independent operational program, and exact `dd60b4e` cross-host
-staging operation with real backup, anchor-outage, deletion, restart, and
-checkpoint evidence. What is not proven is a public SaaS business, a
-customer-production SLO, clean-host encrypted restore, external paging,
-live identity/email/billing/model-provider integration, the pending
-dependency-readiness correction on the purchased hosts, or customer demand.
+provider-independent operational program, exact `887274c` managed plus
+`dd60b4e` anchor cross-host staging operation, and real backup/restore,
+anchor-outage, deletion, restart, rollback, and checkpoint evidence. What is
+not proven is a public SaaS business, a customer-production SLO, external
+paging, live identity/email/billing/model-provider integration, independent
+security/legal review, or customer demand.
