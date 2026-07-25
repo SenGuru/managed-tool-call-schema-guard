@@ -181,23 +181,34 @@ connection screen. The website does not collect or store tenant API keys and
 does not represent human login, invitations, recovery, or automated billing as
 available.
 
+The commercial experience was subsequently rebuilt around the same evidence
+boundary: a developer quickstart with TypeScript, CLI, and managed API modes;
+interactive decision cases; the three-stage execution protocol; use-case
+switching; managed-governance workflows; pricing comparison; developer-path
+guidance; commercial and product-boundary FAQs; and the activation handoff.
+Every one of the 18 public routes was traversed at 1280 pixels and 390 pixels
+through the in-app browser. Every route returned a titled page with an `h1`,
+and no route produced document-level horizontal overflow. The final managed
+handoff reached the real dashboard connection field whose key remains in the
+active tab.
+
 ## Exact commands and observed results
 
-| Command                                           | Result                                                                                                                                       |
-| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run check`                                   | format, lint, scripts, package boundary, types, dry provider boundary, conformance; 223 JS/TS passed, 16 PostgreSQL skipped; 5 Python passed |
-| credentialed `npm run test:coverage`              | 40 files, 239/239 tests passed; 79.51% statements, 73.46% branches, 80.66% functions, 81.36% lines                                           |
-| `npm test -- --run tests/dashboard-ui.test.ts`    | 12/12 focused dashboard tests passed                                                                                                         |
-| `npm run audit:container-e2e`                     | passed, 48.917 seconds, fresh PostgreSQL, hardened managed/anchor containers, restart/outage/isolation/secret/log checks                     |
-| `npm run audit:extreme`                           | passed, 43.969 seconds; includes check, dependency audit, conformance, benchmark, recovery, load, managed HTTP                               |
-| `npm run audit:framework-integrations`            | MCP, OpenAI Agents, PydanticAI and Google ADK runtime boundary passed; rejected calls executed zero tools                                    |
-| `npm run audit:five-repos`                        | 5 repositories, 9 fixtures, 35 derived calls, zero failures; downloaded code not executed                                                    |
-| `npm run audit:benchmarks`                        | 7,699 recorded calls, 30,203 mutations, zero mismatches                                                                                      |
-| `npm run audit:real-data`                         | 2,501 rows, 3,302 expected calls, 15,702 mutations, zero mismatches                                                                          |
-| `npm run audit:real-repos`                        | 20 repositories, 106 extracted fixtures; source was inspected only, never executed                                                           |
-| `npm run audit:images`                            | 3 images, zero HIGH/CRITICAL vulnerabilities, zero embedded secrets                                                                          |
-| `trivy fs --scanners vuln,secret,misconfig ... .` | zero HIGH/CRITICAL vulnerabilities, secrets, or misconfigurations                                                                            |
-| private website `npm run lint && npm test`        | lint and production build passed; 18 routes built including `/start`; 3/3 rendered HTML and trust/non-claim suites passed                    |
+| Command                                           | Result                                                                                                                                                |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run check`                                   | format, lint, scripts, package boundary, types, dry provider boundary, conformance; 223 JS/TS passed, 16 PostgreSQL skipped; 5 Python passed          |
+| credentialed `npm run test:coverage`              | 40 files, 239/239 tests passed; 79.51% statements, 73.46% branches, 80.66% functions, 81.36% lines                                                    |
+| `npm test -- --run tests/dashboard-ui.test.ts`    | 12/12 focused dashboard tests passed                                                                                                                  |
+| `npm run audit:container-e2e`                     | passed, 48.917 seconds, fresh PostgreSQL, hardened managed/anchor containers, restart/outage/isolation/secret/log checks                              |
+| `npm run audit:extreme`                           | passed, 43.969 seconds; includes check, dependency audit, conformance, benchmark, recovery, load, managed HTTP                                        |
+| `npm run audit:framework-integrations`            | MCP, OpenAI Agents, PydanticAI and Google ADK runtime boundary passed; rejected calls executed zero tools                                             |
+| `npm run audit:five-repos`                        | 5 repositories, 9 fixtures, 35 derived calls, zero failures; downloaded code not executed                                                             |
+| `npm run audit:benchmarks`                        | 7,699 recorded calls, 30,203 mutations, zero mismatches                                                                                               |
+| `npm run audit:real-data`                         | 2,501 rows, 3,302 expected calls, 15,702 mutations, zero mismatches                                                                                   |
+| `npm run audit:real-repos`                        | 20 repositories, 106 extracted fixtures; source was inspected only, never executed                                                                    |
+| `npm run audit:images`                            | 3 images, zero HIGH/CRITICAL vulnerabilities, zero embedded secrets                                                                                   |
+| `trivy fs --scanners vuln,secret,misconfig ... .` | zero HIGH/CRITICAL vulnerabilities, secrets, or misconfigurations                                                                                     |
+| private website `npm run lint && npm test`        | lint and production build passed at website commit `2e7a0df`; 18 routes built including `/start`; 3/3 rendered HTML and trust/non-claim suites passed |
 
 Additional measurements produced inside the extreme audit:
 
