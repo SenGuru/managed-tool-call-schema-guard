@@ -85,10 +85,16 @@ costs are not yet reconciled.
 ## Capacity guard
 
 The 250,000 monthly validation entitlement is a commercial safety ceiling, not
-an SLO. It averages under 0.1 requests/second across a month. The current severe
-local test observed 949 requests/second over a short 2,000-request run with zero
-errors, but that test does not establish sustained VPS capacity, tenant mix,
-database growth, support capacity, or public latency commitments.
+an SLO. It averages under 0.1 requests/second across a month. The last retained
+clean severe-local pass observed 554.08 requests/second with p95 68.22 ms over
+2,000 requests and zero errors. Two later correctness-clean runs on a heavily
+contended desktop still completed 2,000/2,000 requests at 221.23 and 178.35
+requests/second, but missed the 250 ms p95 gate at 309.79 and 292.34 ms while
+host load averages were roughly 14/21/23 and then 10/19/22. Those later
+measurements are inconclusive performance evidence and the threshold has not
+been waived. None of these short local tests establishes sustained VPS
+capacity, tenant mix, database growth, support capacity, or a public latency
+commitment; the unchanged gate must pass again on an idle or isolated host.
 
 ## Expansion gates
 
