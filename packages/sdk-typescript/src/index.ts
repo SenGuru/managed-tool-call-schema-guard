@@ -234,6 +234,51 @@ export interface ManagedEnvironment {
   updated_at: string;
 }
 
+export interface ManagedInventory {
+  inventory_kind: 'registered_and_observed';
+  generated_at: string;
+  summary: {
+    registered_tools: number;
+    schema_variants: number;
+    promoted_releases: number;
+    environments: number;
+    action_profiles: number;
+    observed_providers: number;
+    observed_frameworks: number;
+  };
+  environments: Array<Record<string, unknown>>;
+  action_profiles: Array<Record<string, unknown>>;
+  tools: Array<Record<string, unknown>>;
+  observed_runtime: Record<string, unknown>;
+  discovery: {
+    automatic: false;
+    sources: string[];
+    limitations: string[];
+  };
+}
+
+export interface ManagedEvaluationExport {
+  export_version: 1;
+  format: 'akriven_value_free_evaluation';
+  generated_at: string;
+  content_sha256: string;
+  privacy: {
+    value_free: true;
+    tenant_identifiers_included: false;
+    tool_names_included: false;
+    prompts_included: false;
+    raw_arguments_included: false;
+    privacy_threshold: number;
+  };
+  summary: {
+    failure_clusters: number;
+    schema_quality_records: number;
+    compatibility_records: number;
+    recommendations: number;
+  };
+  records: Record<string, unknown>[];
+}
+
 export interface IssuedManagedApiKey {
   key_id: string;
   api_key: string;
@@ -1264,6 +1309,50 @@ export class SchemaGuardClient {
         'invalid_service_response',
       );
     return payload as Record<string, unknown>;
+  }
+  async exportManagedEvaluationEvidence(
+    callOptions: SchemaGuardValidateOptions = {},
+  ): Promise<ManagedEvaluationExport> {
+    const { payload, status } = await this.post(
+      '/v1/intelligence/evaluation-export',
+      undefined,
+      callOptions,
+      'GET',
+    );
+    if (
+      payload === null ||
+      typeof payload !== 'object' ||
+      Array.isArray(payload) ||
+      (payload as Record<string, unknown>).export_version !== 1 ||
+      (payload as Record<string, unknown>).format !== 'akriven_value_free_evaluation' ||
+      typeof (payload as Record<string, unknown>).content_sha256 !== 'string' ||
+      !Array.isArray((payload as Record<string, unknown>).records)
+    )
+      throw new SchemaGuardServiceError(
+        'Schema Guard service returned an invalid evaluation export',
+        status,
+        'invalid_service_response',
+      );
+    return payload as unknown as ManagedEvaluationExport;
+  }
+  async getManagedInventory(
+    callOptions: SchemaGuardValidateOptions = {},
+  ): Promise<ManagedInventory> {
+    const { payload, status } = await this.post('/v1/inventory', undefined, callOptions, 'GET');
+    if (
+      payload === null ||
+      typeof payload !== 'object' ||
+      Array.isArray(payload) ||
+      (payload as Record<string, unknown>).inventory_kind !== 'registered_and_observed' ||
+      !Array.isArray((payload as Record<string, unknown>).tools) ||
+      !Array.isArray((payload as Record<string, unknown>).environments)
+    )
+      throw new SchemaGuardServiceError(
+        'Schema Guard service returned an invalid inventory result',
+        status,
+        'invalid_service_response',
+      );
+    return payload as unknown as ManagedInventory;
   }
   async getManagedBillingStatement(
     callOptions: SchemaGuardValidateOptions = {},

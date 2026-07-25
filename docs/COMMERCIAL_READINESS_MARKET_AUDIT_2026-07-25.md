@@ -1,0 +1,140 @@
+# Commercial-readiness market audit — 2026-07-25
+
+## Scope and method
+
+This is a representative, primary-source review of the products a buyer could
+compare with, combine with, or use instead of parts of Akriven. It is not a
+claim to enumerate every company in a fast-changing market. Products were
+included when their official documentation described at least one of:
+
+- agent/tool runtime enforcement;
+- prompt, response, or tool-content guardrails;
+- AI application discovery and risk inventory;
+- agent tracing, evaluation, or production feedback loops;
+- distributed authorization and policy operations.
+
+Marketing claims are treated as vendor claims, not independent proof. Pricing
+is included only where a vendor publishes it. The comparison is about product
+scope and buyer expectations; it is not an accuracy benchmark.
+
+## Market map
+
+### Runtime AI and agent security — closest commercial overlap
+
+| Product                                                                                             | Officially documented scope                                                                                                                                                                                                                                                                                                                                   | Buyer expectation created                                                                                                                       | Relationship to Akriven                                                                                                                                                                                                                                                                 |
+| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Check Point AI Agent Security / Lakera](https://docs.lakera.ai/guard)                              | Agent discovery, risk assessment, prompt-attack/data-leak/content defenses, off-task action detection, and runtime tool allow/deny controls. Its [agent behavior documentation](https://docs.lakera.ai/docs/agent-behavior-defense) recommends monitor-first rollout for probabilistic off-task detection while describing allow/deny lists as deterministic. | A central inventory, policy projects, monitor/enforce rollout, risk explanation, and inspection of tool calls and tool responses.               | Direct overlap at runtime tool admission, but broader content security and asset discovery. Akriven is stronger where a buyer needs deterministic schema proof, bounded repairs, exact release admission, idempotency, checkpoint acknowledgement, and uncertain-action reconciliation. |
+| [Prompt Security MCP Gateway](https://prompt.security/solutions/agentic-ai-security-and-governance) | MCP discovery, shadow-MCP visibility, server risk scoring, policy enforcement by user/server/action, audit logging, reverse-proxy or endpoint enforcement, and request/response inspection.                                                                                                                                                                   | Inventory and risk posture before runtime, plus enforcement at the MCP transport boundary.                                                      | Direct overlap for MCP actions and policy; Akriven currently integrates MCP calls but does not discover an enterprise's unknown MCP estate or maintain a server reputation catalog.                                                                                                     |
+| [Protect AI Layer](https://protectai.com/layer)                                                     | Runtime inspection across conversations, tools, function calls, downstream workflows, and metadata; automatic AI-app discovery; 27 policies/15 scanners; eBPF or SDK deployment; SIEM/paging integrations.                                                                                                                                                    | Low-friction discovery, security-framework mappings, SOC workflow integrations, and content/threat inspection around the entire AI application. | Partial overlap at tool/function calls. Layer is a broad threat-detection platform; Akriven is a narrow deterministic action-control and evidence layer.                                                                                                                                |
+| [HiddenLayer AI Security Platform](https://www.hiddenlayer.com/)                                    | AI discovery, supply-chain security, attack simulation, and runtime security. Its [runtime product](https://www.hiddenlayer.com/platform/ai-runtime-security) emphasizes agent workflow visibility, investigation, detection, and enforcement.                                                                                                                | A unified enterprise security console spanning build-time and runtime.                                                                          | Mostly adjacent. Akriven should integrate evidence with security operations rather than attempt model supply-chain scanning or red teaming in the first cohort.                                                                                                                         |
+| [Invariant Labs](https://invariantlabs.ai/)                                                         | Explorer for agent behavior, contextual agent guardrails, and MCP server scanning.                                                                                                                                                                                                                                                                            | Agent-trajectory inspection plus contextual enforcement and MCP posture.                                                                        | Partial overlap. Akriven has deterministic conformance and signed decision evidence, but not a general trajectory explorer or MCP vulnerability scanner.                                                                                                                                |
+
+### Content and model guardrails — complements, not missing schema-guard features
+
+| Product                                                                                                  | Officially documented scope                                                                                                                                                                                                                                                            | Boundary decision                                                                                                                                                                                                                                   |
+| -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [CrowdStrike/Pangea AI Guard](https://pangea.cloud/docs/ai-guard/overview)                               | Configurable recipes detect or transform prompt injection, malicious entities, PII, secrets, code, topics, and harmful content at chat, RAG, plan, tool-input, and tool-output stages.                                                                                                 | Do not duplicate probabilistic content scanning inside deterministic schema validation. Define a composable pre/post hook boundary and preserve the external detector result as hashed evidence when a customer chooses one.                        |
+| [Amazon Bedrock Guardrails](https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails.html)        | Content filters, denied topics, word filters, sensitive-information masking/blocking, contextual grounding, and automated-reasoning checks. AWS warns that blocked content can appear in invocation logs when logging is enabled.                                                      | Remain provider-neutral. Document ordering: content guard → deterministic tool-call checkpoint → approved execution → optional tool-output guard. Never ingest raw guarded content by default.                                                      |
+| [Google Cloud Model Armor](https://cloud.google.com/security/products/model-armor)                       | Runtime screening for prompt injection, malicious URLs, sensitive-data leakage, harmful content, and agent interactions using rules, ML, and reasoning models.                                                                                                                         | Complement. Akriven must compile/admit tool structures consistently whether Model Armor is present or absent.                                                                                                                                       |
+| [NVIDIA NeMo Guardrails](https://docs.nvidia.com/nemo/guardrails/about-nemo-guardrails-library/overview) | Open-source input, retrieval, dialog, execution, and output rails configured with YAML, Colang, and custom actions; a deployable microservice uses the same configuration model.                                                                                                       | Complement and potential integration target. Akriven should not become a dialog orchestration language.                                                                                                                                             |
+| [OpenAI Agents SDK guardrails](https://openai.github.io/openai-agents-js/guides/guardrails/)             | Input/output guardrails and per-function-tool guardrails, with documented exclusions for handoffs, hosted tools, and built-in execution tools. Blocking guardrails can run before model/tool work; parallel guardrails may consume resources or allow work to start before a tripwire. | Akriven's framework conformance should explicitly retain these boundary differences. Its SDK wrappers must stay fail-closed around every supported function-tool execution path rather than implying the framework covers hosted tools or handoffs. |
+| [Guardrails AI](https://guardrailsai.com/guardrails/docs)                                                | Python input/output guards, structured-data generation, and a hub of composable validators for risks such as PII, toxicity, hallucination, and unsafe code.                                                                                                                            | Complement. The reusable-validator marketplace is not the same product as durable action authority.                                                                                                                                                 |
+
+### Observability and evaluation — operational complements
+
+| Product                                                                  | Officially documented scope                                                                                                                                                                                                                                                                                                 | Implication for Akriven                                                                                                                                                                                                                                         |
+| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [LangSmith](https://docs.langchain.com/langsmith/observability-concepts) | Framework/provider auto-instrumentation and manual tracing of model interactions, tool calls, and metadata. Its [evaluation platform](https://docs.langchain.com/langsmith/evaluation) supports offline experiments and online evaluators over production traces.                                                           | Akriven needs trace correlation and exportable decision metadata, not a duplicate full-trace store. Raw prompts/tool arguments must remain withheld unless the customer deliberately sends them to its chosen observability vendor.                             |
+| [Langfuse](https://langfuse.com/docs/observability/overview)             | LLM traces, sessions, observations, token/latency/cost data, evaluations, prompt management, experiments, and dashboards. Published [cloud pricing](https://langfuse.com/pricing) ranges from a free limited tier through usage-priced plans and an enterprise tier with SSO, SCIM, audit logs, SLA, and dedicated support. | Buyers will expect low-friction instrumentation, usage visibility, retention controls, SSO/RBAC at enterprise scale, and explicit support/SLA packaging. Akriven's pricing should stay usage-aligned and avoid seat taxes for collaborative security workflows. |
+| [Braintrust](https://www.braintrust.dev/home)                            | Production agent tracing, eval scoring, pattern discovery, alerts, and release enforcement.                                                                                                                                                                                                                                 | Complement. Akriven can export rejected/repaired decision fixtures into an eval system, while retaining deterministic release/admission authority.                                                                                                              |
+| [Arize Phoenix](https://arize.com/docs/phoenix)                          | OpenTelemetry/OpenInference tracing, evaluations, prompt engineering, datasets, and experiments with broad framework/provider instrumentation.                                                                                                                                                                              | OpenTelemetry-compatible correlation is a legitimate interoperability requirement. Full prompt/response capture is not required for Akriven's value-free audit boundary.                                                                                        |
+
+### Authorization and policy operations — architectural benchmark
+
+| Product                                                   | Officially documented scope                                                                                                                                                                                                                                       | Implication for Akriven                                                                                                                                                                                                                                   |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Open Policy Agent](https://www.openpolicyagent.org/docs) | Domain-neutral policy-as-code that separates policy decision points from enforcement points. Its [management model](https://www.openpolicyagent.org/docs/management-introduction) covers bundles, decision logs, status, and discovery for distributed instances. | Akriven already separates local enforcement from managed narrowing policy and signed rulesets. Commercial completeness requires visible revision activation/status and correlation evidence at each enforcement point; it does not require adopting Rego. |
+
+## What customers are actually buying
+
+Across the reviewed products, commercial value clusters into six jobs:
+
+1. **Know the estate** — inventory applications, agents, tools, MCP servers,
+   owners, environments, and risk posture.
+2. **Stop unsafe runtime behavior** — block attacks, data leakage, disallowed
+   tools, malformed arguments, unapproved actions, and duplicate execution.
+3. **Prove what happened** — searchable evidence, policy/release versions,
+   reason codes, integrity controls, retention, exports, and compliance maps.
+4. **Improve continuously** — monitor mode, production failure clusters,
+   conformance/evaluation datasets, drift detection, recommendations, and
+   release gates.
+5. **Operate as a team** — organizations, roles, invitations, SSO/MFA,
+   separation of duties, alerts, integrations, support, and auditability.
+6. **Trust the service** — transparent usage/billing, SLOs, status, secure
+   deployment, backup/restore, incident response, privacy, and legal terms.
+
+## Akriven capability comparison
+
+### Proven or substantially implemented
+
+- Strict raw JSON and runtime-object safety; deterministic `valid`,
+  `valid_with_repair`, and `rejected` outcomes.
+- Explicit allowlisted repairs, proof-carrying reasons, hints, repaired fields,
+  audit identifiers, and reject-on-uncertainty behavior.
+- MCP, OpenAI Agents, PydanticAI, and Google ADK normalization/conformance.
+- Organization/environment narrowing policy, schema registry and reviewed
+  release admission.
+- Action classification, bound approvals, idempotency reservation,
+  fail-closed checkpoint acknowledgement, completion/release, and
+  reconciliation.
+- Signed audit/control/release/reconciliation/ruleset chains, retention purge
+  receipts, independent anchors, privacy thresholds, and tenant exports.
+- Managed API, CLI, TypeScript SDK, thin Python client, dashboard workflows,
+  quotas, entitlements, durable alert webhooks, dead letters, and redrive.
+- Operator-led private-beta pricing with one enforceable package rather than
+  speculative public tiers.
+
+### Legitimate provider-independent gaps
+
+| Priority                     | Gap                                                                                                                                       | Decision                                                                                                                                                                                                                                                                                    |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Proven, provider-independent | Production service metrics were limited to logs/readiness.                                                                                | Protected Prometheus metrics now expose privacy-safe route labels, latency/error/timeout/in-flight measures, dependency readiness, dispatch failure counts, memory, and uptime behind a separate credential. Public-mode startup, auth, privacy, container, and image regressions pass.     |
+| Proven, provider-independent | No complete customer-controlled trace-correlation contract.                                                                               | Strict bounded W3C `traceparent` acceptance returns a new server span and trace identifier while access logs retain only a one-way trace-ID hash. Container tests prove response correlation and raw-ID log exclusion.                                                                      |
+| Proven, provider-independent | No consolidated registered-tool/agent estate view.                                                                                        | Registry-derived inventory presents schemas/releases, environments, separately domain-hashed action profiles, and observed adapter/provider/framework metadata. API, SDK, CLI, dashboard, DOM, and container paths pass; it remains registered/observed inventory, not automatic discovery. |
+| Proven as documentation      | Security-framework mappings were documented only informally.                                                                              | The explicit OWASP/NIST/ASVS control mapping and its non-claims now live in [`STANDARDS_CONTROL_MAPPING_2026-07-25.md`](STANDARDS_CONTROL_MAPPING_2026-07-25.md). It is a technical mapping, not certification.                                                                             |
+| Proven, provider-independent | Failure evidence lacked a first-class export format for external eval systems.                                                            | API, SDK, CLI, and dashboard expose a content-addressed, allowlisted, value-free evaluation export. Unit, DOM download/failure recovery, and production-container paths pass. Native import into a selected external provider remains unproven.                                             |
+| Post-launch                  | No shadow-agent/MCP discovery, vulnerability scanner, or reputation catalog.                                                              | Do not build speculatively for the first paid cohort. Validate buyer demand and integrate with inventory/security platforms.                                                                                                                                                                |
+| Out of scope                 | Prompt injection, PII, content safety, hallucination scoring, red teaming, model scanning, prompt management, and complete agent tracing. | Keep explicit integration boundaries. These are adjacent categories, not missing deterministic checkpoint behavior.                                                                                                                                                                         |
+
+### External/commercial blockers
+
+- Hosted human identity, verified email, organizations/memberships, invitations,
+  secure sessions, role separation, MFA, recovery, and future SSO/SCIM.
+- Real Stripe test-mode Checkout, Portal, signed webhook, test-clock,
+  failed-payment, recovery, cancellation, replacement, tax/refund/credit,
+  invoice, and dunning evidence using a rotated credential.
+- Transactional email, independent uptime/paging, external customer webhook
+  delivery, and owned support/security-contact workflows.
+- Exact-source separate-host deployment, public TLS/edge tests, immutable
+  off-machine backups, clean-host restore, and observed certificate renewal.
+- Legal approval, independent security review, incident exercise, customer
+  downstream-ledger reconciliation proof, and real willingness-to-pay,
+  renewal, support-load, and outcome evidence.
+
+## Product and packaging conclusions
+
+1. Position Akriven as the deterministic action checkpoint and evidence layer,
+   not a generic “AI firewall.”
+2. Lead with the validate → approve → reserve → execute → complete protocol and
+   exact failure semantics. Content guardrails and observability tools should
+   be shown before/after it in the architecture.
+3. Preserve the open-core boundary: local deterministic enforcement stays
+   useful without a managed account; customers pay for shared durable
+   authority, operations, intelligence, retention, and independent evidence.
+4. Retain the single 90-day design-partner offer until real cohort evidence
+   supports additional tiers. Published competitor pricing shows that
+   usage-aligned, unlimited-collaborator packaging is normal in adjacent
+   developer infrastructure.
+5. Do not promise discovery, content security, full tracing, certification,
+   live billing, SSO, or operational SLAs until each is implemented and
+   exercised at its real boundary.

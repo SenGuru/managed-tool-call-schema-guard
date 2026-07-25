@@ -36,6 +36,7 @@ const postgresPassword = 'container-e2e-postgres-password';
 const anchorSigningSecret = 'container-e2e-anchor-signing-secret'.padEnd(48, 's');
 const anchorReadToken = 'container-e2e-anchor-read-token'.padEnd(48, 'r');
 const anchorChainSecret = 'container-e2e-anchor-chain-secret'.padEnd(48, 'c');
+const metricsBearerToken = 'container-e2e-metrics-token'.padEnd(48, 't');
 const checks = [];
 const secretDirectory = mkdtempSync(join(process.cwd(), '.schema-guard-container-e2e-secrets.'));
 
@@ -53,6 +54,7 @@ const secretFiles = {
   anchorSigning: secretFile('anchor-signing', anchorSigningSecret),
   anchorRead: secretFile('anchor-read', anchorReadToken),
   anchorChain: secretFile('anchor-chain', anchorChainSecret),
+  metricsBearer: secretFile('metrics-bearer', metricsBearerToken),
 };
 const tlsCertificate = join(secretDirectory, 'anchor-tls.crt');
 const tlsPrivateKey = join(secretDirectory, 'anchor-tls.key');
@@ -130,8 +132,13 @@ function publishedPort(container, internalPort) {
   return Number(match[1]);
 }
 
-async function request(base, path, expectedStatus, { method = 'GET', key, body } = {}) {
-  const headers = {};
+async function request(
+  base,
+  path,
+  expectedStatus,
+  { method = 'GET', key, body, headers: extraHeaders = {} } = {},
+) {
+  const headers = { ...extraHeaders };
   if (key) headers.authorization = `Bearer ${key}`;
   if (body !== undefined) headers['content-type'] = 'application/json';
   const response = await fetch(`${base}${path}`, {
@@ -274,6 +281,8 @@ try {
     `${secretFiles.anchorSigning}:/run/secrets/schema_guard_anchor_signing:ro`,
     '-v',
     `${tlsCertificate}:/run/secrets/schema_guard_anchor_ca:ro`,
+    '-v',
+    `${secretFiles.metricsBearer}:/run/secrets/schema_guard_metrics_bearer:ro`,
   ];
   const sharedEnvironment = [
     '-e',
@@ -290,6 +299,8 @@ try {
     'SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_SIGNING_SECRET_FILE=/run/secrets/schema_guard_anchor_signing',
     '-e',
     'NODE_EXTRA_CA_CERTS=/run/secrets/schema_guard_anchor_ca',
+    '-e',
+    'SCHEMA_GUARD_METRICS_BEARER_TOKEN_FILE=/run/secrets/schema_guard_metrics_bearer',
   ];
   docker([
     'run',
@@ -462,6 +473,26 @@ try {
     /^req_[0-9a-f-]{36}$/u.test(managedHealth.headers['x-request-id']),
     'managed responses include correlation IDs',
   );
+  const traceId = '4bf92f3577b34da6a3ce929d0e0e4736';
+  const tracedHealth = await request(managedBase, '/healthz', 200, {
+    headers: { traceparent: `00-${traceId}-00f067aa0ba902b7-01` },
+  });
+  assert(
+    tracedHealth.headers.traceparent?.startsWith(`00-${traceId}-`) &&
+      tracedHealth.headers['x-akriven-trace-id'] === traceId,
+    'managed container preserves W3C trace correlation without exposing it in logs',
+  );
+  await request(managedBase, '/metrics', 401);
+  const managedMetrics = await request(managedBase, '/metrics', 200, {
+    key: metricsBearerToken,
+  });
+  assert(
+    typeof managedMetrics.body === 'string' &&
+      managedMetrics.body.includes('schema_guard_http_requests_total') &&
+      !managedMetrics.body.includes(adminKey) &&
+      !managedMetrics.body.includes(metricsBearerToken),
+    'authenticated production metrics are privacy-safe',
+  );
   await request(managedBase, '/readyz', 200);
   const dashboard = await request(managedBase, '/dashboard', 200);
   assert(
@@ -472,7 +503,9 @@ try {
     dashboard.body.includes('Tenant lifecycle') &&
       dashboard.body.includes('Managed API workbench') &&
       dashboard.body.includes('Control-plane integrity') &&
-      dashboard.body.includes('Request tenant deletion'),
+      dashboard.body.includes('Request tenant deletion') &&
+      dashboard.body.includes('Registered &amp; observed estate') &&
+      dashboard.body.includes('Export value-free evidence'),
     'dashboard exposes complete operations, workbench, export, and deletion controls',
   );
   assert(
@@ -690,6 +723,27 @@ try {
   });
   assert(duplicateConformance.body.recorded === false, 'conformance ingestion is idempotent');
   await request(managedBase, '/v1/intelligence', 200, { key: adminKey });
+  const inventory = await request(managedBase, '/v1/inventory', 200, { key: adminKey });
+  assert(
+    inventory.body.inventory_kind === 'registered_and_observed' &&
+      inventory.body.summary.registered_tools >= 1 &&
+      inventory.body.discovery.automatic === false,
+    'registered and observed inventory is derived from persisted production state',
+  );
+  const evaluationExport = await request(managedBase, '/v1/intelligence/evaluation-export', 200, {
+    key: adminKey,
+  });
+  assert(
+    evaluationExport.body.format === 'akriven_value_free_evaluation' &&
+      evaluationExport.body.privacy.value_free === true &&
+      evaluationExport.body.privacy.raw_arguments_included === false &&
+      /^sha256:[0-9a-f]{64}$/u.test(evaluationExport.body.content_sha256) &&
+      !JSON.stringify(evaluationExport.body).includes('"tenant_id":') &&
+      !JSON.stringify(evaluationExport.body).includes('"raw_arguments":') &&
+      !JSON.stringify(evaluationExport.body).includes('"prompt":') &&
+      !JSON.stringify(evaluationExport.body).includes('"tool_name":'),
+    'value-free evaluation export is content-addressed and excludes tenant and raw values',
+  );
   const usage = await request(managedBase, '/v1/usage', 200, { key: adminKey });
   assert(usage.body.usage.validation_count >= 4, 'usage is shared and metered');
   const billingStatement = await request(managedBase, '/v1/billing/statement', 200, {
@@ -1075,6 +1129,11 @@ try {
     !managedLogs.includes(masterSecret),
     'structured access logs do not contain master secrets',
   );
+  assert(
+    !managedLogs.includes(metricsBearerToken),
+    'structured access logs do not contain metrics bearer tokens',
+  );
+  assert(!managedLogs.includes(traceId), 'structured access logs hash W3C trace identifiers');
   const anchorLogs = docker(['logs', names.anchor]).stdout;
   assert(
     anchorLogs.includes('"service":"schema-guard-anchor-receiver"'),

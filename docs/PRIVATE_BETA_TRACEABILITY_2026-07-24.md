@@ -7,6 +7,11 @@
 > That report supersedes test counts and exact-source observations below while
 > preserving this document's requirements matrix and external-blocker
 > classifications.
+>
+> The subsequent commercial-completeness delta and final 231-test,
+> container/image, dependency, load, recovery, inventory, metrics, tracing and
+> evaluation-export evidence is recorded in
+> [`COMMERCIAL_READINESS_EVIDENCE_2026-07-25.md`](COMMERCIAL_READINESS_EVIDENCE_2026-07-25.md).
 
 ## Verdict scope
 

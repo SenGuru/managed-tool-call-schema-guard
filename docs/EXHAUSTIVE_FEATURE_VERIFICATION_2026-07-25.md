@@ -1,5 +1,14 @@
 # Exhaustive provider-independent feature verification — 2026-07-25
 
+> Commercial-completeness supplement: protected metrics, W3C trace
+> correlation, registered/observed inventory, value-free evaluation export,
+> least-privilege key UX, final 231-test regression, dependency remediation,
+> container/image results, and the current external blocker sequence are
+> recorded in
+> [`COMMERCIAL_READINESS_EVIDENCE_2026-07-25.md`](COMMERCIAL_READINESS_EVIDENCE_2026-07-25.md).
+> That report supersedes the exact counts below without invalidating the
+> historical evidence recorded here.
+
 ## Verdict and scope
 
 This report records the exhaustive provider-independent verification performed
@@ -142,29 +151,31 @@ means a purpose-built dashboard workflow exists. “Support” means the route i
 an infrastructure or machine-to-machine boundary and should not be presented
 as a customer button.
 
-| Route group                | Routes                                                            | UI disposition                   | Exercised evidence                                          |
-| -------------------------- | ----------------------------------------------------------------- | -------------------------------- | ----------------------------------------------------------- |
-| Health and plans           | `GET /healthz`, `GET /readyz`, `GET /v1/plans`                    | Direct status/plan views         | local browser, HTTP tests, container E2E                    |
-| Dashboard delivery         | `/dashboard`, 14 dashboard routes, `app.js`, `app.css`, two fonts | Support plus router              | route test, browser, CSP/container E2E                      |
-| Tenant lifecycle           | lifecycle, export, deletion request                               | Direct                           | wrong/exact confirmation, export hash, `423` lock           |
-| Validation and compilation | `POST /v1/validate`, `POST /v1/contracts/compile`                 | Direct                           | all outcomes, malformed/adversarial tests, provider targets |
-| Action descriptors         | admin descriptor `GET`/`PUT`                                      | Direct                           | browser, SQLite, PostgreSQL, container                      |
-| Approvals                  | challenge `GET`/`POST`, approve, revoke                           | Direct                           | browser, RBAC negative, expiry/replay/tamper tests          |
-| Action execution           | evaluate, complete, release                                       | Direct                           | browser, idempotency/concurrency tests, outage E2E          |
-| Checkpoint anchors         | checkpoint, compare, delivery list, redrive                       | Direct                           | browser, independent TLS container, outage/recovery         |
-| Reconciliation             | pending, history, verify, resolve                                 | Direct                           | naturally aged outage reservation and signed evidence       |
-| Schemas and releases       | schema `GET`/`POST`, release `GET`/`POST`/verify                  | Direct                           | browser, admission/drift/tamper, PostgreSQL/container       |
-| Audit and intelligence     | audits list/CSV/verify, intelligence, conformance ingestion       | Direct                           | browser, privacy thresholds, corpus/container               |
-| Usage and environments     | usage, environments, environment create/policy/enforcement        | Direct                           | browser, quotas, isolation, PostgreSQL/container            |
-| Billing statement          | `GET /v1/billing/statement`                                       | Direct                           | browser and internal billing state tests                    |
-| Checkout and portal        | checkout/portal session                                           | Direct blocked-state controls    | browser and container return `501` without Stripe           |
-| Stripe webhook             | `POST /v1/billing/stripe/webhook`                                 | Backend-only signed callback     | signature/replay/reordering tests; live sandbox blocked     |
-| Alerts                     | list and acknowledge                                              | Direct                           | browser, tenant/shared-state tests                          |
-| Webhooks                   | receiver create/list/disable, delivery list/redrive               | Direct                           | browser, worker retry/dead-letter tests                     |
-| Integrity and rulesets     | control integrity, latest/publish ruleset                         | Direct                           | browser and forgery/tamper tests                            |
-| API keys                   | list/create/revoke                                                | Direct                           | browser, scope/RBAC/no-plaintext tests                      |
-| Organization and plan      | policy `GET`/`PUT`, plan `PUT`                                    | Direct; plan mutation local-only | browser and policy/entitlement tests                        |
-| Retention                  | purge                                                             | Direct guarded action            | browser, receipt/anchor tests                               |
+| Route group                | Routes                                                                                    | UI disposition                   | Exercised evidence                                                  |
+| -------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------- |
+| Health and plans           | `GET /healthz`, `GET /readyz`, `GET /v1/plans`                                            | Direct status/plan views         | local browser, HTTP tests, container E2E                            |
+| Protected monitoring       | `GET /metrics`                                                                            | Support; separate monitor auth   | auth/privacy/unit and production-container E2E                      |
+| Dashboard delivery         | `/dashboard`, 14 dashboard routes, `app.js`, `app.css`, two fonts                         | Support plus router              | route test, browser, CSP/container E2E                              |
+| Tenant lifecycle           | lifecycle, export, deletion request                                                       | Direct                           | wrong/exact confirmation, export hash, `423` lock                   |
+| Validation and compilation | `POST /v1/validate`, `POST /v1/contracts/compile`                                         | Direct                           | all outcomes, malformed/adversarial tests, provider targets         |
+| Action descriptors         | admin descriptor `GET`/`PUT`                                                              | Direct                           | browser, SQLite, PostgreSQL, container                              |
+| Approvals                  | challenge `GET`/`POST`, approve, revoke                                                   | Direct                           | browser, RBAC negative, expiry/replay/tamper tests                  |
+| Action execution           | evaluate, complete, release                                                               | Direct                           | browser, idempotency/concurrency tests, outage E2E                  |
+| Checkpoint anchors         | checkpoint, compare, delivery list, redrive                                               | Direct                           | browser, independent TLS container, outage/recovery                 |
+| Reconciliation             | pending, history, verify, resolve                                                         | Direct                           | naturally aged outage reservation and signed evidence               |
+| Schemas and releases       | schema `GET`/`POST`, release `GET`/`POST`/verify                                          | Direct                           | browser, admission/drift/tamper, PostgreSQL/container               |
+| Audit and intelligence     | audits list/CSV/verify, intelligence, conformance ingestion, value-free evaluation export | Direct                           | browser, DOM download/failure, privacy thresholds, corpus/container |
+| Registered inventory       | `GET /v1/inventory`                                                                       | Direct integration view          | API/SDK/CLI/unit, browser, DOM and production-container E2E         |
+| Usage and environments     | usage, environments, environment create/policy/enforcement                                | Direct                           | browser, quotas, isolation, PostgreSQL/container                    |
+| Billing statement          | `GET /v1/billing/statement`                                                               | Direct                           | browser and internal billing state tests                            |
+| Checkout and portal        | checkout/portal session                                                                   | Direct blocked-state controls    | browser and container return `501` without Stripe                   |
+| Stripe webhook             | `POST /v1/billing/stripe/webhook`                                                         | Backend-only signed callback     | signature/replay/reordering tests; live sandbox blocked             |
+| Alerts                     | list and acknowledge                                                                      | Direct                           | browser, tenant/shared-state tests                                  |
+| Webhooks                   | receiver create/list/disable, delivery list/redrive                                       | Direct                           | browser, worker retry/dead-letter tests                             |
+| Integrity and rulesets     | control integrity, latest/publish ruleset                                                 | Direct                           | browser and forgery/tamper tests                                    |
+| API keys                   | list/create/revoke                                                                        | Direct                           | browser, scope/RBAC/no-plaintext tests                              |
+| Organization and plan      | policy `GET`/`PUT`, plan `PUT`                                                            | Direct; plan mutation local-only | browser and policy/entitlement tests                                |
+| Retention                  | purge                                                                                     | Direct guarded action            | browser, receipt/anchor tests                                       |
 
 The independent anchor’s checkpoint ingestion and read-token endpoints are
 machine-to-machine/operator support boundaries. They are covered by receiver

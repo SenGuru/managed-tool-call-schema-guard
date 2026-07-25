@@ -30,11 +30,13 @@ services:
       SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_MAX_ATTEMPTS: '8'
       SCHEMA_GUARD_EXTERNAL_URL: ${SCHEMA_GUARD_EXTERNAL_URL}
       SCHEMA_GUARD_MASTER_SECRET_FILE: /run/secrets/schema_guard_master
+      SCHEMA_GUARD_METRICS_BEARER_TOKEN_FILE: /run/secrets/schema_guard_metrics_bearer
     secrets:
       - schema_guard_master
       - schema_guard_action_database_url
       - schema_guard_control_database_url
       - schema_guard_anchor_signing
+      - schema_guard_metrics_bearer
     ports:
       - '127.0.0.1:8788:8788'
     volumes:
@@ -61,3 +63,5 @@ secrets:
     file: ${SCHEMA_GUARD_SHARED_CONTROL_DATABASE_URL_FILE}
   schema_guard_anchor_signing:
     file: ${SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_SIGNING_SECRET_FILE}
+  schema_guard_metrics_bearer:
+    file: ${SCHEMA_GUARD_METRICS_BEARER_TOKEN_FILE}

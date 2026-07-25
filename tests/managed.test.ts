@@ -58,6 +58,48 @@ describe('managed local control plane', () => {
       },
       payment_processing: 'manual_provider_setup_required',
     });
+
+    const inventory = await fetch(`${base}/v1/inventory`, {
+      headers: { authorization: 'Bearer plan-key' },
+    });
+    expect(inventory.status).toBe(200);
+    expect(await inventory.json()).toMatchObject({
+      inventory_kind: 'registered_and_observed',
+      discovery: { automatic: false },
+    });
+    const evaluationExport = await fetch(`${base}/v1/intelligence/evaluation-export`, {
+      headers: { authorization: 'Bearer plan-key' },
+    });
+    expect(evaluationExport.status).toBe(200);
+    expect(evaluationExport.headers.get('content-disposition')).toContain(
+      'akriven-value-free-evaluation.json',
+    );
+    expect(await evaluationExport.json()).toMatchObject({
+      export_version: 1,
+      format: 'akriven_value_free_evaluation',
+      privacy: {
+        value_free: true,
+        tenant_identifiers_included: false,
+        raw_arguments_included: false,
+      },
+    });
+    const validateOnly = service.store.issueApiKey(service.store.authenticate('plan-key')!, [
+      'validate',
+    ]);
+    expect(
+      (
+        await fetch(`${base}/v1/inventory`, {
+          headers: { authorization: `Bearer ${validateOnly.api_key}` },
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await fetch(`${base}/v1/intelligence/evaluation-export`, {
+          headers: { authorization: `Bearer ${validateOnly.api_key}` },
+        })
+      ).status,
+    ).toBe(403);
   });
 
   it('acknowledges tenant alerts idempotently without changing the alert event', async () => {
@@ -249,11 +291,101 @@ describe('managed local control plane', () => {
     }
   });
 
+  it('correlates W3C traces without logging raw trace identifiers', async () => {
+    const service = createManagedServer({
+      databasePath: await database(),
+      masterSecret: secret,
+      accessLog: true,
+    });
+    open.push(service);
+    await new Promise<void>((resolve) => service.server.listen(0, '127.0.0.1', resolve));
+    const address = service.server.address();
+    if (!address || typeof address === 'string') throw new Error('missing address');
+    const base = `http://127.0.0.1:${address.port}`;
+    const traceId = '4bf92f3577b34da6a3ce929d0e0e4736';
+    const traceparent = `00-${traceId}-00f067aa0ba902b7-01`;
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      const response = await fetch(`${base}/healthz`, { headers: { traceparent } });
+      expect(response.status).toBe(200);
+      expect(response.headers.get('x-akriven-trace-id')).toBe(traceId);
+      expect(response.headers.get('traceparent')).toMatch(
+        new RegExp(`^00-${traceId}-[0-9a-f]{16}-01$`, 'u'),
+      );
+      await response.text();
+      const access = log.mock.calls
+        .map(([message]) => JSON.parse(String(message)) as Record<string, unknown>)
+        .find((entry) => entry.event === 'http_request_completed');
+      expect(access?.trace_id_hash).toMatch(/^sha256:[0-9a-f]{64}$/u);
+      expect(JSON.stringify(access)).not.toContain(traceId);
+
+      const malformed = await fetch(`${base}/healthz`, {
+        headers: { traceparent: `00-${'0'.repeat(32)}-00f067aa0ba902b7-01` },
+      });
+      expect(malformed.status).toBe(400);
+      expect(await malformed.json()).toMatchObject({ error: 'invalid_traceparent' });
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('exposes protected privacy-safe operational metrics', async () => {
+    const metricsToken = 'metrics-token-that-is-at-least-32-characters';
+    const service = createManagedServer({
+      databasePath: await database(),
+      masterSecret: secret,
+      metricsBearerToken: metricsToken,
+    });
+    open.push(service);
+    service.store.bootstrapTenant({
+      id: 'metrics',
+      name: 'Metrics',
+      plan: 'trial',
+      apiKey: 'metrics-tenant-key',
+    });
+    const principal = service.store.authenticate('metrics-tenant-key')!;
+    await new Promise<void>((resolve) => service.server.listen(0, '127.0.0.1', resolve));
+    const address = service.server.address();
+    if (!address || typeof address === 'string') throw new Error('missing address');
+    const base = `http://127.0.0.1:${address.port}`;
+
+    const customerRequest = await fetch(`${base}/v1/admin/api-keys/${principal.keyId}`, {
+      method: 'DELETE',
+      headers: { authorization: 'Bearer metrics-tenant-key' },
+    });
+    expect(customerRequest.status).toBe(409);
+    expect((await fetch(`${base}/metrics`)).status).toBe(401);
+    expect(
+      (
+        await fetch(`${base}/metrics`, {
+          headers: { authorization: 'Bearer wrong-metrics-token-that-is-long-enough' },
+        })
+      ).status,
+    ).toBe(401);
+
+    const response = await fetch(`${base}/metrics`, {
+      headers: { authorization: `Bearer ${metricsToken}` },
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toContain('text/plain');
+    const body = await response.text();
+    expect(body).toContain(
+      'schema_guard_http_requests_total{method="DELETE",route="/v1/admin/api-keys/:id",status_class="4xx"} 1',
+    );
+    expect(body).toContain('schema_guard_http_request_duration_ms_bucket');
+    expect(body).toContain('schema_guard_dependency_ready{dependency="local_database"} 1');
+    expect(body).toContain('schema_guard_process_resident_memory_bytes');
+    expect(body).not.toContain(principal.keyId);
+    expect(body).not.toContain('metrics-tenant-key');
+    expect(body).not.toContain(metricsToken);
+  });
+
   it('does not let a public tenant self-upgrade without a verified billing workflow', async () => {
     const service = createManagedServer({
       databasePath: await database(),
       masterSecret: 'public-mode-secret-that-is-long-enough-public-mode-secret-that-is-long-enough',
       publicMode: true,
+      metricsBearerToken: 'public-metrics-token-that-is-at-least-32-characters',
       instanceCount: 1,
       externalUrl: 'https://app.invokeguard.example',
       trustProxy: true,
@@ -284,6 +416,7 @@ describe('managed local control plane', () => {
       databasePath: await database(),
       masterSecret: 'public-mode-secret-that-is-long-enough-public-mode-secret-that-is-long-enough',
       publicMode: true,
+      metricsBearerToken: 'public-metrics-token-that-is-at-least-32-characters',
       instanceCount: 1,
       externalUrl: 'https://app.invokeguard.example',
       trustProxy: true,
@@ -295,6 +428,9 @@ describe('managed local control plane', () => {
       rateLimitPerMinute: 600,
     };
     expect(() => validateManagedConfig(base)).not.toThrow();
+    expect(() => validateManagedConfig({ ...base, metricsBearerToken: undefined })).toThrow(
+      /requires SCHEMA_GUARD_METRICS_BEARER_TOKEN/u,
+    );
     expect(() => validateManagedConfig({ ...base, instanceCount: 2 })).toThrow(
       /every managed state path is transactional and shared/u,
     );

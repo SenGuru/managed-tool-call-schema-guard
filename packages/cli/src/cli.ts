@@ -63,6 +63,8 @@ function managedResourcePath(resource: string, found: Map<string, string>): stri
   if (resource === 'alerts') return '/v1/alerts';
   if (resource === 'environments') return '/v1/environments';
   if (resource === 'intelligence') return '/v1/intelligence';
+  if (resource === 'evaluation-export') return '/v1/intelligence/evaluation-export';
+  if (resource === 'inventory') return '/v1/inventory';
   if (resource === 'billing-statement') return '/v1/billing/statement';
   if (resource === 'schema-releases') {
     const query = new URLSearchParams();
@@ -75,7 +77,7 @@ function managedResourcePath(resource: string, found: Map<string, string>): stri
   if (resource === 'tenant-lifecycle') return '/v1/admin/tenant/lifecycle';
   if (resource === 'tenant-export') return '/v1/admin/tenant/export';
   throw new Error(
-    '--resource must be plans, api-keys, policy, schemas, action-descriptors, action-challenges, usage, audits, audit-verification, alerts, environments, intelligence, billing-statement, schema-releases, schema-release-verification, control-plane-integrity, tenant-lifecycle, or tenant-export',
+    '--resource must be plans, api-keys, policy, schemas, action-descriptors, action-challenges, usage, audits, audit-verification, alerts, environments, intelligence, evaluation-export, inventory, billing-statement, schema-releases, schema-release-verification, control-plane-integrity, tenant-lifecycle, or tenant-export',
   );
 }
 async function managedRequest(

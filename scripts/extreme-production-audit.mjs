@@ -175,6 +175,7 @@ const managed = start('managed', 'npm', ['run', 'managed'], {
   SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_URL: 'https://anchor.invokeguard.example/checkpoints',
   SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_SIGNING_SECRET:
     'extreme-audit-anchor-signing-secret-that-is-at-least-32-characters',
+  SCHEMA_GUARD_METRICS_BEARER_TOKEN: 'extreme-audit-metrics-token-that-is-at-least-32-characters',
   SCHEMA_GUARD_RATE_LIMIT_PER_MINUTE: '600',
   SCHEMA_GUARD_REQUEST_TIMEOUT_MS: '5000',
   SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_REQUEST_TIMEOUT_MS: '3000',

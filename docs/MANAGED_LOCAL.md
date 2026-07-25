@@ -80,6 +80,14 @@ The local package demonstrates the product spine: shared policy, schema history,
   exact-confirmation deletion requests, offline verified deletion, local-file
   and generic HTTPS webhook alerts, liveness/readiness, request size/deadline
   controls, and graceful shutdown are operational.
+- A dedicated metrics bearer token protects Prometheus-format request,
+  latency, timeout, dependency-readiness, background-dispatch, memory, and
+  uptime metrics. Privacy-safe route templates prevent tenant resource IDs
+  from becoming metric labels. Public mode refuses to start without this
+  separate monitoring credential.
+- Optional lowercase W3C version-00 `traceparent` headers correlate customer
+  traces with Akriven responses. A new server span ID is returned; structured
+  logs emit only a one-way trace-ID hash and never prompts or raw arguments.
 - The operator dashboard exposes 19 read panels and 29 editable request presets
   spanning validation, compilation, registry/releases, policy/enforcement,
   actions/approvals/idempotency/reconciliation/anchors, conformance, webhooks,
@@ -168,6 +176,9 @@ Validation requests may add bounded operational labels under `context` so failur
 - `GET /v1/environments`
 - `GET /v1/audits`, `GET /v1/audits/verify`
 - `GET /v1/intelligence`
+- `GET /v1/intelligence/evaluation-export` (content-addressed, value-free JSON
+  evidence; no prompts, raw arguments, tool names or tenant identifiers)
+- `GET /v1/inventory` (registered-and-observed estate; not shadow discovery)
 - `GET /v1/usage`, `GET /v1/billing/statement`
 - `GET /v1/alerts`
 - `POST /v1/alert-webhooks`, `GET /v1/alert-webhooks`
@@ -186,6 +197,8 @@ Validation requests may add bounded operational labels under `context` so failur
 - `GET /v1/admin/control-plane-integrity`
 - `POST /v1/admin/retention/purge`
 - `GET /healthz`, `GET /readyz`, `GET /dashboard`
+- `GET /metrics` using `Authorization: Bearer` with the dedicated monitoring
+  token
 
 ## Tenant lifecycle and deletion
 

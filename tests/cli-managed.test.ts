@@ -152,6 +152,24 @@ describe('managed CLI workflow', () => {
         '--resource',
         'api-keys',
       ]);
+      const inventory = await runCli([
+        'managed',
+        '--base-url',
+        base,
+        '--api-key-file',
+        keyFile,
+        '--resource',
+        'inventory',
+      ]);
+      const evaluationExport = await runCli([
+        'managed',
+        '--base-url',
+        base,
+        '--api-key-file',
+        keyFile,
+        '--resource',
+        'evaluation-export',
+      ]);
       const challenges = await runCli([
         'managed',
         '--base-url',
@@ -167,6 +185,8 @@ describe('managed CLI workflow', () => {
       ]);
       expect(plans).toMatchObject({ code: 0, stderr: '' });
       expect(apiKeys).toMatchObject({ code: 0, stderr: '' });
+      expect(inventory).toMatchObject({ code: 0, stderr: '' });
+      expect(evaluationExport).toMatchObject({ code: 0, stderr: '' });
       expect(challenges).toMatchObject({ code: 0, stderr: '' });
       expect(acknowledged).toMatchObject({ code: 0, stderr: '' });
       expect(JSON.parse(apiKeys.stdout)).toMatchObject({
@@ -180,10 +200,12 @@ describe('managed CLI workflow', () => {
         { method: 'GET', path: '/v1/plans' },
         { method: 'POST', path: '/v1/alerts/7/acknowledge' },
         { method: 'GET', path: '/v1/admin/api-keys' },
+        { method: 'GET', path: '/v1/inventory' },
+        { method: 'GET', path: '/v1/intelligence/evaluation-export' },
         { method: 'GET', path: '/v1/actions/challenges?status=pending&limit=25' },
       ]);
       expect(
-        `${plans.stdout}${apiKeys.stdout}${challenges.stdout}${acknowledged.stdout}`,
+        `${plans.stdout}${apiKeys.stdout}${evaluationExport.stdout}${challenges.stdout}${acknowledged.stdout}`,
       ).not.toContain('alert-admin-key');
     } finally {
       await new Promise<void>((resolve, reject) =>

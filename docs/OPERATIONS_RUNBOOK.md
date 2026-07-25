@@ -3,6 +3,26 @@
 This runbook covers the implemented single-node managed profile. It does not
 claim multi-region recovery or shared-database failover.
 
+## Service metrics and trace correlation
+
+Public mode requires `SCHEMA_GUARD_METRICS_BEARER_TOKEN_FILE`. Keep the file
+owner-readable only and configure the monitoring collector to scrape
+`GET /metrics` with `Authorization: Bearer <token>`. Do not reuse a tenant API
+key. The endpoint exposes aggregate Prometheus text with privacy-safe route
+templates and no tenant IDs, API-key identifiers, prompts, schemas, or raw
+arguments.
+
+Alert on sustained 5xx request growth, request timeouts, any zero-valued
+required dependency, background dispatch failures, memory pressure, and
+readiness failure. The endpoint is instrumentation, not proof that an external
+collector, dashboard, or paging route is operating; exercise those targets
+before enabling customer traffic.
+
+Incoming requests may include a lowercase W3C version-00 `traceparent`.
+Responses return a new server span under the same trace and expose
+`x-akriven-trace-id`. Access logs retain only the SHA-256 trace-ID hash.
+Malformed or all-zero trace/parent identifiers receive HTTP 400.
+
 ## Control-plane integrity incident
 
 Run `GET /v1/admin/control-plane-integrity` with each tenant's admin identity as

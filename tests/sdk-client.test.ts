@@ -547,6 +547,54 @@ describe('SchemaGuardClient remote boundary', () => {
           return Promise.resolve(
             new Response(JSON.stringify({ failure_clusters: [], recommendations: [] })),
           );
+        if (url.endsWith('/v1/intelligence/evaluation-export'))
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                export_version: 1,
+                format: 'akriven_value_free_evaluation',
+                generated_at: '2026-07-25T00:00:00.000Z',
+                content_sha256: `sha256:${'e'.repeat(64)}`,
+                privacy: {
+                  value_free: true,
+                  tenant_identifiers_included: false,
+                  tool_names_included: false,
+                  prompts_included: false,
+                  raw_arguments_included: false,
+                  privacy_threshold: 3,
+                },
+                summary: {
+                  failure_clusters: 0,
+                  schema_quality_records: 0,
+                  compatibility_records: 0,
+                  recommendations: 0,
+                },
+                records: [],
+              }),
+            ),
+          );
+        if (url.endsWith('/v1/inventory'))
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                inventory_kind: 'registered_and_observed',
+                generated_at: '2026-07-25T00:00:00.000Z',
+                summary: {
+                  registered_tools: 0,
+                  schema_variants: 0,
+                  promoted_releases: 0,
+                  environments: 0,
+                  action_profiles: 0,
+                  observed_providers: 0,
+                  observed_frameworks: 0,
+                },
+                environments: [],
+                tools: [],
+                observed_runtime: {},
+                discovery: { automatic: false, sources: [], limitations: [] },
+              }),
+            ),
+          );
         if (url.endsWith('/v1/billing/statement'))
           return Promise.resolve(
             new Response(
@@ -685,6 +733,14 @@ describe('SchemaGuardClient remote boundary', () => {
     await expect(client.listManagedEnvironments()).resolves.toHaveLength(1);
     await expect(client.getManagedIntelligence()).resolves.toMatchObject({
       failure_clusters: [],
+    });
+    await expect(client.exportManagedEvaluationEvidence()).resolves.toMatchObject({
+      format: 'akriven_value_free_evaluation',
+      privacy: { value_free: true },
+    });
+    await expect(client.getManagedInventory()).resolves.toMatchObject({
+      inventory_kind: 'registered_and_observed',
+      discovery: { automatic: false },
     });
     await expect(client.getManagedBillingStatement()).resolves.toMatchObject({
       payment_processing: 'integration_required',

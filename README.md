@@ -64,6 +64,11 @@ The core remains useful if the managed service is unavailable or never adopted. 
   delivery, usage plans, rate limits, local alerts, signed HTTPS webhook outbox
   delivery, exports, retention, backup/restore, and a
   functional dashboard.
+- A privacy-safe registered-and-observed estate endpoint across API, SDK, CLI
+  and dashboard, plus content-addressed value-free evaluation evidence export.
+  Schema-registry and action-policy fingerprints remain in separate privacy
+  domains; the product does not claim automatic shadow-agent/MCP discovery or a
+  native third-party observability integration.
 - An operator-safe uncertain-action reconciliation workflow with opaque
   reservation IDs, separate permissions, minimum-age protection, keyed evidence
   references, authenticated history, and explicit executed/not-executed outcomes.
@@ -178,6 +183,12 @@ tenant lifecycle/complete export/deletion request, and retention purge. See
 [`docs/MANAGED_LOCAL.md`](docs/MANAGED_LOCAL.md),
 [`docs/PRICING_AND_UNIT_ECONOMICS.md`](docs/PRICING_AND_UNIT_ECONOMICS.md),
 [`docs/BILLING_STRIPE_SANDBOX.md`](docs/BILLING_STRIPE_SANDBOX.md),
+
+Managed HTTP requests accept an optional lowercase W3C version-00
+`traceparent`. The response carries the same trace ID with a new server span
+and `x-akriven-trace-id`; structured access logs contain only a SHA-256 trace
+ID hash. Malformed or zero trace/parent IDs fail closed. Raw prompts and tool
+arguments are never added to trace metadata.
 [`docs/SCHEMA_RELEASES.md`](docs/SCHEMA_RELEASES.md),
 [`docs/CHECKPOINT_ANCHORS.md`](docs/CHECKPOINT_ANCHORS.md), and
 [`docs/ALERT_WEBHOOKS.md`](docs/ALERT_WEBHOOKS.md).

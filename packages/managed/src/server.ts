@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import {
   assertJsonSafety,
@@ -42,6 +42,9 @@ import {
 
 import { dashboardHtml, dashboardScript, dashboardStyle } from './dashboard.js';
 import { environmentValue } from './environment.js';
+import { valueFreeEvaluationExport } from './evaluation-export.js';
+import { managedInventory, type ManagedInventoryInput } from './inventory.js';
+import { ManagedMetrics, type ManagedReadinessMetrics } from './metrics.js';
 import { effectivePlanEntitlements, managedPlan, planCatalog } from './plans.js';
 import { FixedWindowRateLimiter } from './rate-limit.js';
 import { ManagedError, ManagedStore, normalizedPublicWebhookEndpoint } from './store.js';
@@ -93,6 +96,33 @@ function privacySafeRoute(pathname: string): string {
     )
     .join('/');
 }
+interface TraceCorrelation {
+  responseTraceparent: string;
+  traceId: string;
+  traceIdHash: string;
+}
+function traceCorrelation(request: IncomingMessage): TraceCorrelation | undefined {
+  const header = request.headers.traceparent;
+  if (header === undefined) return undefined;
+  if (typeof header !== 'string' || !/^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/u.test(header))
+    throw new ManagedError(
+      400,
+      'invalid_traceparent',
+      'traceparent must be a lowercase W3C version 00 trace context',
+    );
+  const [, traceId, , flags] = header.split('-') as [string, string, string, string];
+  if (/^0{32}$/u.test(traceId))
+    throw new ManagedError(400, 'invalid_traceparent', 'traceparent trace ID must be non-zero');
+  const parentId = header.slice(36, 52);
+  if (/^0{16}$/u.test(parentId))
+    throw new ManagedError(400, 'invalid_traceparent', 'traceparent parent ID must be non-zero');
+  const spanId = randomBytes(8).toString('hex');
+  return {
+    responseTraceparent: `00-${traceId}-${spanId}-${flags}`,
+    traceId,
+    traceIdHash: `sha256:${createHash('sha256').update(traceId).digest('hex')}`,
+  };
+}
 function json(
   response: ServerResponse,
   status: number,
@@ -132,6 +162,13 @@ function bearer(request: IncomingMessage): string {
   if (!header?.startsWith('Bearer ') || header.length <= 7)
     throw new ManagedError(401, 'authentication_required', 'provide a bearer API key');
   return header.slice(7);
+}
+function secretMatches(provided: string, expected: string): boolean {
+  const providedBytes = Buffer.from(provided);
+  const expectedBytes = Buffer.from(expected);
+  return (
+    providedBytes.length === expectedBytes.length && timingSafeEqual(providedBytes, expectedBytes)
+  );
 }
 async function authenticate(
   store: ManagedStore,
@@ -539,6 +576,7 @@ export function createManagedServer(
         })
       : undefined);
   const limiter = new FixedWindowRateLimiter(config.rateLimitPerMinute ?? 120);
+  const metrics = new ManagedMetrics();
   let draining = false;
   let actionStateInitialized = actionState === undefined;
   let actionStateInitializationFailed = false;
@@ -639,7 +677,10 @@ export function createManagedServer(
     return webhookDispatch;
   };
   const webhookTimer = setInterval(
-    () => void runWebhookDispatch().catch(() => undefined),
+    () =>
+      void runWebhookDispatch().catch(() => {
+        metrics.webhookDispatchFailed();
+      }),
     config.alertWebhookPollIntervalMs ?? 5_000,
   );
   webhookTimer.unref();
@@ -675,7 +716,10 @@ export function createManagedServer(
     return checkpointAnchorDispatch;
   };
   const checkpointAnchorTimer = setInterval(
-    () => void runCheckpointAnchorDispatch().catch(() => undefined),
+    () =>
+      void runCheckpointAnchorDispatch().catch(() => {
+        metrics.anchorDispatchFailed();
+      }),
     config.actionCheckpointAnchorPollIntervalMs ?? 5_000,
   );
   checkpointAnchorTimer.unref();
@@ -698,6 +742,60 @@ export function createManagedServer(
   ): void => {
     json(response, status, value, { ...publicResponseHeaders, ...extra });
   };
+  const loadTenantIntelligence = async (principal: Principal): Promise<Record<string, unknown>> => {
+    if (!intelligenceState)
+      return {
+        ...store.tenantIntelligence(principal),
+        privacy_threshold: config.aggregateTenantThreshold ?? 3,
+        network_failure_clusters: store.aggregateFailureIntelligence(),
+        network_signatures: store.aggregateIntelligence(),
+      };
+    try {
+      const [clusters, compatibilityMatrix, latestSchemas, networkClusters] = await Promise.all([
+        intelligenceState.tenantFailureClusters(principal.tenantId),
+        intelligenceState.compatibilityMatrix(principal.tenantId),
+        schemaState ? schemaState.listLatestSchemas(principal.tenantId) : Promise.resolve([]),
+        intelligenceState.networkFailureClusters(config.aggregateTenantThreshold ?? 3),
+      ]);
+      const schemas = latestSchemas.map((schema) => ({
+        tool_name_hash: schema.tool_name_hash,
+        adapter: schema.adapter,
+        version: schema.version,
+        schema_hash: schema.schema_hash,
+        created_at: schema.created_at,
+        quality: scoreSchemaQuality(schema.schema),
+        drift: schema.drift,
+      }));
+      const recommendations = [
+        ...recommendFixes({ clusters: clusters as FailureCluster[] }).map((recommendation) => ({
+          ...recommendation,
+          source: 'failure_clusters' as const,
+        })),
+        ...schemas.flatMap((schema) =>
+          recommendFixes({
+            quality: schema.quality,
+            ...(schema.drift === null ? {} : { drift: schema.drift }),
+          }).map((recommendation) => ({
+            ...recommendation,
+            source: 'schema_registry' as const,
+            tool_name_hash: schema.tool_name_hash,
+            schema_hash: schema.schema_hash,
+          })),
+        ),
+      ];
+      return {
+        failure_clusters: clusters,
+        schema_quality: schemas,
+        compatibility_matrix: compatibilityMatrix,
+        recommendations,
+        privacy_threshold: config.aggregateTenantThreshold ?? 3,
+        network_failure_clusters: networkClusters,
+        network_signatures: [],
+      };
+    } catch (error) {
+      throw sharedIntelligenceStateUnavailable(error);
+    }
+  };
   const server = createServer((request, response) => {
     void handle(request, response);
   });
@@ -705,6 +803,23 @@ export function createManagedServer(
     const requestId = `req_${randomUUID()}`;
     const requestStarted = process.hrtime.bigint();
     response.setHeader('x-request-id', requestId);
+    let correlation: TraceCorrelation | undefined;
+    metrics.requestStarted();
+    let metricsRecorded = false;
+    const recordMetrics = (): void => {
+      if (metricsRecorded) return;
+      metricsRecorded = true;
+      const elapsed = Number(process.hrtime.bigint() - requestStarted) / 1_000_000;
+      let route = '/invalid-request-target';
+      try {
+        route = privacySafeRoute(pathOf(request).pathname);
+      } catch {
+        // Malformed request targets must not create unbounded metric labels.
+      }
+      metrics.requestCompleted(request.method ?? 'UNKNOWN', route, response.statusCode, elapsed);
+    };
+    response.once('finish', recordMetrics);
+    response.once('close', recordMetrics);
     if (config.accessLog ?? config.publicMode ?? false) {
       let logged = false;
       const emitAccessLog = (): void => {
@@ -728,6 +843,7 @@ export function createManagedServer(
             route,
             status: response.statusCode,
             duration_ms: Number(elapsed.toFixed(3)),
+            ...(correlation ? { trace_id_hash: correlation.traceIdHash } : {}),
           }),
         );
       };
@@ -737,6 +853,7 @@ export function createManagedServer(
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
+      metrics.requestTimedOut();
       if (!response.headersSent)
         sendJson(response, 503, {
           error: 'request_timeout',
@@ -757,8 +874,69 @@ export function createManagedServer(
     };
     try {
       const url = pathOf(request);
+      correlation = traceCorrelation(request);
+      if (correlation) {
+        response.setHeader('traceparent', correlation.responseTraceparent);
+        response.setHeader('x-akriven-trace-id', correlation.traceId);
+      }
       if (request.method === 'GET' && url.pathname === '/healthz') {
         sendJson(response, 200, { status: 'ok' });
+        return;
+      }
+      if (request.method === 'GET' && url.pathname === '/metrics') {
+        if (!config.metricsBearerToken) throw new ManagedError(404, 'not_found', 'route not found');
+        const supplied = bearer(request);
+        if (!secretMatches(supplied, config.metricsBearerToken))
+          throw new ManagedError(401, 'invalid_metrics_token', 'metrics token is invalid');
+        await Promise.all([
+          actionStateInitialization,
+          controlStateInitialization,
+          schemaStateInitialization,
+          alertStateInitialization,
+          intelligenceStateInitialization,
+          billingStateInitialization,
+        ]);
+        const readiness: ManagedReadinessMetrics = {
+          draining,
+          localDatabase: store.readinessCheck(),
+          actionState:
+            actionState === undefined ||
+            (!actionStateInitializationFailed &&
+              actionStateInitialized &&
+              (await actionState.ready())),
+          controlState:
+            controlState === undefined ||
+            (!controlStateInitializationFailed &&
+              controlStateInitialized &&
+              (await controlState.ready())),
+          schemaState:
+            schemaState === undefined ||
+            (!schemaStateInitializationFailed &&
+              schemaStateInitialized &&
+              (await schemaState.ready())),
+          alertState:
+            alertState === undefined ||
+            (!alertStateInitializationFailed &&
+              alertStateInitialized &&
+              (await alertState.ready())),
+          intelligenceState:
+            intelligenceState === undefined ||
+            (!intelligenceStateInitializationFailed &&
+              intelligenceStateInitialized &&
+              (await intelligenceState.ready())),
+          billingState:
+            billingState === undefined ||
+            (!billingStateInitializationFailed &&
+              billingStateInitialized &&
+              (await billingState.ready())),
+        };
+        response.writeHead(200, {
+          'content-type': 'text/plain; version=0.0.4; charset=utf-8',
+          'cache-control': 'no-store',
+          'x-content-type-options': 'nosniff',
+          ...publicResponseHeaders,
+        });
+        response.end(metrics.render(readiness));
         return;
       }
       if (request.method === 'GET' && url.pathname === '/readyz') {
@@ -2187,64 +2365,20 @@ export function createManagedServer(
       }
       if (request.method === 'GET' && url.pathname === '/v1/intelligence') {
         store.requireScope(principal, 'read:intelligence');
-        if (intelligenceState) {
-          try {
-            const [clusters, compatibilityMatrix, latestSchemas, networkClusters] =
-              await Promise.all([
-                intelligenceState.tenantFailureClusters(principal.tenantId),
-                intelligenceState.compatibilityMatrix(principal.tenantId),
-                schemaState
-                  ? schemaState.listLatestSchemas(principal.tenantId)
-                  : Promise.resolve([]),
-                intelligenceState.networkFailureClusters(config.aggregateTenantThreshold ?? 3),
-              ]);
-            const schemas = latestSchemas.map((schema) => ({
-              tool_name_hash: schema.tool_name_hash,
-              adapter: schema.adapter,
-              version: schema.version,
-              schema_hash: schema.schema_hash,
-              created_at: schema.created_at,
-              quality: scoreSchemaQuality(schema.schema),
-              drift: schema.drift,
-            }));
-            const recommendations = [
-              ...recommendFixes({ clusters: clusters as FailureCluster[] }).map(
-                (recommendation) => ({
-                  ...recommendation,
-                  source: 'failure_clusters' as const,
-                }),
-              ),
-              ...schemas.flatMap((schema) =>
-                recommendFixes({
-                  quality: schema.quality,
-                  ...(schema.drift === null ? {} : { drift: schema.drift }),
-                }).map((recommendation) => ({
-                  ...recommendation,
-                  source: 'schema_registry' as const,
-                  tool_name_hash: schema.tool_name_hash,
-                  schema_hash: schema.schema_hash,
-                })),
-              ),
-            ];
-            sendJson(response, 200, {
-              failure_clusters: clusters,
-              schema_quality: schemas,
-              compatibility_matrix: compatibilityMatrix,
-              recommendations,
-              privacy_threshold: config.aggregateTenantThreshold ?? 3,
-              network_failure_clusters: networkClusters,
-              network_signatures: [],
-            });
-          } catch (error) {
-            throw sharedIntelligenceStateUnavailable(error);
-          }
-        } else
-          sendJson(response, 200, {
-            ...store.tenantIntelligence(principal),
-            privacy_threshold: config.aggregateTenantThreshold ?? 3,
-            network_failure_clusters: store.aggregateFailureIntelligence(),
-            network_signatures: store.aggregateIntelligence(),
-          });
+        sendJson(response, 200, await loadTenantIntelligence(principal));
+        return;
+      }
+      if (request.method === 'GET' && url.pathname === '/v1/intelligence/evaluation-export') {
+        store.requireScope(principal, 'read:intelligence');
+        sendJson(
+          response,
+          200,
+          valueFreeEvaluationExport(await loadTenantIntelligence(principal)),
+          {
+            'content-disposition': 'attachment; filename="akriven-value-free-evaluation.json"',
+            'cache-control': 'no-store',
+          },
+        );
         return;
       }
       if (request.method === 'POST' && url.pathname === '/v1/conformance-runs') {
@@ -2289,6 +2423,49 @@ export function createManagedServer(
         } catch (error) {
           if (error instanceof ManagedError) throw error;
           throw sharedSchemaStateUnavailable(error);
+        }
+        return;
+      }
+      if (request.method === 'GET' && url.pathname === '/v1/inventory') {
+        store.requireScope(principal, 'admin');
+        try {
+          const [schemas, releases, environments, descriptors, compatibility] = await Promise.all([
+            schemaState
+              ? schemaState.listLatestSchemas(principal.tenantId)
+              : Promise.resolve(store.listLatestSchemas(principal)),
+            schemaState
+              ? schemaState.listSchemaReleases(principal.tenantId, undefined, 500)
+              : Promise.resolve(store.listSchemaReleases(principal, undefined, 500)),
+            schemaState
+              ? schemaState.listEnvironments(principal.tenantId)
+              : Promise.resolve(store.listEnvironments(principal)),
+            actionState
+              ? actionState.listActionDescriptors(principal.tenantId)
+              : Promise.resolve(store.listActionDescriptors(principal)),
+            intelligenceState
+              ? intelligenceState.compatibilityMatrix(principal.tenantId)
+              : Promise.resolve(
+                  store.tenantIntelligence(principal).compatibility_matrix as unknown[],
+                ),
+          ]);
+          sendJson(
+            response,
+            200,
+            managedInventory({
+              schemas: schemas as ManagedInventoryInput['schemas'],
+              releases: releases as ManagedInventoryInput['releases'],
+              environments: environments as ManagedInventoryInput['environments'],
+              descriptors: descriptors as ManagedInventoryInput['descriptors'],
+              compatibility: compatibility as ManagedInventoryInput['compatibility'],
+            }),
+          );
+        } catch (error) {
+          if (error instanceof ManagedError) throw error;
+          throw new ManagedError(
+            503,
+            'inventory_state_unavailable',
+            'registered and observed inventory is unavailable',
+          );
         }
         return;
       }
@@ -2850,6 +3027,11 @@ export function validateManagedConfig(config: ManagedConfig): void {
   if (!config.masterSecret || config.masterSecret.length < 32)
     throw new Error('SCHEMA_GUARD_MASTER_SECRET must be at least 32 characters');
   if (
+    config.metricsBearerToken !== undefined &&
+    (config.metricsBearerToken.length < 32 || config.metricsBearerToken.length > 512)
+  )
+    throw new Error('SCHEMA_GUARD_METRICS_BEARER_TOKEN must be 32 through 512 characters');
+  if (
     config.sharedActionDatabaseUrl !== undefined &&
     !/^postgres(?:ql)?:\/\/[^\s]+$/u.test(config.sharedActionDatabaseUrl)
   )
@@ -3032,6 +3214,8 @@ export function validateManagedConfig(config: ManagedConfig): void {
     }
   }
   if (config.publicMode) {
+    if (!config.metricsBearerToken)
+      throw new Error('public mode requires SCHEMA_GUARD_METRICS_BEARER_TOKEN');
     if (config.masterSecret.length < 64)
       throw new Error('public mode requires a 64+ character SCHEMA_GUARD_MASTER_SECRET');
     if (!config.externalUrl) throw new Error('public mode requires SCHEMA_GUARD_EXTERNAL_URL');
@@ -3096,6 +3280,8 @@ function configFromEnvironment(): ManagedConfig {
   if (sharedActionDatabaseUrl) config.sharedActionDatabaseUrl = sharedActionDatabaseUrl;
   const sharedControlDatabaseUrl = environmentValue('SCHEMA_GUARD_SHARED_CONTROL_DATABASE_URL');
   if (sharedControlDatabaseUrl) config.sharedControlDatabaseUrl = sharedControlDatabaseUrl;
+  const metricsBearerToken = environmentValue('SCHEMA_GUARD_METRICS_BEARER_TOKEN');
+  if (metricsBearerToken) config.metricsBearerToken = metricsBearerToken;
   if (process.env.SCHEMA_GUARD_RATE_LIMIT_PER_MINUTE)
     config.rateLimitPerMinute = Number(process.env.SCHEMA_GUARD_RATE_LIMIT_PER_MINUTE);
   if (process.env.SCHEMA_GUARD_REQUEST_TIMEOUT_MS)

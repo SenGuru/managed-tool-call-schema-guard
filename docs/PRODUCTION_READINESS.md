@@ -6,7 +6,8 @@ ready. Public mode is deliberately
 fail-closed: the service refuses to start unless the deployment supplies a
 64-character-or-longer master secret, an HTTPS external URL, an explicit trusted
 TLS proxy setting, bounded request timeout, bounded per-key rate limit, and an
-independent checkpoint-anchor URL/signing-secret pair.
+independent checkpoint-anchor URL/signing-secret pair, plus a dedicated
+32-character-or-longer metrics bearer token.
 
 ## What is ready to run
 
@@ -50,6 +51,14 @@ independent checkpoint-anchor URL/signing-secret pair.
   authenticated release/source chains, repeatable-read admission, automatic
   existing-tenant bootstrap, and cross-instance HTTP coverage.
 - Public-mode config validation.
+- Protected Prometheus-format service metrics for privacy-safe route/status
+  counts, latency histograms, timeouts, in-flight work, dependency readiness,
+  dispatch failures, process memory, and uptime. A customer API key cannot
+  scrape aggregate metrics, and public mode refuses to start without the
+  separate monitoring credential.
+- W3C trace-context correlation with a new server span, response trace ID, and
+  one-way trace-ID hashes in access logs. Raw prompts and tool arguments remain
+  outside tracing metadata.
 - Master-secret-bound tenant/API-key/environment/action/approval/idempotency and
   webhook controls, plus immutable queued-payload bindings, with fail-closed use,
   deep startup and tenant verification, bounded configuration readiness, and
@@ -104,6 +113,7 @@ Set these outside the repo, ideally through the host secret manager:
 ```bash
 SCHEMA_GUARD_EXTERNAL_URL=https://api.akriven.com
 SCHEMA_GUARD_MASTER_SECRET_FILE=/run/secrets/schema_guard_master
+SCHEMA_GUARD_METRICS_BEARER_TOKEN_FILE=/run/secrets/schema_guard_metrics_bearer
 SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_URL=https://independent-anchor.example.com/v1/checkpoints
 SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_SIGNING_SECRET_FILE=/run/secrets/schema_guard_anchor_signing
 SCHEMA_GUARD_SHARED_ACTION_DATABASE_URL_FILE=/run/secrets/schema_guard_action_database_url

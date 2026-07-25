@@ -87,12 +87,13 @@ Status vocabulary:
 
 ## Public service surface
 
-| Capability                    | HTTP evidence   | Required frontend treatment                              | Baseline status |
-| ----------------------------- | --------------- | -------------------------------------------------------- | --------------- |
-| Liveness                      | `GET /healthz`  | Service status in workspace connection state             | partial         |
-| Readiness                     | `GET /readyz`   | Fail-closed readiness detail                             | partial         |
-| Plan catalog                  | `GET /v1/plans` | Human-readable plan and entitlement comparison           | missing         |
-| Dashboard routes/assets/fonts | `/dashboard/**` | Direct links, history, responsive navigation, strict CSP | direct          |
+| Capability                    | HTTP evidence       | Required frontend treatment                                                                                      | Baseline status     |
+| ----------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------- |
+| Liveness                      | `GET /healthz`      | Service status in workspace connection state                                                                     | partial             |
+| Readiness                     | `GET /readyz`       | Fail-closed readiness detail                                                                                     | partial             |
+| Plan catalog                  | `GET /v1/plans`     | Human-readable plan and entitlement comparison                                                                   | missing             |
+| Dashboard routes/assets/fonts | `/dashboard/**`     | Direct links, history, responsive navigation, strict CSP                                                         | direct              |
+| Registered/observed estate    | `GET /v1/inventory` | Privacy-safe tools, releases, environments, action profiles and observed runtimes with explicit discovery limits | direct (2026-07-25) |
 
 ## Tenant and access
 
@@ -167,13 +168,14 @@ Status vocabulary:
 
 ## Intelligence and signed configuration
 
-| Capability                 | HTTP evidence                           | Required frontend treatment                                                         | Baseline status |
-| -------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------- | --------------- |
-| Compatibility intelligence | `GET /v1/intelligence`                  | Failure clusters, schema quality, compatibility, recommendations, privacy threshold | partial         |
-| Ingest conformance run     | `POST /v1/conformance-runs`             | Versioned provider/framework result form                                            | workbench-only  |
-| Latest ruleset             | `GET /v1/rulesets/latest`               | Version, validity window, signature identity, and rules                             | partial         |
-| Publish ruleset            | `POST /v1/admin/rulesets`               | Guarded ruleset editor                                                              | workbench-only  |
-| Control-plane integrity    | `GET /v1/admin/control-plane-integrity` | Component-by-component integrity view                                               | partial         |
+| Capability                   | HTTP evidence                            | Required frontend treatment                                                         | Baseline status     |
+| ---------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------- | ------------------- |
+| Compatibility intelligence   | `GET /v1/intelligence`                   | Failure clusters, schema quality, compatibility, recommendations, privacy threshold | partial             |
+| Value-free evaluation export | `GET /v1/intelligence/evaluation-export` | Content-addressed JSON download with explicit privacy boundary                      | direct (2026-07-25) |
+| Ingest conformance run       | `POST /v1/conformance-runs`              | Versioned provider/framework result form                                            | workbench-only      |
+| Latest ruleset               | `GET /v1/rulesets/latest`                | Version, validity window, signature identity, and rules                             | partial             |
+| Publish ruleset              | `POST /v1/admin/rulesets`                | Guarded ruleset editor                                                              | workbench-only      |
+| Control-plane integrity      | `GET /v1/admin/control-plane-integrity`  | Component-by-component integrity view                                               | partial             |
 
 ## Usage and billing
 

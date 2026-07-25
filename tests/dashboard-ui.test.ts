@@ -26,6 +26,64 @@ const operationalResponses: Record<string, unknown> = {
   '/v1/audits?limit=25': { audits: [] },
   '/v1/alerts': { alerts: [] },
   '/v1/intelligence': {},
+  '/v1/intelligence/evaluation-export': {
+    export_version: 1,
+    format: 'akriven_value_free_evaluation',
+    generated_at: '2026-07-25T00:00:00.000Z',
+    content_sha256: 'sha256:test',
+    privacy: { value_free: true },
+    records: [],
+  },
+  '/v1/inventory': {
+    inventory_kind: 'registered_and_observed',
+    summary: {
+      registered_tools: 1,
+      promoted_releases: 1,
+      environments: 1,
+      action_profiles: 1,
+      observed_providers: 1,
+      observed_frameworks: 1,
+    },
+    tools: [
+      {
+        tool_name_hash: 'tool-hash-0123456789',
+        adapters: ['json_schema'],
+        versions: ['1'],
+        releases: [{ environment: 'production', compatibility: 'compatible' }],
+      },
+    ],
+    action_profiles: [
+      {
+        tool_name_hash: 'action-tool-hash-0123456789',
+        environment: 'production',
+        risk_level: 'high',
+        side_effect: 'external_write',
+      },
+    ],
+    observed_runtime: {
+      providers: [
+        {
+          provider: 'openai',
+          frameworks: ['agents-sdk'],
+          statuses: ['verified'],
+        },
+      ],
+      frameworks: [
+        {
+          framework: 'agents-sdk',
+          adapters: ['openai'],
+          versions: ['1.0'],
+        },
+      ],
+    },
+    discovery: {
+      automatic: false,
+      limitations: [
+        'Only explicitly registered or observed assets are included.',
+        'This is not endpoint, cloud-account, shadow-agent, or shadow-MCP discovery.',
+      ],
+    },
+  },
   '/v1/environments': { environments: [] },
   '/v1/schema-releases?limit=25': { releases: [] },
   '/v1/schema-releases/verify': { valid: true },
@@ -114,6 +172,7 @@ describe('managed dashboard interactions', () => {
       '/v1/alert-webhooks',
       '/redrive',
       '/v1/conformance-runs',
+      '/v1/intelligence/evaluation-export',
       '/v1/admin/rulesets',
       '/v1/admin/api-keys',
       '/v1/billing/checkout-session',
@@ -272,6 +331,20 @@ describe('managed dashboard interactions', () => {
     await new Promise((resolve) => window.setTimeout(resolve, 20));
     expect(document.getElementById('workspace')!.dataset.connected).toBe('true');
     expect(document.getElementById('usage-total')!.textContent).toBe('3');
+    expect(document.getElementById('inventory-tool-total')!.textContent).toBe('1');
+    expect(document.getElementById('inventory-action-total')!.textContent).toBe('1');
+    expect(document.getElementById('inventory-tool-rows')!.textContent).toContain(
+      'tool-hash-012345',
+    );
+    expect(
+      document
+        .querySelector<HTMLButtonElement>('#inventory-tool-rows button')!
+        .getAttribute('aria-label'),
+    ).toContain('tool-hash-0123456789');
+    expect(document.getElementById('inventory-runtime-list')!.textContent).toContain('openai');
+    expect(document.getElementById('inventory-boundary')!.textContent).toContain(
+      'not endpoint, cloud-account, shadow-agent, or shadow-MCP discovery',
+    );
     expect((document.querySelector('.credential-editor') as HTMLElement).hidden).toBe(true);
     expect((document.getElementById('credential-connected') as HTMLElement).hidden).toBe(false);
     document.getElementById('change-key')!.click();
@@ -288,6 +361,7 @@ describe('managed dashboard interactions', () => {
       'operational access is locked',
     );
     expect(document.getElementById('usage-total')!.textContent).toBe('—');
+    expect(document.getElementById('inventory-tool-total')!.textContent).toBe('—');
     expect(document.getElementById('decision-rows')!.children).toHaveLength(0);
     expect(document.getElementById('alerts-page-list')!.textContent).toContain(
       'Load the workspace',
@@ -875,6 +949,8 @@ describe('managed dashboard interactions', () => {
           ),
         );
       if (path === '/v1/admin/api-keys' && init?.method === 'POST') {
+        expect(typeof init.body).toBe('string');
+        expect(JSON.parse(init.body as string)).toEqual({ scopes: ['validate'] });
         issued = true;
         return Promise.resolve(
           new window.Response(
@@ -911,6 +987,11 @@ describe('managed dashboard interactions', () => {
     (document.getElementById('key') as HTMLInputElement).value = 'test-only-key';
     document.getElementById('load')!.click();
     await new Promise((resolve) => window.setTimeout(resolve, 20));
+    expect(
+      Array.from(document.querySelectorAll<HTMLInputElement>('#scope-picker input')).some(
+        (input) => input.checked,
+      ),
+    ).toBe(false);
     document.querySelector<HTMLInputElement>('#scope-picker input[value="validate"]')!.checked =
       true;
     (document.getElementById('api-key-confirm') as HTMLInputElement).checked = true;
@@ -919,6 +1000,122 @@ describe('managed dashboard interactions', () => {
 
     expect(document.getElementById('api-key-secret')!.hidden).toBe(false);
     expect(document.getElementById('api-key-status')!.textContent).toContain('copy the key now');
+    expect(
+      Array.from(document.querySelectorAll<HTMLInputElement>('#scope-picker input')).some(
+        (input) => input.checked,
+      ),
+    ).toBe(false);
+    expect((document.getElementById('api-key-confirm') as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('reports a committed schema mutation when only the supplemental inventory refresh fails', async () => {
+    const window = dashboard('/dashboard/schemas');
+    const document = window.document;
+    let registered = false;
+    window.fetch = (input, init) => {
+      const path = typeof input === 'string' ? input : input.url;
+      if (path === '/v1/admin/tenant/lifecycle')
+        return Promise.resolve(
+          new window.Response(
+            JSON.stringify({
+              tenant_id: 'tenant_active',
+              tenant_name: 'Active tenant',
+              lifecycle: { status: 'active' },
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+        );
+      if (path === '/v1/schemas' && init?.method === 'POST') {
+        registered = true;
+        return Promise.resolve(
+          new window.Response(JSON.stringify({ schema_id: 'schema-new' }), {
+            status: 201,
+            headers: { 'content-type': 'application/json' },
+          }),
+        );
+      }
+      if (path === '/v1/inventory' && registered)
+        return Promise.resolve(
+          new window.Response(JSON.stringify({ error: 'inventory_unavailable' }), {
+            status: 503,
+            headers: { 'content-type': 'application/json' },
+          }),
+        );
+      return Promise.resolve(
+        new window.Response(JSON.stringify(operationalResponses[path]), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+    };
+
+    (document.getElementById('key') as HTMLInputElement).value = 'test-only-key';
+    document.getElementById('load')!.click();
+    await new Promise((resolve) => window.setTimeout(resolve, 20));
+    document
+      .getElementById('schema-register-form')!
+      .dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+    await new Promise((resolve) => window.setTimeout(resolve, 20));
+
+    expect(document.getElementById('schema-register-status')!.textContent).toContain(
+      'Schema version registered',
+    );
+    expect(document.getElementById('schema-register-status')!.textContent).toContain(
+      'supplemental inventory refresh pending',
+    );
+    expect(document.getElementById('schema-register-status')!.textContent).not.toContain(
+      'Request failed',
+    );
+  });
+
+  it('downloads value-free evaluation evidence and recovers the export button', async () => {
+    const window = dashboard('/dashboard/intelligence');
+    const document = window.document;
+    let downloaded = '';
+    Object.defineProperty(window.URL, 'createObjectURL', {
+      value: () => 'blob:test-evaluation-export',
+      configurable: true,
+    });
+    Object.defineProperty(window.URL, 'revokeObjectURL', {
+      value: () => undefined,
+      configurable: true,
+    });
+    window.HTMLAnchorElement.prototype.click = function click() {
+      downloaded = this.download;
+    };
+    let failExport = false;
+    window.fetch = (input) => {
+      const path = typeof input === 'string' ? input : input.url;
+      if (path === '/v1/intelligence/evaluation-export' && failExport)
+        return Promise.resolve(
+          new window.Response(JSON.stringify({ error: 'export_unavailable' }), {
+            status: 503,
+            headers: { 'content-type': 'application/json' },
+          }),
+        );
+      return Promise.resolve(
+        new window.Response(JSON.stringify(operationalResponses[path]), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+    };
+
+    const button = document.getElementById('evaluation-export') as HTMLButtonElement;
+    button.click();
+    await new Promise((resolve) => window.setTimeout(resolve, 20));
+
+    expect(downloaded).toBe('akriven-value-free-evaluation.json');
+    expect(button.disabled).toBe(false);
+    expect(document.getElementById('status')!.textContent).toBe(
+      'Value-free evaluation evidence downloaded',
+    );
+
+    failExport = true;
+    button.click();
+    await new Promise((resolve) => window.setTimeout(resolve, 20));
+    expect(button.disabled).toBe(false);
+    expect(document.getElementById('status')!.textContent).toContain('export_unavailable');
   });
 
   it('shows a one-time webhook secret even when the inventory refresh fails', async () => {

@@ -70,6 +70,7 @@ export interface ManagedConfig {
   externalUrl?: string;
   trustProxy?: boolean;
   accessLog?: boolean;
+  metricsBearerToken?: string;
   rateLimitPerMinute?: number;
   aggregateTenantThreshold?: number;
   alertFile?: string;

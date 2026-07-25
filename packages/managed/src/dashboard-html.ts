@@ -150,6 +150,28 @@ export function dashboardHtml(publicMode = false): string {
         <article><span>2</span><div><strong>Validate before dispatch</strong><small>Only valid or proof-carrying repaired calls may continue.</small></div><b id="integration-decision-state">Waiting</b></article>
         <article><span>3</span><div><strong>Account for execution</strong><small>High-risk actions require authority, reservation, and a terminal ledger state.</small></div><b id="integration-action-state">Waiting</b></article>
       </div>
+      <article class="panel top-gap inventory-panel">
+        <div class="panel-head"><div><h3>Registered &amp; observed estate</h3><p>Value-free, tenant-scoped inventory derived from the schema registry, releases, action policy, and conformance evidence.</p></div><span class="method-badge">GET /v1/inventory</span></div>
+        <div class="inventory-summary">
+          <div><strong id="inventory-tool-total">—</strong><span>Registered tools</span></div>
+          <div><strong id="inventory-release-total">—</strong><span>Promoted releases</span></div>
+          <div><strong id="inventory-environment-total">—</strong><span>Environments</span></div>
+          <div><strong id="inventory-action-total">—</strong><span>Action profiles</span></div>
+        </div>
+        <div class="inventory-layout">
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th>Tool fingerprint</th><th>Adapters / versions</th><th>Release coverage</th><th>Identity boundary</th></tr></thead>
+              <tbody id="inventory-tool-rows"><tr><td colspan="4">Load the workspace to inspect registered assets.</td></tr></tbody>
+            </table>
+          </div>
+          <aside class="inventory-runtime">
+            <span class="eyebrow">Action policy &amp; runtime evidence</span>
+            <div id="inventory-runtime-list" class="inventory-runtime-list"><p>No conformance evidence loaded.</p></div>
+          </aside>
+        </div>
+        <p class="inventory-boundary" id="inventory-boundary">Registered and observed assets only. This is not endpoint, cloud-account, shadow-agent, or shadow-MCP discovery.</p>
+      </article>
       <article class="panel top-gap integration-panel">
         <div class="panel-head"><div><h3>Managed SDK boundary</h3><p>The key is read from the environment; rejected calls never reach the tool dispatcher.</p></div><span class="method-badge">@schema-guard/sdk</span></div>
         <div class="integration-layout">
@@ -358,7 +380,7 @@ await dispatchTool(decision.valid_arguments);</code></pre>
     </section>
 
     <section class="route-view" data-route-view="intelligence" hidden>
-      <div class="page-head"><div class="page-head-copy"><span class="page-kicker">Operate / Compatibility</span><h2>Turn failures into reviewed fixes.</h2><p>Inspect tenant-safe clusters, schema quality, provider/framework conformance, and privacy-thresholded network evidence.</p></div><span class="status-pill warn" id="privacy-threshold-label">Privacy threshold —</span></div>
+      <div class="page-head"><div class="page-head-copy"><span class="page-kicker">Operate / Compatibility</span><h2>Turn failures into reviewed fixes.</h2><p>Inspect tenant-safe clusters, schema quality, provider/framework conformance, and privacy-thresholded network evidence.</p></div><div class="page-actions"><span class="status-pill warn" id="privacy-threshold-label">Privacy threshold —</span><button class="btn secondary" id="evaluation-export" type="button">Export value-free evidence</button></div></div>
       <div class="metric-strip four"><article class="metric"><small>Failure clusters</small><strong id="failure-cluster-total">—</strong><span>tenant evidence</span></article><article class="metric"><small>Compatibility rows</small><strong id="compatibility-total">—</strong><span>provider/framework versions</span></article><article class="metric"><small>Recommendations</small><strong id="recommendation-total">—</strong><span>reviewed next actions</span></article><article class="metric"><small>Network clusters</small><strong id="network-cluster-total">—</strong><span>thresholded aggregate</span></article></div>
       <div class="content-grid equal"><article class="panel"><div class="panel-head"><div><h3>Recommendations</h3><p>Explainable fixes from observed failures and schema quality.</p></div></div><div class="panel-body"><ul class="clean-list" id="recommendation-list"><li>Load the workspace to review recommendations.</li></ul></div></article><article class="panel"><div class="panel-head"><div><h3>Failure clusters</h3><p>Value-free signatures and counts.</p></div></div><div class="panel-body"><ul class="clean-list" id="failure-cluster-list"><li>Load the workspace to review clusters.</li></ul></div></article></div>
       <article class="panel top-gap"><div class="panel-head"><div><h3>Compatibility matrix</h3><p>Observed provider, framework, adapter, and suite versions.</p></div></div><div class="panel-body flush table-scroll"><table><thead><tr><th>Provider</th><th>Framework</th><th>Adapter</th><th>Suite</th><th>Passed</th><th>Failed</th><th>Executed</th></tr></thead><tbody id="compatibility-rows"></tbody></table></div></article>
