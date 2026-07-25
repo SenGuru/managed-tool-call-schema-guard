@@ -109,7 +109,7 @@ persisted disposable tenant:
 | `/dashboard/access`       | scoped key creation, one-time display, revoke, revoked state                                                                                           | Passed |
 | `/dashboard/usage`        | entitlements, exact paid offer, local plan evaluation, disabled external billing state                                                                 | Passed |
 | `/dashboard/settings`     | policy, export, purge guard, deletion guard and lifecycle lock                                                                                         | Passed |
-| `/dashboard/workbench`    | all 30 presets plus mutation, JSON, placeholder, and path guards                                                                                       | Passed |
+| `/dashboard/workbench`    | all 32 presets plus mutation, JSON, placeholder, and path guards                                                                                       | Passed |
 
 Cross-route shell controls were also exercised: collapse/expand state, global
 settings navigation, key removal/replacement, and reconnect. The deterministic
@@ -221,22 +221,23 @@ active tab.
 
 ## Exact commands and observed results
 
-| Command                                           | Result                                                                                                                                                                                 |
-| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run check`                                   | current identity/email revision passed format, lint, scripts, package boundary, types, dry provider boundary and conformance; 257 JS/TS passed, 18 PostgreSQL skipped; 5 Python passed |
-| credentialed PostgreSQL shared-state regression   | 18/18 passed against disposable PostgreSQL 16, including checked-out client error handling                                                                                             |
-| credentialed `npm run test:coverage`              | disposable PostgreSQL 16; 45 files, 275/275 tests passed; 79.69% statements, 73.60% branches, 81.64% functions, 81.53% lines                                                           |
-| `npx vitest run tests/dashboard-ui.test.ts`       | 15/15 focused dashboard tests passed                                                                                                                                                   |
-| `npm run audit:container-e2e`                     | passed, 137.416 seconds, fresh PostgreSQL, hardened managed/anchor containers, action controls, restart/outage/isolation/secret/log checks                                             |
-| `npm run audit:extreme`                           | passed, 53.992 seconds; includes check, dependency audit, conformance, benchmark, recovery, load, managed HTTP                                                                         |
-| `npm run audit:framework-integrations`            | MCP, OpenAI Agents, PydanticAI and Google ADK runtime boundary passed; rejected calls executed zero tools                                                                              |
-| `npm run audit:five-repos`                        | 5 repositories, 9 fixtures, 35 derived calls, zero failures; downloaded code not executed                                                                                              |
-| `npm run audit:benchmarks`                        | 7,699 recorded calls, 30,203 mutations, zero mismatches                                                                                                                                |
-| `npm run audit:real-data`                         | 2,501 rows, 3,302 expected calls, 15,702 mutations, zero mismatches                                                                                                                    |
-| `npm run audit:real-repos`                        | 20 repositories, 106 extracted fixtures; source was inspected only, never executed                                                                                                     |
-| `npm run audit:images`                            | 3 images, zero HIGH/CRITICAL vulnerabilities, zero embedded secrets                                                                                                                    |
-| `trivy fs --scanners vuln,secret,misconfig ... .` | zero HIGH/CRITICAL vulnerabilities, secrets, or misconfigurations                                                                                                                      |
-| private website `npm run lint && npm test`        | lint and production build passed at website commit `2e7a0df`; 18 routes built including `/start`; 3/3 rendered HTML and trust/non-claim suites passed                                  |
+| Command                                            | Result                                                                                                                                                                                                                           |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run check`                                    | current identity/email/outbox revision passed format, lint, scripts, package boundary, types, dry provider boundary and conformance; 264 JS/TS passed, 19 PostgreSQL skipped; 5 Python passed                                    |
+| credentialed PostgreSQL shared-state regression    | 18/18 passed against disposable PostgreSQL 16, including checked-out client error handling                                                                                                                                       |
+| credentialed `npm run test:coverage`               | disposable PostgreSQL 16; 46 files, 283/283 tests passed; 79.30% statements, 73.36% branches, 81.51% functions, 81.28% lines; PostgreSQL notification dead-letter/redrive and recovery delivery explicitly exercised             |
+| `npm run audit:container-e2e`                      | 44.240 s exact-image pass including notification dashboard assets, empty durable queue, unconfigured send/callback fail-closed boundaries, two-tenant isolation, independent anchor, restart persistence and container hardening |
+| `npx vitest run tests/dashboard-ui.test.ts`        | 15/15 focused dashboard tests passed                                                                                                                                                                                             |
+| Earlier comprehensive action-control container run | passed, 137.416 seconds, fresh PostgreSQL, hardened managed/anchor containers, action controls, restart/outage/isolation/secret/log checks                                                                                       |
+| `npm run audit:extreme`                            | passed, 53.992 seconds; includes check, dependency audit, conformance, benchmark, recovery, load, managed HTTP                                                                                                                   |
+| `npm run audit:framework-integrations`             | MCP, OpenAI Agents, PydanticAI and Google ADK runtime boundary passed; rejected calls executed zero tools                                                                                                                        |
+| `npm run audit:five-repos`                         | 5 repositories, 9 fixtures, 35 derived calls, zero failures; downloaded code not executed                                                                                                                                        |
+| `npm run audit:benchmarks`                         | 7,699 recorded calls, 30,203 mutations, zero mismatches                                                                                                                                                                          |
+| `npm run audit:real-data`                          | 2,501 rows, 3,302 expected calls, 15,702 mutations, zero mismatches                                                                                                                                                              |
+| `npm run audit:real-repos`                         | 20 repositories, 106 extracted fixtures; source was inspected only, never executed                                                                                                                                               |
+| `npm run audit:images`                             | 3 images, zero HIGH/CRITICAL vulnerabilities, zero embedded secrets                                                                                                                                                              |
+| `trivy fs --scanners vuln,secret,misconfig ... .`  | zero HIGH/CRITICAL vulnerabilities, secrets, or misconfigurations                                                                                                                                                                |
+| private website `npm run lint && npm test`         | lint and production build passed at website commit `2e7a0df`; 18 routes built including `/start`; 3/3 rendered HTML and trust/non-claim suites passed                                                                            |
 
 Additional measurements produced inside the extreme audit:
 
@@ -276,9 +277,11 @@ and anchor persistence, and independent HTTPS checkpoint acknowledgement.
    revocation and public-TLS evidence still require the selected identity
    provider account.
 4. The provider-neutral Postmark send and privacy-safe delivery/bounce
-   normalization contract is locally proven. A durable application outbox,
-   selected provider account, verified sender/domain and external delivery,
-   retry/dead-letter/redrive and outage evidence remain blocked.
+   normalization contract plus encrypted durable SQLite/PostgreSQL application
+   outbox, leasing, retry/dead-letter/redrive and operator API/dashboard/SDK/CLI
+   paths are locally proven. A selected provider account, verified
+   sender/domain, callback IP allowlisting, external inbox/bounce,
+   provider-side duplicate/reordering and outage evidence remain blocked.
 5. Independent second-responder acknowledgement and paid call/SMS/push
    escalation require the selected on-call provider; the existing uptime and
    backup-heartbeat email incident path is proven.

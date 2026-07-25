@@ -272,6 +272,83 @@ describe('managed CLI workflow', () => {
         server.close((error) => (error ? reject(error) : resolve())),
       );
     }
+  }, 30_000);
+
+  it('lists, queues, and redrives transactional notifications from reviewed files', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'schema-guard-cli-notification-'));
+    temporaryDirectories.push(directory);
+    const keyFile = join(directory, 'api-key');
+    const notificationFile = join(directory, 'notification.json');
+    await writeFile(keyFile, 'notification-admin-key\n', { mode: 0o600 });
+    const notification = {
+      kind: 'security_alert',
+      to: 'security@example.test',
+      template_alias: 'security-alert-v1',
+      template_model: { incident_reference: 'INC-7' },
+      idempotency_key: 'incident-7',
+    };
+    await writeFile(notificationFile, JSON.stringify(notification), { mode: 0o600 });
+    const notificationId = 'notification_11111111-1111-4111-8111-111111111111';
+    const observed: Array<{ method: string; path: string; body: unknown }> = [];
+    const server = createServer((request, response) => {
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => chunks.push(chunk));
+      request.on('end', () => {
+        const body = chunks.length
+          ? (JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown)
+          : undefined;
+        observed.push({ method: request.method ?? '', path: request.url ?? '', body });
+        response.writeHead(request.method === 'POST' ? 202 : 200, {
+          'content-type': 'application/json',
+        });
+        response.end(
+          request.method === 'GET'
+            ? JSON.stringify({ notifications: [] })
+            : request.url?.endsWith('/redrive')
+              ? JSON.stringify({ redriven: true })
+              : JSON.stringify({ notification_id: notificationId, created: true }),
+        );
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === 'string')
+        throw new Error('missing notification CLI test address');
+      const common = ['--base-url', `http://127.0.0.1:${address.port}`, '--api-key-file', keyFile];
+      const listed = await runCli(['managed', ...common, '--resource', 'notifications']);
+      const queued = await runCli([
+        'managed-queue-notification',
+        ...common,
+        '--notification',
+        notificationFile,
+      ]);
+      const redriven = await runCli([
+        'managed-redrive-notification',
+        ...common,
+        '--notification-id',
+        notificationId,
+      ]);
+      expect(listed).toMatchObject({ code: 0, stderr: '' });
+      expect(queued).toMatchObject({ code: 0, stderr: '' });
+      expect(redriven).toMatchObject({ code: 0, stderr: '' });
+      expect(observed).toEqual([
+        { method: 'GET', path: '/v1/admin/notifications', body: undefined },
+        { method: 'POST', path: '/v1/admin/notifications', body: notification },
+        {
+          method: 'POST',
+          path: `/v1/admin/notifications/${notificationId}/redrive`,
+          body: undefined,
+        },
+      ]);
+      expect(`${listed.stdout}${queued.stdout}${redriven.stdout}`).not.toContain(
+        'notification-admin-key',
+      );
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
   }, 15_000);
 
   it('reads lifecycle and export resources and submits an exact deletion request', async () => {

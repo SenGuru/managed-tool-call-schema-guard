@@ -142,6 +142,29 @@ export interface ManagedAlertWebhookDelivery {
   created_at: string;
 }
 
+export type ManagedTransactionalNotificationKind =
+  | 'account_invitation'
+  | 'account_recovery'
+  | 'security_alert'
+  | 'billing_notice'
+  | 'support_update';
+
+export interface ManagedTransactionalNotification {
+  notification_id: string;
+  kind: ManagedTransactionalNotificationKind;
+  recipient_hash: string;
+  idempotency_hash: string;
+  request_hash: string;
+  status: 'pending' | 'processing' | 'delivered' | 'dead';
+  attempt_count: number;
+  next_attempt_at: string;
+  last_attempt_at: string | null;
+  submitted_at: string | null;
+  provider_message_id: string | null;
+  error_code: string | null;
+  created_at: string;
+}
+
 export interface ManagedSchemaRelease {
   release_id: string;
   tool_name_hash: string;
@@ -932,6 +955,62 @@ export class SchemaGuardClient {
   ): Promise<void> {
     await this.post(
       `/v1/alert-webhooks/deliveries/${encodeURIComponent(deliveryId)}/redrive`,
+      {},
+      callOptions,
+    );
+  }
+  async queueManagedTransactionalNotification(
+    input: {
+      kind: ManagedTransactionalNotificationKind;
+      to: string;
+      template_alias: string;
+      template_model: Record<string, unknown>;
+      idempotency_key: string;
+    },
+    callOptions: SchemaGuardValidateOptions = {},
+  ): Promise<{ notification_id: string; created: boolean }> {
+    const { payload, status } = await this.post('/v1/admin/notifications', input, callOptions);
+    if (
+      payload === null ||
+      typeof payload !== 'object' ||
+      Array.isArray(payload) ||
+      typeof (payload as Record<string, unknown>).notification_id !== 'string' ||
+      typeof (payload as Record<string, unknown>).created !== 'boolean'
+    )
+      throw new SchemaGuardServiceError(
+        'Schema Guard service returned an invalid transactional notification result',
+        status,
+        'invalid_service_response',
+      );
+    return payload as { notification_id: string; created: boolean };
+  }
+  async listManagedTransactionalNotifications(
+    callOptions: SchemaGuardValidateOptions = {},
+  ): Promise<ManagedTransactionalNotification[]> {
+    const { payload, status } = await this.post(
+      '/v1/admin/notifications',
+      undefined,
+      callOptions,
+      'GET',
+    );
+    const notifications =
+      payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+        ? (payload as Record<string, unknown>).notifications
+        : undefined;
+    if (!Array.isArray(notifications))
+      throw new SchemaGuardServiceError(
+        'Schema Guard service returned an invalid transactional notification list',
+        status,
+        'invalid_service_response',
+      );
+    return notifications as ManagedTransactionalNotification[];
+  }
+  async redriveManagedTransactionalNotification(
+    notificationId: string,
+    callOptions: SchemaGuardValidateOptions = {},
+  ): Promise<void> {
+    await this.post(
+      `/v1/admin/notifications/${encodeURIComponent(notificationId)}/redrive`,
       {},
       callOptions,
     );

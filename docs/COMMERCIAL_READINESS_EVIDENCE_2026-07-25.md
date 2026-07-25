@@ -84,19 +84,19 @@ The commercial-completeness audit added and exercised:
 
 The commands below ran on 2026-07-25 after the operational-metrics delta:
 
-| Command                                                                              | Observed result                                                                                                                                                                                                                                                                                                                                               |
-| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run check`                                                                      | Passed on the exact checkpoint after independent-workspace ignores were made explicit: format, build, ESLint, script syntax, dry provider boundary, package boundary, typecheck, conformance, 241 tests passed, 18 PostgreSQL tests skipped, and 5 Python tests passed. The unrelated untracked `apps/` tree was preserved.                                   |
-| Credentialed PostgreSQL regression                                                   | 18/18 shared-state tests passed against a fresh PostgreSQL 16 instance, including checked-out client error handling. The earlier complete coverage run passed 257 tests at 79.66% statements, 70.93% branches, 81.05% functions, and 81.43% lines.                                                                                                            |
-| Python client tests                                                                  | 5/5 passed                                                                                                                                                                                                                                                                                                                                                    |
-| `npm audit`                                                                          | 0 known vulnerabilities                                                                                                                                                                                                                                                                                                                                       |
-| `npm run audit:container-e2e`                                                        | Passed in 137.416 seconds against exact current source, fresh PostgreSQL 16, hardened managed and independent TLS-anchor images, two tenants, action hold/shadow/workload binding, all decision paths, release admission, approvals/idempotency, outage/redrive, database/container restart persistence, tenant isolation, secret-file and log-privacy checks |
-| `npm run audit:images`                                                               | Managed, anchor, and PostgreSQL images: 0 High/Critical vulnerabilities and 0 embedded secrets                                                                                                                                                                                                                                                                |
-| `trivy fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL --exit-code 1 .` | 0 High/Critical npm vulnerabilities, embedded secrets, or Dockerfile misconfigurations                                                                                                                                                                                                                                                                        |
-| `npm run audit:framework-integrations`                                               | MCP SDK 1.29.0, OpenAI Agents 0.13.5, PydanticAI 2.13.0, and Google ADK 2.5.0 boundaries passed; rejected calls executed zero tools                                                                                                                                                                                                                           |
-| `npm run audit:five-repos` / `audit:benchmarks` / `audit:real-data`                  | 5 repositories / 9 native fixtures / 35 derived calls passed; 7,699 recorded calls and 30,203 mutations matched; 2,501 real-data rows, 3,302 expected calls, and 15,702 mutations matched. Downloaded repository code was not executed.                                                                                                                       |
-| `npm run audit:real-repos`                                                           | 20 repositories inspected, 106 fixtures extracted, and no downloaded repository code executed                                                                                                                                                                                                                                                                 |
-| `npm run probe:live:dry`                                                             | OpenAI, Anthropic, and Gemini request/profile construction passed in dry-run mode; zero live trials were claimed                                                                                                                                                                                                                                              |
+| Command                                                                              | Observed result                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run check`                                                                      | Passed on the exact checkpoint after independent-workspace ignores were made explicit: format, build, ESLint, script syntax, dry provider boundary, package boundary, typecheck, conformance, 241 tests passed, 18 PostgreSQL tests skipped, and 5 Python tests passed. The unrelated untracked `apps/` tree was preserved.                              |
+| Credentialed PostgreSQL regression                                                   | 18/18 shared-state tests passed against a fresh PostgreSQL 16 instance, including checked-out client error handling. The earlier complete coverage run passed 257 tests at 79.66% statements, 70.93% branches, 81.05% functions, and 81.43% lines.                                                                                                       |
+| Python client tests                                                                  | 5/5 passed                                                                                                                                                                                                                                                                                                                                               |
+| `npm audit`                                                                          | 0 known vulnerabilities                                                                                                                                                                                                                                                                                                                                  |
+| `npm run audit:container-e2e`                                                        | Latest notification-aware exact-source pass completed in 44.240 seconds, including the notification dashboard assets, durable queue, fail-closed unconfigured Postmark send/callback boundaries, fresh PostgreSQL 16, hardened managed and independent TLS-anchor images, two tenants, persistence, tenant isolation, secret-file and log-privacy checks |
+| `npm run audit:images`                                                               | Managed, anchor, and PostgreSQL images: 0 High/Critical vulnerabilities and 0 embedded secrets                                                                                                                                                                                                                                                           |
+| `trivy fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL --exit-code 1 .` | 0 High/Critical npm vulnerabilities, embedded secrets, or Dockerfile misconfigurations                                                                                                                                                                                                                                                                   |
+| `npm run audit:framework-integrations`                                               | MCP SDK 1.29.0, OpenAI Agents 0.13.5, PydanticAI 2.13.0, and Google ADK 2.5.0 boundaries passed; rejected calls executed zero tools                                                                                                                                                                                                                      |
+| `npm run audit:five-repos` / `audit:benchmarks` / `audit:real-data`                  | 5 repositories / 9 native fixtures / 35 derived calls passed; 7,699 recorded calls and 30,203 mutations matched; 2,501 real-data rows, 3,302 expected calls, and 15,702 mutations matched. Downloaded repository code was not executed.                                                                                                                  |
+| `npm run audit:real-repos`                                                           | 20 repositories inspected, 106 fixtures extracted, and no downloaded repository code executed                                                                                                                                                                                                                                                            |
+| `npm run probe:live:dry`                                                             | OpenAI, Anthropic, and Gemini request/profile construction passed in dry-run mode; zero live trials were claimed                                                                                                                                                                                                                                         |
 
 Current serial measurements:
 
@@ -141,6 +141,19 @@ provider was called or represented as proven.
 
 Strictly pinned SSH checks and controlled staging operations established:
 
+- On 2026-07-25, a fresh DigitalOcean ED25519 scan again matched the
+  owner-supplied fingerprint exactly before a read-only SSH inventory. The
+  Ubuntu 24.04 anchor host had no failed units, no pending security updates,
+  healthy pinned receiver and edge containers, and `200` loopback liveness and
+  readiness.
+- A fresh DreamHost ED25519 scan matched the previously pinned fingerprint
+  exactly. The panel-confirmed `debian` account was reached through the
+  separately loaded authorized identity; the owner's standard Mac public key
+  was then added as a second authorized key after an owner-only backup, and a
+  new `IdentitiesOnly` connection using that exact key succeeded. Six pending
+  Debian security updates were applied. The host then had zero pending
+  upgrades, zero failed units, no unhealthy containers, no reboot requirement,
+  and public liveness/readiness remained `200`.
 - The owner read the DigitalOcean Droplet's ED25519 fingerprint from its
   control-plane terminal. It exactly matched the separately pinned local
   known-hosts entry before DigitalOcean SSH operations resumed.
@@ -250,14 +263,18 @@ unavailable identity/email/billing/model providers.
 
 ### Before first design-partner action traffic
 
-Current provider-independent identity/email checkpoint: `npm run check` passed
-with 257 JS/TS tests, 18 credentialed-PostgreSQL tests skipped by the
-uncredentialed default run, and 5 Python tests. The 16 new deterministic tests
-cover WorkOS-compatible session/RBAC/CSRF/BOLA/outage behavior and Postmark
-send/webhook normalization. They are not live-provider evidence.
-The credentialed coverage gate then passed all 275 tests against disposable
-PostgreSQL 16 at 79.69% statements, 73.60% branches, 81.64% functions, and
-81.53% lines.
+Current provider-independent identity/email/outbox checkpoint: `npm run check`
+passed with 264 JS/TS tests, 19 credentialed-PostgreSQL tests skipped by the
+uncredentialed default run, and 5 Python tests. The deterministic additions
+cover WorkOS-compatible session/RBAC/CSRF/BOLA/outage behavior plus Postmark
+send/webhook normalization and encrypted notification
+idempotency/leasing/privacy/retry/dead-letter/redrive/API/dashboard/SDK/CLI
+behavior. They are not live-provider evidence. The credentialed coverage gate
+then passed all 283 tests against disposable PostgreSQL 16 at 79.30%
+statements, 73.36% branches, 81.51% functions, and 81.28% lines. The
+PostgreSQL notification contract explicitly exercised concurrent claiming,
+delivery, provider-event replay, forced dead-letter, operator redrive, recovery
+delivery and tamper detection.
 
 1. Add a second independently owned responder and exercise acknowledgement and
    escalation. Better Stack email incident delivery and recovery are proven,
@@ -273,15 +290,19 @@ PostgreSQL 16 at 79.69% statements, 73.60% branches, 81.64% functions, and
 
 ### Before self-service or automated charging
 
-1. Configure and externally exercise the implemented WorkOS-compatible human
-   identity boundary: verified email, organizations, membership/role binding,
-   invitations, sessions, MFA, recovery, revocation, and future SSO/SCIM. The
-   local server/session/CSRF/BOLA contract is proven; live WorkOS behavior is
-   not.
-2. Configure and externally exercise the implemented Postmark adapter and
-   webhook normalizer. Add the still-missing durable application notification
-   outbox, then prove external delivery, bounce, duplicate/reordering, retry,
-   dead-letter/redrive and outage behavior.
+1. Deploy and externally exercise the configured WorkOS staging boundary:
+   verified email, public-TLS callback/session/logout, invitations, MFA
+   enrollment/recovery, membership removal, provider revocation,
+   cross-organization isolation and future SSO/SCIM. The staging project,
+   application, callbacks, hardened methods, mapped organization, owner user
+   and exact owner role are configured; the local server/session/CSRF/BOLA
+   contract is proven, but live Akriven session behavior is not yet.
+2. Configure and externally exercise the implemented Postmark adapter,
+   authenticated webhook normalizer, and encrypted durable notification
+   outbox. The SQLite/PostgreSQL queue, leasing, idempotency, retry,
+   dead-letter/redrive, privacy-safe evidence, API, dashboard, SDK and CLI
+   paths are proven provider-independently; external delivery, bounce,
+   duplicate/reordering, callback allowlisting and outage behavior are not.
 3. Rotate the previously exposed Stripe test credential outside chat. Supply
    the replacement only through a secret manager or owner-only file, then
    exercise test-mode Checkout, Portal, signed webhook, replay, duplicate,

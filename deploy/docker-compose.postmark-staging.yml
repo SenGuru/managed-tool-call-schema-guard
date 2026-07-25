@@ -1,0 +1,22 @@
+services:
+  schema-guard-managed:
+    environment:
+      SCHEMA_GUARD_POSTMARK_SERVER_TOKEN_FILE: /run/secrets/schema_guard_postmark_server_token
+      SCHEMA_GUARD_POSTMARK_FROM: ${SCHEMA_GUARD_POSTMARK_FROM}
+      SCHEMA_GUARD_POSTMARK_MESSAGE_STREAM: ${SCHEMA_GUARD_POSTMARK_MESSAGE_STREAM:-outbound}
+      SCHEMA_GUARD_POSTMARK_WEBHOOK_USERNAME_FILE: /run/secrets/schema_guard_postmark_webhook_username
+      SCHEMA_GUARD_POSTMARK_WEBHOOK_PASSWORD_FILE: /run/secrets/schema_guard_postmark_webhook_password
+      SCHEMA_GUARD_NOTIFICATION_POLL_INTERVAL_MS: ${SCHEMA_GUARD_NOTIFICATION_POLL_INTERVAL_MS:-5000}
+      SCHEMA_GUARD_NOTIFICATION_MAX_ATTEMPTS: ${SCHEMA_GUARD_NOTIFICATION_MAX_ATTEMPTS:-8}
+    secrets:
+      - schema_guard_postmark_server_token
+      - schema_guard_postmark_webhook_username
+      - schema_guard_postmark_webhook_password
+
+secrets:
+  schema_guard_postmark_server_token:
+    file: ${SCHEMA_GUARD_POSTMARK_SERVER_TOKEN_FILE}
+  schema_guard_postmark_webhook_username:
+    file: ${SCHEMA_GUARD_POSTMARK_WEBHOOK_USERNAME_FILE}
+  schema_guard_postmark_webhook_password:
+    file: ${SCHEMA_GUARD_POSTMARK_WEBHOOK_PASSWORD_FILE}

@@ -29,7 +29,7 @@ describe('managed intelligence workflow', () => {
     }
     legacy.close();
     const store = new ManagedStore({ databasePath: path, masterSecret: secret });
-    expect(store.db.pragma('user_version', { simple: true })).toBe(16);
+    expect(store.db.pragma('user_version', { simple: true })).toBe(17);
     store.bootstrapTenant({ id: 'upgraded', name: 'Upgraded', plan: 'team', apiKey: 'key' });
     const principal = store.authenticate('key')!;
     expect(store.listEnvironments(principal).map(({ name }) => name)).toEqual([

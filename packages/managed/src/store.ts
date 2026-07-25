@@ -47,6 +47,14 @@ import {
   type FailureCluster,
 } from './intelligence.js';
 import {
+  TRANSACTIONAL_EMAIL_KINDS,
+  type ClaimedNotification,
+  type NotificationStatus,
+  type NotificationSummary,
+  type TransactionalEmailEvent,
+  type TransactionalEmailKind,
+} from './email.js';
+import {
   ALL_SCOPES,
   type ManagedConfig,
   type ManagedOperationalMetrics,
@@ -334,7 +342,8 @@ export class ManagedStore {
         this.inspectControlPlaneIntegrity(undefined, false).valid &&
         this.inspectTenantDeletionReceipts() &&
         this.inspectCheckpointAnchorCoverage().valid &&
-        this.checkpointAnchorOperational()
+        this.checkpointAnchorOperational() &&
+        this.inspectNotificationIntegrity()
       );
     } catch {
       return false;
@@ -884,6 +893,29 @@ export class ManagedStore {
       response_status: Number(row.response_status),
     });
   }
+  private notificationPayloadHmac(row: Row): string {
+    return hmac(this.config.masterSecret, 'managed-notification-payload-v1', {
+      notification_id: row.notification_id,
+      tenant_id: row.tenant_id,
+      kind: row.kind,
+      recipient_hash: row.recipient_hash,
+      idempotency_hash: row.idempotency_hash,
+      request_hash: row.request_hash,
+      payload_ciphertext: row.payload_ciphertext,
+      created_at: row.created_at,
+    });
+  }
+  private notificationEventHmac(row: Row): string {
+    return hmac(this.config.masterSecret, 'managed-notification-event-v1', {
+      event_id: row.event_id,
+      notification_id: row.notification_id,
+      tenant_id: row.tenant_id,
+      event_type: row.event_type,
+      occurred_at: row.occurred_at,
+      bounce_type: row.bounce_type ?? null,
+      inactive: Number(row.inactive),
+    });
+  }
   private backfillControlPlaneIntegrity(): void {
     const definitions = [
       {
@@ -1126,6 +1158,26 @@ export class ManagedStore {
         'checkpoint anchor payload integrity verification failed; anchoring is unavailable',
       );
     if (row.status === 'delivered') this.assertCheckpointAnchorAcknowledgementHmac(row);
+  }
+  private assertNotificationPayloadHmac(row: Row): void {
+    if (!constantTimeEqual(text(row.payload_hmac), this.notificationPayloadHmac(row)))
+      throw new ManagedError(
+        503,
+        'notification_integrity_invalid',
+        'notification payload integrity verification failed; delivery is unavailable',
+      );
+  }
+  private inspectNotificationIntegrity(): boolean {
+    for (const row of this.db
+      .prepare('SELECT * FROM notification_outbox')
+      .iterate() as Iterable<Row>)
+      if (!constantTimeEqual(text(row.payload_hmac), this.notificationPayloadHmac(row)))
+        return false;
+    for (const row of this.db
+      .prepare('SELECT * FROM notification_events')
+      .iterate() as Iterable<Row>)
+      if (!constantTimeEqual(text(row.event_hmac), this.notificationEventHmac(row))) return false;
+    return true;
   }
   private assertCheckpointAnchorAcknowledgementHmac(row: Row): void {
     if (
@@ -4848,6 +4900,285 @@ export class ManagedStore {
     }
     if (this.config.alertFile)
       void this.appendAlert({ tenant_id: tenantId, kind, severity, detail, created_at: createdAt });
+  }
+  enqueueNotification(
+    principal: Principal,
+    input: {
+      notificationId: string;
+      kind: TransactionalEmailKind;
+      recipientHash: string;
+      idempotencyHash: string;
+      requestHash: string;
+      payloadCiphertext: string;
+    },
+  ): { notification_id: string; created: boolean } {
+    this.requireScope(principal, 'admin');
+    if (
+      !/^notification_[A-Za-z0-9_-]{16,128}$/u.test(input.notificationId) ||
+      !TRANSACTIONAL_EMAIL_KINDS.includes(input.kind) ||
+      !/^sha256:[0-9a-f]{64}$/u.test(input.recipientHash) ||
+      !/^sha256:[0-9a-f]{64}$/u.test(input.idempotencyHash) ||
+      !/^sha256:[0-9a-f]{64}$/u.test(input.requestHash) ||
+      input.payloadCiphertext.length < 29 ||
+      input.payloadCiphertext.length > 131_072
+    )
+      throw new ManagedError(400, 'invalid_notification', 'notification input is invalid');
+    return this.db.transaction(() => {
+      const existing = this.db
+        .prepare('SELECT * FROM notification_outbox WHERE tenant_id=? AND idempotency_hash=?')
+        .get(principal.tenantId, input.idempotencyHash) as Row | undefined;
+      if (existing) {
+        this.assertNotificationPayloadHmac(existing);
+        if (
+          existing.kind !== input.kind ||
+          existing.recipient_hash !== input.recipientHash ||
+          existing.request_hash !== input.requestHash
+        )
+          throw new ManagedError(
+            409,
+            'notification_idempotency_conflict',
+            'notification idempotency key was reused with different content',
+          );
+        return { notification_id: text(existing.notification_id), created: false };
+      }
+      const timestamp = now();
+      const row: Row = {
+        notification_id: input.notificationId,
+        tenant_id: principal.tenantId,
+        kind: input.kind,
+        recipient_hash: input.recipientHash,
+        idempotency_hash: input.idempotencyHash,
+        request_hash: input.requestHash,
+        payload_ciphertext: input.payloadCiphertext,
+        created_at: timestamp,
+      };
+      this.db
+        .prepare(
+          `INSERT INTO notification_outbox(
+             notification_id,tenant_id,kind,recipient_hash,idempotency_hash,request_hash,
+             payload_ciphertext,status,attempt_count,next_attempt_at,created_at,payload_hmac
+           ) VALUES(?,?,?,?,?,?,?,'pending',0,?,?,?)`,
+        )
+        .run(
+          row.notification_id,
+          row.tenant_id,
+          row.kind,
+          row.recipient_hash,
+          row.idempotency_hash,
+          row.request_hash,
+          row.payload_ciphertext,
+          timestamp,
+          timestamp,
+          this.notificationPayloadHmac(row),
+        );
+      return { notification_id: input.notificationId, created: true };
+    })();
+  }
+  listNotifications(principal: Principal, limit = 100): NotificationSummary[] {
+    this.requireScope(principal, 'admin');
+    const bounded = Number.isInteger(limit) ? Math.min(Math.max(limit, 1), 500) : 100;
+    const rows = this.db
+      .prepare(
+        'SELECT * FROM notification_outbox WHERE tenant_id=? ORDER BY created_at DESC LIMIT ?',
+      )
+      .all(principal.tenantId, bounded) as Row[];
+    return rows.map((row) => {
+      this.assertNotificationPayloadHmac(row);
+      return {
+        notification_id: text(row.notification_id),
+        kind: text(row.kind) as TransactionalEmailKind,
+        recipient_hash: text(row.recipient_hash),
+        idempotency_hash: text(row.idempotency_hash),
+        request_hash: text(row.request_hash),
+        status: text(row.status) as NotificationStatus,
+        attempt_count: Number(row.attempt_count),
+        next_attempt_at: text(row.next_attempt_at),
+        last_attempt_at: row.last_attempt_at === null ? null : text(row.last_attempt_at),
+        submitted_at: row.submitted_at === null ? null : text(row.submitted_at),
+        provider_message_id:
+          row.provider_message_id === null ? null : text(row.provider_message_id),
+        error_code: row.error_code === null ? null : text(row.error_code),
+        created_at: text(row.created_at),
+      };
+    });
+  }
+  claimNotifications(limit = 25): ClaimedNotification[] {
+    const bounded = Number.isInteger(limit) ? Math.min(Math.max(limit, 1), 100) : 25;
+    const timestamp = now();
+    const leaseExpiresAt = new Date(Date.now() + 30_000).toISOString();
+    return this.db.transaction(() => {
+      const rows = this.db
+        .prepare(
+          `SELECT * FROM notification_outbox
+           WHERE (status='pending' AND next_attempt_at<=?)
+              OR (status='processing' AND lease_expires_at<=?)
+           ORDER BY created_at LIMIT ?`,
+        )
+        .all(timestamp, timestamp, bounded) as Row[];
+      const claims: ClaimedNotification[] = [];
+      for (const row of rows) {
+        this.assertNotificationPayloadHmac(row);
+        const leaseId = `lease_${randomBytes(18).toString('base64url')}`;
+        const result = this.db
+          .prepare(
+            `UPDATE notification_outbox
+               SET status='processing',attempt_count=attempt_count+1,last_attempt_at=?,
+                   lease_id=?,lease_expires_at=?
+             WHERE notification_id=?
+               AND ((status='pending' AND next_attempt_at<=?)
+                 OR (status='processing' AND lease_expires_at<=?))`,
+          )
+          .run(timestamp, leaseId, leaseExpiresAt, row.notification_id, timestamp, timestamp);
+        if (result.changes !== 1) continue;
+        claims.push({
+          notificationId: text(row.notification_id),
+          tenantId: text(row.tenant_id),
+          kind: text(row.kind) as TransactionalEmailKind,
+          payloadCiphertext: text(row.payload_ciphertext),
+          leaseId,
+          attemptCount: Number(row.attempt_count) + 1,
+        });
+      }
+      return claims;
+    })();
+  }
+  finishNotification(input: {
+    notificationId: string;
+    leaseId: string;
+    delivered: boolean;
+    providerMessageId?: string;
+    submittedAt?: string;
+    errorCode?: string;
+    maxAttempts?: number;
+  }): NotificationStatus | undefined {
+    return this.db.transaction(() => {
+      const row = this.db
+        .prepare(
+          `SELECT * FROM notification_outbox
+           WHERE notification_id=? AND status='processing' AND lease_id=?`,
+        )
+        .get(input.notificationId, input.leaseId) as Row | undefined;
+      if (!row) return undefined;
+      this.assertNotificationPayloadHmac(row);
+      const maxAttempts = Math.min(Math.max(input.maxAttempts ?? 8, 1), 20);
+      if (input.delivered) {
+        if (
+          !input.providerMessageId ||
+          !/^[A-Za-z0-9-]{8,128}$/u.test(input.providerMessageId) ||
+          !input.submittedAt ||
+          !Number.isFinite(Date.parse(input.submittedAt))
+        )
+          throw new ManagedError(
+            503,
+            'notification_acknowledgement_invalid',
+            'notification provider acknowledgement is invalid',
+          );
+        const result = this.db
+          .prepare(
+            `UPDATE notification_outbox
+               SET status='delivered',submitted_at=?,provider_message_id=?,error_code=NULL,
+                   lease_id=NULL,lease_expires_at=NULL
+             WHERE notification_id=? AND status='processing' AND lease_id=?`,
+          )
+          .run(
+            new Date(input.submittedAt).toISOString(),
+            input.providerMessageId,
+            input.notificationId,
+            input.leaseId,
+          );
+        return result.changes === 1 ? 'delivered' : undefined;
+      }
+      const dead = Number(row.attempt_count) >= maxAttempts;
+      const nextAttemptAt = new Date(
+        Date.now() + Math.min(60_000 * 2 ** Math.min(Number(row.attempt_count), 6), 3_600_000),
+      ).toISOString();
+      const result = this.db
+        .prepare(
+          `UPDATE notification_outbox
+             SET status=?,next_attempt_at=?,error_code=?,lease_id=NULL,lease_expires_at=NULL
+           WHERE notification_id=? AND status='processing' AND lease_id=?`,
+        )
+        .run(
+          dead ? 'dead' : 'pending',
+          nextAttemptAt,
+          (input.errorCode ?? 'provider_error').slice(0, 128),
+          input.notificationId,
+          input.leaseId,
+        );
+      return result.changes === 1 ? (dead ? 'dead' : 'pending') : undefined;
+    })();
+  }
+  redriveNotification(principal: Principal, notificationId: string): boolean {
+    this.requireScope(principal, 'admin');
+    return (
+      this.db
+        .prepare(
+          `UPDATE notification_outbox
+             SET status='pending',attempt_count=0,next_attempt_at=?,lease_id=NULL,
+                 lease_expires_at=NULL,last_attempt_at=NULL,submitted_at=NULL,
+                 provider_message_id=NULL,error_code=NULL
+           WHERE tenant_id=? AND notification_id=? AND status='dead'`,
+        )
+        .run(now(), principal.tenantId, notificationId).changes === 1
+    );
+  }
+  recordNotificationProviderEvent(event: TransactionalEmailEvent): boolean {
+    if (
+      !/^sha256:[0-9a-f]{64}$/u.test(event.eventId) ||
+      !/^sha256:[0-9a-f]{64}$/u.test(event.recipientHash) ||
+      !/^[A-Za-z0-9-]{8,128}$/u.test(event.messageId) ||
+      !Number.isFinite(Date.parse(event.occurredAt))
+    )
+      throw new ManagedError(
+        400,
+        'invalid_notification_event',
+        'notification provider event is invalid',
+      );
+    return this.db.transaction(() => {
+      const existing = this.db
+        .prepare('SELECT * FROM notification_events WHERE event_id=?')
+        .get(event.eventId) as Row | undefined;
+      if (existing) {
+        if (!constantTimeEqual(text(existing.event_hmac), this.notificationEventHmac(existing)))
+          throw new ManagedError(
+            503,
+            'notification_integrity_invalid',
+            'notification event integrity verification failed',
+          );
+        return true;
+      }
+      const notification = this.db
+        .prepare('SELECT * FROM notification_outbox WHERE provider_message_id=?')
+        .get(event.messageId) as Row | undefined;
+      if (!notification || notification.recipient_hash !== event.recipientHash) return false;
+      this.assertNotificationPayloadHmac(notification);
+      const row: Row = {
+        event_id: event.eventId,
+        notification_id: notification.notification_id,
+        tenant_id: notification.tenant_id,
+        event_type: event.eventType,
+        occurred_at: new Date(event.occurredAt).toISOString(),
+        bounce_type: event.bounceType,
+        inactive: event.inactive ? 1 : 0,
+      };
+      const result = this.db
+        .prepare(
+          `INSERT OR IGNORE INTO notification_events(
+             event_id,notification_id,tenant_id,event_type,occurred_at,bounce_type,inactive,event_hmac
+           ) VALUES(?,?,?,?,?,?,?,?)`,
+        )
+        .run(
+          row.event_id,
+          row.notification_id,
+          row.tenant_id,
+          row.event_type,
+          row.occurred_at,
+          row.bounce_type,
+          row.inactive,
+          this.notificationEventHmac(row),
+        );
+      return result.changes === 1;
+    })();
   }
   private async appendAlert(alert: unknown): Promise<void> {
     if (!this.config.alertFile) return;

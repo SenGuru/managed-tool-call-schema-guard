@@ -16,8 +16,8 @@ therefore **direct**. The two remaining exceptions are intentional:
 
 - Stripe checkout and portal controls are direct, but the real provider
   lifecycle is **blocked-external** and returns a visible fail-closed error.
-- The Stripe webhook is **backend-only** because it is a signed
-  machine-to-machine callback, not a browser operation.
+- Stripe and Postmark delivery/bounce webhooks are **backend-only** because
+  they are authenticated machine-to-machine callbacks, not browser operations.
 
 Deterministic evidence:
 
@@ -25,8 +25,8 @@ Deterministic evidence:
   before the workbench fallback and exercises routing, stale-credential
   suppression, lifecycle lockout, and a dedicated validation workflow.
 - `tests/managed.test.ts` verifies all 14 routes, unique DOM IDs, CSP-safe
-  assets, and the complete 30-operation advanced fallback.
-- `npm run check` passed with 241 JavaScript/TypeScript tests, 5 Python tests,
+  assets, and the complete 32-operation advanced fallback.
+- `npm run check` passed with 264 JavaScript/TypeScript tests, 5 Python tests,
   conformance, package-boundary, formatting, lint, type and script gates.
 
 ### 2026-07-25 customer-value completion
@@ -161,15 +161,19 @@ Status vocabulary:
 
 ## Alerts and delivery
 
-| Capability         | HTTP evidence                                    | Required frontend treatment                           | Baseline status |
-| ------------------ | ------------------------------------------------ | ----------------------------------------------------- | --------------- |
-| Alert queue        | `GET /v1/alerts`                                 | Severity/status list                                  | direct          |
-| Acknowledge alert  | `POST /v1/alerts/:id/acknowledge`                | Guarded row action                                    | direct          |
-| Webhook inventory  | `GET /v1/alert-webhooks`                         | Receiver table                                        | partial         |
-| Create webhook     | `POST /v1/alert-webhooks`                        | Label/HTTPS endpoint form and one-time secret handoff | workbench-only  |
-| Delivery inventory | `GET /v1/alert-webhooks/deliveries`              | Retry/dead-letter table                               | partial         |
-| Redrive delivery   | `POST /v1/alert-webhooks/deliveries/:id/redrive` | Eligible row action                                   | workbench-only  |
-| Disable webhook    | `DELETE /v1/alert-webhooks/:id`                  | Guarded receiver action                               | workbench-only  |
+| Capability           | HTTP evidence                                    | Required frontend treatment                              | Baseline status     |
+| -------------------- | ------------------------------------------------ | -------------------------------------------------------- | ------------------- |
+| Alert queue          | `GET /v1/alerts`                                 | Severity/status list                                     | direct              |
+| Acknowledge alert    | `POST /v1/alerts/:id/acknowledge`                | Guarded row action                                       | direct              |
+| Webhook inventory    | `GET /v1/alert-webhooks`                         | Receiver table                                           | partial             |
+| Create webhook       | `POST /v1/alert-webhooks`                        | Label/HTTPS endpoint form and one-time secret handoff    | workbench-only      |
+| Delivery inventory   | `GET /v1/alert-webhooks/deliveries`              | Retry/dead-letter table                                  | partial             |
+| Redrive delivery     | `POST /v1/alert-webhooks/deliveries/:id/redrive` | Eligible row action                                      | workbench-only      |
+| Disable webhook      | `DELETE /v1/alert-webhooks/:id`                  | Guarded receiver action                                  | workbench-only      |
+| Notification queue   | `GET /v1/admin/notifications`                    | Privacy-safe status/attempt/provider-evidence table      | direct (2026-07-25) |
+| Queue notification   | `POST /v1/admin/notifications`                   | Reviewed kind/recipient/template/model/idempotency form  | direct (2026-07-25) |
+| Redrive notification | `POST /v1/admin/notifications/:id/redrive`       | Eligible dead-letter row action                          | direct (2026-07-25) |
+| Postmark receipts    | `POST /v1/notifications/postmark/webhook`        | No browser control; authenticated provider callback only | backend-only        |
 
 ## Intelligence and signed configuration
 

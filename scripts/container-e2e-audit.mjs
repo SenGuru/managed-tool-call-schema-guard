@@ -518,7 +518,8 @@ try {
       dashboard.body.includes('Control-plane integrity') &&
       dashboard.body.includes('Request tenant deletion') &&
       dashboard.body.includes('Registered &amp; observed estate') &&
-      dashboard.body.includes('Export value-free evidence'),
+      dashboard.body.includes('Export value-free evidence') &&
+      dashboard.body.includes('Transactional notification queue'),
     'dashboard exposes complete operations, workbench, export, and deletion controls',
   );
   assert(
@@ -789,6 +790,39 @@ try {
   assert(
     webhookDisabled.body.error === 'billing_integration_required',
     'unconfigured container blocks Stripe webhooks fail closed',
+  );
+  const notifications = await request(managedBase, '/v1/admin/notifications', 200, {
+    key: adminKey,
+  });
+  assert(
+    Array.isArray(notifications.body.notifications) &&
+      notifications.body.notifications.length === 0,
+    'unconfigured container exposes an empty durable notification queue',
+  );
+  const notificationDisabled = await request(managedBase, '/v1/admin/notifications', 501, {
+    method: 'POST',
+    key: adminKey,
+    body: {
+      kind: 'security_alert',
+      to: 'security@example.test',
+      template_alias: 'security-alert-v1',
+      template_model: { incident_reference: 'CONTAINER-E2E' },
+      idempotency_key: 'container-e2e-notification',
+    },
+  });
+  assert(
+    notificationDisabled.body.error === 'notification_integration_required',
+    'unconfigured container blocks transactional email fail closed',
+  );
+  const postmarkWebhookDisabled = await request(
+    managedBase,
+    '/v1/notifications/postmark/webhook',
+    501,
+    { method: 'POST', body: {} },
+  );
+  assert(
+    postmarkWebhookDisabled.body.error === 'notification_integration_required',
+    'unconfigured container blocks Postmark callbacks fail closed',
   );
   await request(managedBase, '/v1/alerts', 200, { key: adminKey });
 

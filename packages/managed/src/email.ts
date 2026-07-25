@@ -63,6 +63,50 @@ export interface TransactionalEmailEvent {
   inactive: boolean;
 }
 
+export type NotificationStatus = 'pending' | 'processing' | 'delivered' | 'dead';
+export interface NotificationSummary {
+  notification_id: string;
+  kind: TransactionalEmailKind;
+  recipient_hash: string;
+  idempotency_hash: string;
+  request_hash: string;
+  status: NotificationStatus;
+  attempt_count: number;
+  next_attempt_at: string;
+  last_attempt_at: string | null;
+  submitted_at: string | null;
+  provider_message_id: string | null;
+  error_code: string | null;
+  created_at: string;
+}
+export interface ClaimedNotification {
+  notificationId: string;
+  tenantId: string;
+  kind: TransactionalEmailKind;
+  payloadCiphertext: string;
+  leaseId: string;
+  attemptCount: number;
+}
+export interface NotificationOutbox {
+  claimNotifications(limit?: number): ClaimedNotification[] | Promise<ClaimedNotification[]>;
+  finishNotification(input: {
+    notificationId: string;
+    leaseId: string;
+    delivered: boolean;
+    providerMessageId?: string;
+    submittedAt?: string;
+    errorCode?: string;
+    maxAttempts?: number;
+  }): NotificationStatus | undefined | Promise<NotificationStatus | undefined>;
+}
+
+export interface NotificationDispatchSummary {
+  claimed: number;
+  delivered: number;
+  retrying: number;
+  dead: number;
+}
+
 const emailPattern = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/u;
 
 function bounded(value: string, label: string, maximum: number): void {
@@ -216,4 +260,55 @@ export function parsePostmarkWebhook(
     bounceType,
     inactive,
   };
+}
+
+export async function dispatchNotificationsOnce(
+  outbox: NotificationOutbox,
+  provider: TransactionalEmailProvider,
+  decryptPayload: (claim: ClaimedNotification) => TransactionalEmailRequest,
+  options: { concurrency?: number; maxAttempts?: number } = {},
+): Promise<NotificationDispatchSummary> {
+  const claims = await outbox.claimNotifications(25);
+  const summary: NotificationDispatchSummary = {
+    claimed: claims.length,
+    delivered: 0,
+    retrying: 0,
+    dead: 0,
+  };
+  const concurrency = Math.min(Math.max(options.concurrency ?? 4, 1), 16);
+  let cursor = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, claims.length) }, async () => {
+      while (cursor < claims.length) {
+        const claim = claims[cursor++]!;
+        try {
+          const request = decryptPayload(claim);
+          if (request.kind !== claim.kind)
+            throw new TypeError('notification payload kind does not match its envelope');
+          const receipt = await provider.send(request);
+          const status = await outbox.finishNotification({
+            notificationId: claim.notificationId,
+            leaseId: claim.leaseId,
+            delivered: true,
+            providerMessageId: receipt.messageId,
+            submittedAt: receipt.submittedAt,
+            ...(options.maxAttempts !== undefined ? { maxAttempts: options.maxAttempts } : {}),
+          });
+          if (status === 'delivered') summary.delivered += 1;
+        } catch (error) {
+          const status = await outbox.finishNotification({
+            notificationId: claim.notificationId,
+            leaseId: claim.leaseId,
+            delivered: false,
+            errorCode:
+              error instanceof TypeError ? 'invalid_encrypted_payload' : 'provider_unavailable',
+            ...(options.maxAttempts !== undefined ? { maxAttempts: options.maxAttempts } : {}),
+          });
+          if (status === 'pending') summary.retrying += 1;
+          else if (status === 'dead') summary.dead += 1;
+        }
+      }
+    }),
+  );
+  return summary;
 }

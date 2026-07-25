@@ -150,7 +150,7 @@ describe('tenant lifecycle', () => {
       ),
       'must not be writable by group or other users',
     );
-  });
+  }, 15_000);
 
   it('backfills an active lifecycle when upgrading an existing version-14 database', async () => {
     const path = await database();

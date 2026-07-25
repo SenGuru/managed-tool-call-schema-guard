@@ -67,7 +67,7 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
     await firstAlerts.migrate();
     await firstIntelligence.migrate();
     await first.pool.query(
-      'TRUNCATE sg_billing_events,sg_billing_subscriptions,sg_billing_checkout_sessions,sg_tenant_deletion_receipts,sg_tenant_lifecycle,sg_action_controls,sg_tenant_rulesets,sg_conformance_runs,sg_failure_observations,sg_intelligence_manifests,sg_alert_deliveries,sg_alert_acknowledgements,sg_alerts,sg_alert_webhooks,sg_alert_manifests,sg_schema_releases,sg_tool_schemas,sg_tool_schema_manifests,sg_schema_environments,sg_schema_release_manifests,sg_control_audit_events,sg_control_audit_anchors,sg_control_audit_manifests,sg_control_api_keys,sg_control_tenants,sg_action_approvals,sg_action_descriptors,sg_accepted_action_decisions,sg_checkpoint_anchor_deliveries,sg_action_reconciliations,sg_action_reconciliation_manifests,sg_action_reservations,sg_action_manifests RESTART IDENTITY',
+      'TRUNCATE sg_notification_events,sg_notification_outbox,sg_billing_events,sg_billing_subscriptions,sg_billing_checkout_sessions,sg_tenant_deletion_receipts,sg_tenant_lifecycle,sg_action_controls,sg_tenant_rulesets,sg_conformance_runs,sg_failure_observations,sg_intelligence_manifests,sg_alert_deliveries,sg_alert_acknowledgements,sg_alerts,sg_alert_webhooks,sg_alert_manifests,sg_schema_releases,sg_tool_schemas,sg_tool_schema_manifests,sg_schema_environments,sg_schema_release_manifests,sg_control_audit_events,sg_control_audit_anchors,sg_control_audit_manifests,sg_control_api_keys,sg_control_tenants,sg_action_approvals,sg_action_descriptors,sg_accepted_action_decisions,sg_checkpoint_anchor_deliveries,sg_action_reconciliations,sg_action_reconciliation_manifests,sg_action_reservations,sg_action_manifests RESTART IDENTITY',
     );
   });
 
@@ -359,6 +359,133 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
     expect(reservation.state).toBe('new');
   });
 
+  it('leases, deduplicates, delivers, records, redrives, and integrity-checks notifications', async () => {
+    await firstControl.bootstrapTenant({
+      id: 'notification-tenant',
+      name: 'Notification Tenant',
+      plan: 'trial',
+      apiKey: 'notification-admin',
+      scopes: ['admin'],
+    });
+    const queued = await firstControl.enqueueNotification({
+      tenantId: 'notification-tenant',
+      notificationId: 'notification_postgres_contract_12345678',
+      kind: 'security_alert',
+      recipientHash: `sha256:${'a'.repeat(64)}`,
+      idempotencyHash: `sha256:${'b'.repeat(64)}`,
+      requestHash: `sha256:${'c'.repeat(64)}`,
+      payloadCiphertext: 'sealed-notification-payload-contract-value',
+    });
+    expect(queued.created).toBe(true);
+    await expect(
+      secondControl.enqueueNotification({
+        tenantId: 'notification-tenant',
+        notificationId: 'notification_duplicate_contract_12345678',
+        kind: 'security_alert',
+        recipientHash: `sha256:${'a'.repeat(64)}`,
+        idempotencyHash: `sha256:${'b'.repeat(64)}`,
+        requestHash: `sha256:${'c'.repeat(64)}`,
+        payloadCiphertext: 'different-random-sealed-payload-value',
+      }),
+    ).resolves.toEqual({
+      notification_id: 'notification_postgres_contract_12345678',
+      created: false,
+    });
+    const [firstClaims, secondClaims] = await Promise.all([
+      firstControl.claimNotifications(1),
+      secondControl.claimNotifications(1),
+    ]);
+    expect(firstClaims.length + secondClaims.length).toBe(1);
+    const claim = firstClaims[0] ?? secondClaims[0]!;
+    await expect(
+      firstControl.finishNotification({
+        notificationId: claim.notificationId,
+        leaseId: claim.leaseId,
+        delivered: true,
+        providerMessageId: 'message-postgres-contract-12345678',
+        submittedAt: '2026-07-25T18:00:00.000Z',
+      }),
+    ).resolves.toBe('delivered');
+    const event = {
+      provider: 'postmark' as const,
+      eventId: `sha256:${'d'.repeat(64)}`,
+      eventType: 'delivered' as const,
+      messageId: 'message-postgres-contract-12345678',
+      recipientHash: `sha256:${'a'.repeat(64)}`,
+      occurredAt: '2026-07-25T18:01:00.000Z',
+      bounceType: null,
+      inactive: false,
+    };
+    await expect(secondControl.recordNotificationProviderEvent(event)).resolves.toBe(true);
+    await expect(secondControl.recordNotificationProviderEvent(event)).resolves.toBe(true);
+    await expect(firstControl.listNotifications('notification-tenant')).resolves.toMatchObject([
+      {
+        notification_id: 'notification_postgres_contract_12345678',
+        status: 'delivered',
+        attempt_count: 1,
+      },
+    ]);
+    await expect(
+      firstControl.enqueueNotification({
+        tenantId: 'notification-tenant',
+        notificationId: 'notification_postgres_redrive_12345678',
+        kind: 'security_alert',
+        recipientHash: `sha256:${'e'.repeat(64)}`,
+        idempotencyHash: `sha256:${'f'.repeat(64)}`,
+        requestHash: `sha256:${'1'.repeat(64)}`,
+        payloadCiphertext: 'sealed-notification-redrive-contract-value',
+      }),
+    ).resolves.toMatchObject({ created: true });
+    const [failedClaim] = await secondControl.claimNotifications(1);
+    expect(failedClaim?.notificationId).toBe('notification_postgres_redrive_12345678');
+    await expect(
+      secondControl.finishNotification({
+        notificationId: failedClaim!.notificationId,
+        leaseId: failedClaim!.leaseId,
+        delivered: false,
+        errorCode: 'provider_unavailable',
+        maxAttempts: 1,
+      }),
+    ).resolves.toBe('dead');
+    await expect(
+      firstControl.redriveNotification(
+        'notification-tenant',
+        'notification_postgres_redrive_12345678',
+      ),
+    ).resolves.toBe(true);
+    const [redrivenClaim] = await firstControl.claimNotifications(1);
+    expect(redrivenClaim?.notificationId).toBe('notification_postgres_redrive_12345678');
+    await expect(
+      firstControl.finishNotification({
+        notificationId: redrivenClaim!.notificationId,
+        leaseId: redrivenClaim!.leaseId,
+        delivered: true,
+        providerMessageId: 'message-postgres-redrive-12345678',
+        submittedAt: '2026-07-25T18:02:00.000Z',
+      }),
+    ).resolves.toBe('delivered');
+    await expect(firstControl.listNotifications('notification-tenant')).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          notification_id: 'notification_postgres_redrive_12345678',
+          status: 'delivered',
+          attempt_count: 1,
+        }),
+      ]),
+    );
+    await firstPool.query(
+      "UPDATE sg_notification_outbox SET payload_ciphertext='tampered' WHERE notification_id=$1",
+      ['notification_postgres_contract_12345678'],
+    );
+    await expect(secondControl.ready()).resolves.toBe(false);
+    await firstPool.query(
+      'UPDATE sg_notification_outbox SET payload_ciphertext=$1 WHERE notification_id=$2',
+      ['sealed-notification-payload-contract-value', 'notification_postgres_contract_12345678'],
+    );
+    await expect(secondControl.ready()).resolves.toBe(true);
+    await firstControl.pool.query("DELETE FROM sg_control_tenants WHERE id='notification-tenant'");
+  });
+
   it('durably reconciles Stripe reordering, replay, entitlements, export, and tamper evidence', async () => {
     const [controlHistory, billingHistory] = await Promise.all([
       firstPool.query<{ version: number }>(
@@ -368,7 +495,7 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
         'SELECT version FROM sg_billing_schema_migrations ORDER BY version',
       ),
     ]);
-    expect(controlHistory.rows.map((row) => row.version)).toEqual([1, 2, 3]);
+    expect(controlHistory.rows.map((row) => row.version)).toEqual([1, 2, 3, 4]);
     expect(billingHistory.rows.map((row) => row.version)).toEqual([1]);
 
     await firstControl.bootstrapTenant({

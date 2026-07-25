@@ -9,15 +9,15 @@ process arguments.
 
 ## Recommended stack
 
-| Capability                                                   | Recommendation                                                                                                              | Why it fits Akriven                                                                                                                                                                                                                                  | Launch boundary                                                                                                                 |
-| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| B2B identity, organizations, MFA, invitations and future SSO | [WorkOS AuthKit and RBAC](https://workos.com/docs/authkit/overview)                                                         | Organizations are first-class, membership is organization-scoped, and hosted authentication supports MFA, social login, passwords and magic authentication. RBAC can later map organization roles and IdP groups.                                    | Required before self-service or multi-user customer access. Operator-issued API keys remain the only proven access model today. |
-| Subscription billing                                         | [Stripe Billing](https://docs.stripe.com/billing/testing)                                                                   | The repository already implements sandbox-only Checkout, Customer Portal, signed raw-body webhooks, provider-current reconciliation and fail-closed entitlement state. Stripe test clocks cover renewal, failure, trial and plan-change time travel. | Required before automated charging. Keep manual invoicing only until the sandbox program passes.                                |
-| Transactional email                                          | [Postmark](https://postmarkapp.com/developer/)                                                                              | Transactional message streams fit verification, invitation, recovery, security and billing mail. Delivery and bounce webhooks are available with documented retries.                                                                                 | Required before email verification, invitations, recovery or automated billing notices are claimed.                             |
-| External uptime, heartbeat and on-call escalation            | [Better Stack Uptime](https://betterstack.com/docs/uptime/working-with-incidents/)                                          | HTTPS monitors, scheduled-job heartbeats, incidents, on-call schedules and escalation policies cover the currently missing independent paging boundary.                                                                                              | Required before customer mutation traffic or an availability/SLO claim.                                                         |
-| Production secret custody                                    | [1Password service accounts and CLI](https://developer.1password.com/docs/cli/secrets-scripts)                              | Vault-scoped service accounts support least-privilege retrieval and can render existing file-based Docker secrets without putting values in source control.                                                                                          | Required before live payment, identity, email or monitoring credentials are installed.                                          |
-| Immutable off-machine backup target                          | [Backblaze B2 with Object Lock](https://www.backblaze.com/docs/cloud-storage-enable-object-lock-with-the-s3-compatible-api) | S3-compatible storage, bucket-scoped application keys and Object Lock add an independently administered WORM copy beyond the current cross-host daily backup.                                                                                        | Required before stronger ransomware/immutability claims; daily RPO remains the currently accepted recovery boundary.            |
-| Application exception diagnostics                            | [Sentry for Node.js](https://docs.sentry.io/platforms/javascript/guides/node/)                                              | Captures deployed exceptions and release regressions independently from host-local logs. Configure aggressive event scrubbing and disable request bodies, local variables and raw tool arguments.                                                    | Recommended before private beta; not a substitute for uptime/on-call delivery.                                                  |
+| Capability                                                   | Recommendation                                                                                                              | Why it fits Akriven                                                                                                                                                                                                                                  | Launch boundary                                                                                                                                                               |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| B2B identity, organizations, MFA, invitations and future SSO | [WorkOS AuthKit and RBAC](https://workos.com/docs/authkit/overview)                                                         | Organizations are first-class, membership is organization-scoped, and hosted authentication supports MFA, social login, passwords and magic authentication. RBAC can later map organization roles and IdP groups.                                    | Staging account/configuration is complete; public-TLS session, MFA/recovery, revocation and isolation certification remain required before self-service or multi-user access. |
+| Subscription billing                                         | [Stripe Billing](https://docs.stripe.com/billing/testing)                                                                   | The repository already implements sandbox-only Checkout, Customer Portal, signed raw-body webhooks, provider-current reconciliation and fail-closed entitlement state. Stripe test clocks cover renewal, failure, trial and plan-change time travel. | Required before automated charging. Keep manual invoicing only until the sandbox program passes.                                                                              |
+| Transactional email                                          | [Postmark](https://postmarkapp.com/developer/)                                                                              | Transactional message streams fit verification, invitation, recovery, security and billing mail. Delivery and bounce webhooks are available with documented retries.                                                                                 | Required before email verification, invitations, recovery or automated billing notices are claimed.                                                                           |
+| External uptime, heartbeat and on-call escalation            | [Better Stack Uptime](https://betterstack.com/docs/uptime/working-with-incidents/)                                          | HTTPS monitors, scheduled-job heartbeats, incidents, on-call schedules and escalation policies cover the currently missing independent paging boundary.                                                                                              | Required before customer mutation traffic or an availability/SLO claim.                                                                                                       |
+| Production secret custody                                    | [1Password service accounts and CLI](https://developer.1password.com/docs/cli/secrets-scripts)                              | Vault-scoped service accounts support least-privilege retrieval and can render existing file-based Docker secrets without putting values in source control.                                                                                          | Required before live payment, identity, email or monitoring credentials are installed.                                                                                        |
+| Immutable off-machine backup target                          | [Backblaze B2 with Object Lock](https://www.backblaze.com/docs/cloud-storage-enable-object-lock-with-the-s3-compatible-api) | S3-compatible storage, bucket-scoped application keys and Object Lock add an independently administered WORM copy beyond the current cross-host daily backup.                                                                                        | Required before stronger ransomware/immutability claims; daily RPO remains the currently accepted recovery boundary.                                                          |
+| Application exception diagnostics                            | [Sentry for Node.js](https://docs.sentry.io/platforms/javascript/guides/node/)                                              | Captures deployed exceptions and release regressions independently from host-local logs. Configure aggressive event scrubbing and disable request bodies, local variables and raw tool arguments.                                                    | Recommended before private beta; not a substitute for uptime/on-call delivery.                                                                                                |
 
 Do not add another general-purpose platform unless one of these providers fails
 the sandbox certification. Keeping one provider per boundary reduces secret,
@@ -27,11 +27,10 @@ webhook and incident-response complexity.
 
 The provider-independent product and purchased-host staging drills are complete
 for the prior API-key cohort boundary. The repository now also contains a
-fail-closed WorkOS-compatible human-session boundary and Postmark
-send/webhook-normalization contracts. These are deterministic local evidence,
-not live-provider proof. The Postmark boundary does not yet include a durable
-application notification outbox. Use this order for the remaining account
-work:
+fail-closed WorkOS-compatible human-session boundary and a Postmark
+send/webhook boundary backed by an encrypted, leased, retry-bounded durable
+notification outbox. These are deterministic local and PostgreSQL evidence,
+not live-provider proof. Use this order for the remaining account work:
 
 1. Create the 1Password production vault and vault-scoped service account.
    Prove a clean operator session can render owner-only files after reboot.
@@ -45,13 +44,15 @@ work:
 4. Complete independent security review, legal/privacy retention approval,
    vulnerability-disclosure routing, and named incident/support ownership.
    These four steps gate action-mutating private-beta traffic.
-5. If self-service or multi-user access is desired, configure WorkOS staging
-   against the implemented organization/role/session boundary and certify
-   invitation/MFA/recovery/revocation isolation.
+5. Deploy the configured WorkOS staging environment against the implemented
+   organization/role/session boundary and certify verified-email login,
+   public-TLS callback/session/logout, invitation, MFA/recovery, membership
+   removal, provider revocation and cross-organization isolation.
 6. Configure Postmark only after the identity flows define their verification,
-   invitation, recovery and security-message requirements. Add and exercise a
-   durable application outbox before Akriven-owned mandatory messages are a
-   launch claim.
+   invitation, recovery and security-message requirements. Exercise the
+   implemented durable outbox through real inbox delivery, bounce,
+   duplicate/reordering, outage, dead-letter and redrive before Akriven-owned
+   mandatory messages are a launch claim.
 7. Rotate the previously exposed Stripe test credential in the Stripe console,
    store the replacement only through 1Password-rendered owner-only files, and
    run the complete test-mode lifecycle. Do not enable live mode.
@@ -72,14 +73,18 @@ These actions must be completed in the provider consoles. Values are secret
 unless explicitly described as identifiers.
 
 1. **WorkOS**
-   - Create separate staging and production environments.
-   - Enable hosted AuthKit, email verification and MFA.
-   - Configure the non-secret callback/logout URLs and the `akriven.com`
-     domain.
-   - Define initial organization roles: `owner`, `admin`, `operator`,
-     `auditor`, and `billing`.
-   - Store the client secret in the selected secret manager. Do not paste it
-     into chat.
+   - Staging is configured with hosted AuthKit, strong breached-password
+     rejection, passkeys, Magic Auth, required MFA, reviewed callback/logout
+     URLs, the `akriven.com` domain, an exact organization-to-tenant mapping and
+     an `owner` membership.
+   - The replacement staging key and supporting identity secrets are stored in
+     owner-only files outside source control. The default key exposed on the
+     initial quick-start screen was expired and is not used.
+   - Before cohort expansion, define and exercise the remaining `admin`,
+     `operator`, `auditor`, and `billing` memberships, invitation and recovery
+     flows, revocation, organization switching and BOLA isolation.
+   - Create a separate production environment only after staging
+     certification. Do not reuse staging credentials.
 2. **Stripe sandbox**
    - Create a test-only recurring price for lifecycle certification and record
      only its non-secret `price_...` identifier for configuration. This is not
@@ -202,9 +207,12 @@ Observed on 2026-07-25:
 - 1Password Teams registration and email verification: reached the
   owner-controlled master-password/Secret-Key step. Vault activation is blocked
   until the owner chooses the master password and retains the Emergency Kit.
-- Sentry and WorkOS Google signup: blocked at Google's device passkey
-  verification. No project, data region or irreversible retention choice was
-  created.
+- WorkOS Google signup verification completed. The Akriven staging project,
+  application, hardened authentication settings, mapped organization, owner
+  user and exact owner role are configured. Deployment and live
+  public-TLS/session/MFA/recovery/revocation certification remain pending.
+- Sentry signup remains blocked at Google's device-verification boundary; no
+  Sentry project, data region or irreversible retention choice was created.
 - Postmark, Stripe, Backblaze and live model credentials: not configured.
   Stripe live mode, customer-facing DNS, Backblaze Object Lock and any paid
   commitment remain deliberately untouched.

@@ -45,10 +45,20 @@ must share the configured `SCHEMA_GUARD_EXTERNAL_URL` origin.
 Deterministic tests cover valid sessions, least-privilege role mapping,
 unverified email, unsupported roles, impersonation, unmapped organizations,
 tenant substitution, callback mutation/expiry, invalid cookies, CSRF, refresh,
-logout, and provider outage. Live WorkOS signup, invitation, membership
-removal, MFA enrollment/recovery, provider-side revocation, organization
-switching, and public-TLS session behavior remain blocked until an actual
-staging account is configured.
+logout, and provider outage.
+
+On 2026-07-26, a real WorkOS staging project and application were configured
+with the Akriven callback/logout URLs, strong breached-password rejection,
+passkeys, Magic Auth and required MFA. The `Akriven Internal Staging`
+organization is mapped to the existing `staging-owner` tenant, and its owner
+membership has the exact `owner` role consumed by the fail-closed role mapper.
+The replacement provider key, cookie password, generated staging-user password
+and authorization map are held in owner-only files outside the repository.
+This is **configured external evidence**, not a completed session
+certification: verified-email login, MFA enrollment/recovery, invitation,
+membership removal, provider-side revocation, organization switching and the
+public-TLS callback/session/logout path still require the exact application
+revision to be deployed and exercised.
 
 ## Transactional email
 
@@ -71,11 +81,16 @@ ingress must combine a unique Basic Authentication credential, provider IP
 allowlisting, TLS, recipient binding, and durable `MessageID`/event-id
 deduplication.
 
-The adapter and parser have deterministic contract and adversarial tests.
-There is not yet a durable application notification outbox or a live Postmark
-account/domain/template set. Verification, invitation, recovery, security,
-billing, bounce, retry, dead-letter, redrive, and outage behavior therefore
-remain **blocked external/integration evidence**, not mocked success. WorkOS
-may own its hosted verification/invitation/recovery messages; any Akriven-owned
-security or billing notices require a durable application outbox before they
-become a launch claim.
+The adapter, parser, and durable application notification outbox have
+deterministic contract, adversarial, SQLite, PostgreSQL, HTTP, dashboard, SDK,
+and CLI tests. The outbox encrypts recipient/template payloads, exposes only
+privacy-safe hashes and delivery metadata, leases concurrent workers, applies
+bounded retry/dead-letter behavior, supports explicit redrive, and binds
+authenticated provider receipts to exact message and recipient hashes.
+
+There is not yet a live Postmark account/domain/template set. External inbox
+delivery, bounce, provider-side duplicate/reordering behavior, provider outage,
+and callback IP allowlisting therefore remain **blocked external/integration
+evidence**, not mocked success. WorkOS may own its hosted
+verification/invitation/recovery messages; Akriven-owned mandatory messages
+must use this durable outbox after the provider templates are reviewed.

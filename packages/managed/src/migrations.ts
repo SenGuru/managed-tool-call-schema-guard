@@ -420,4 +420,50 @@ export const migrations = [
       );
     `,
   },
+  {
+    version: 17,
+    sql: `
+      CREATE TABLE IF NOT EXISTS notification_outbox (
+        notification_id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL
+          CHECK(kind IN ('account_invitation','account_recovery','security_alert','billing_notice','support_update')),
+        recipient_hash TEXT NOT NULL,
+        idempotency_hash TEXT NOT NULL,
+        request_hash TEXT NOT NULL,
+        payload_ciphertext TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('pending','processing','delivered','dead')),
+        attempt_count INTEGER NOT NULL DEFAULT 0 CHECK(attempt_count >= 0),
+        next_attempt_at TEXT NOT NULL,
+        lease_id TEXT,
+        lease_expires_at TEXT,
+        last_attempt_at TEXT,
+        submitted_at TEXT,
+        provider_message_id TEXT,
+        error_code TEXT,
+        created_at TEXT NOT NULL,
+        payload_hmac TEXT NOT NULL,
+        UNIQUE(tenant_id,idempotency_hash)
+      );
+      CREATE INDEX IF NOT EXISTS notification_outbox_due
+        ON notification_outbox(status,next_attempt_at,lease_expires_at);
+      CREATE INDEX IF NOT EXISTS notification_outbox_tenant_time
+        ON notification_outbox(tenant_id,created_at DESC);
+      CREATE UNIQUE INDEX IF NOT EXISTS notification_outbox_message
+        ON notification_outbox(provider_message_id)
+        WHERE provider_message_id IS NOT NULL;
+      CREATE TABLE IF NOT EXISTS notification_events (
+        event_id TEXT PRIMARY KEY,
+        notification_id TEXT NOT NULL REFERENCES notification_outbox(notification_id) ON DELETE CASCADE,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        event_type TEXT NOT NULL CHECK(event_type IN ('delivered','bounced')),
+        occurred_at TEXT NOT NULL,
+        bounce_type TEXT,
+        inactive INTEGER NOT NULL CHECK(inactive IN (0,1)),
+        event_hmac TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS notification_events_tenant_time
+        ON notification_events(tenant_id,occurred_at DESC);
+    `,
+  },
 ] as const;

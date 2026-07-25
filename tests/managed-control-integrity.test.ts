@@ -75,7 +75,7 @@ describe('managed control-plane integrity', () => {
 
     const store = new ManagedStore({ databasePath: path, masterSecret: secret });
     const principal = store.authenticate('legacy-key')!;
-    expect(store.db.pragma('user_version', { simple: true })).toBe(16);
+    expect(store.db.pragma('user_version', { simple: true })).toBe(17);
     expect(store.tenantLifecycle(principal)).toMatchObject({ status: 'active' });
     expect(store.verifyControlPlaneIntegrity(principal)).toEqual({ valid: true, checked: 12 });
     expect(

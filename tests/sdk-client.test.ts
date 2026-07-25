@@ -372,6 +372,62 @@ describe('SchemaGuardClient remote boundary', () => {
     expect(calls.some((call) => call.method === 'DELETE' && call.body === undefined)).toBe(true);
   });
 
+  it('queues, lists, and redrives privacy-safe transactional notifications', async () => {
+    const notification = {
+      notification_id: 'notification_11111111-1111-4111-8111-111111111111',
+      kind: 'security_alert',
+      recipient_hash: `sha256:${'1'.repeat(64)}`,
+      idempotency_hash: `sha256:${'2'.repeat(64)}`,
+      request_hash: `sha256:${'3'.repeat(64)}`,
+      status: 'dead',
+      attempt_count: 3,
+      next_attempt_at: '2026-07-25T12:00:00.000Z',
+      last_attempt_at: '2026-07-25T11:59:00.000Z',
+      submitted_at: null,
+      provider_message_id: null,
+      error_code: 'provider_unavailable',
+      created_at: '2026-07-25T11:55:00.000Z',
+    } as const;
+    const calls: Array<{ url: string; method: string; body: BodyInit | null | undefined }> = [];
+    const client = new SchemaGuardClient({
+      baseUrl: 'https://guard.example',
+      apiKey: 'notification-admin',
+      fetch: vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        calls.push({ url, method: init?.method ?? 'GET', body: init?.body });
+        if (init?.method === 'GET')
+          return Promise.resolve(
+            new Response(JSON.stringify({ notifications: [notification] }), { status: 200 }),
+          );
+        if (url.endsWith('/redrive'))
+          return Promise.resolve(new Response(JSON.stringify({ redriven: true }), { status: 200 }));
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ notification_id: notification.notification_id, created: true }),
+            { status: 202 },
+          ),
+        );
+      }) as typeof fetch,
+    });
+    await expect(
+      client.queueManagedTransactionalNotification({
+        kind: 'security_alert',
+        to: 'security@example.test',
+        template_alias: 'security-alert-v1',
+        template_model: { incident_reference: 'INC-1' },
+        idempotency_key: 'incident-1',
+      }),
+    ).resolves.toEqual({ notification_id: notification.notification_id, created: true });
+    await expect(client.listManagedTransactionalNotifications()).resolves.toEqual([notification]);
+    await expect(
+      client.redriveManagedTransactionalNotification(notification.notification_id),
+    ).resolves.toBeUndefined();
+    expect(calls.map(({ method }) => method)).toEqual(['POST', 'GET', 'POST']);
+    expect(calls[1]!.body).toBeUndefined();
+    expect(JSON.stringify(calls)).not.toContain('notification-admin');
+  });
+
   it('exposes managed schema promotion, enforcement, listing, and chain verification', async () => {
     const release = {
       release_id: 'release_11111111-1111-4111-8111-111111111111',

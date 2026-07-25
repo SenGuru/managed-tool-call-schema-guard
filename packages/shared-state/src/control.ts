@@ -139,6 +139,54 @@ export interface SharedQuotaOperationalMetrics {
   exhausted: number;
 }
 
+export type SharedNotificationKind =
+  | 'account_invitation'
+  | 'account_recovery'
+  | 'security_alert'
+  | 'billing_notice'
+  | 'support_update';
+const TRANSACTIONAL_NOTIFICATION_KINDS: readonly SharedNotificationKind[] = [
+  'account_invitation',
+  'account_recovery',
+  'security_alert',
+  'billing_notice',
+  'support_update',
+];
+export type SharedNotificationStatus = 'pending' | 'processing' | 'delivered' | 'dead';
+export interface SharedNotificationSummary {
+  notification_id: string;
+  kind: SharedNotificationKind;
+  recipient_hash: string;
+  idempotency_hash: string;
+  request_hash: string;
+  status: SharedNotificationStatus;
+  attempt_count: number;
+  next_attempt_at: string;
+  last_attempt_at: string | null;
+  submitted_at: string | null;
+  provider_message_id: string | null;
+  error_code: string | null;
+  created_at: string;
+}
+export interface SharedClaimedNotification {
+  notificationId: string;
+  tenantId: string;
+  kind: SharedNotificationKind;
+  payloadCiphertext: string;
+  leaseId: string;
+  attemptCount: number;
+}
+export interface SharedNotificationProviderEvent {
+  provider: 'postmark';
+  eventId: string;
+  eventType: 'delivered' | 'bounced';
+  messageId: string;
+  recipientHash: string;
+  occurredAt: string;
+  bounceType: string | null;
+  inactive: boolean;
+}
+
 export interface ControlState {
   readonly recordsValidationAlerts?: boolean;
   readonly recordsValidationIntelligence?: boolean;
@@ -152,6 +200,28 @@ export interface ControlState {
     principalId: string,
     scopes: SharedScope[],
   ): Promise<SharedPrincipal | undefined>;
+  enqueueNotification(input: {
+    tenantId: string;
+    notificationId: string;
+    kind: SharedNotificationKind;
+    recipientHash: string;
+    idempotencyHash: string;
+    requestHash: string;
+    payloadCiphertext: string;
+  }): Promise<{ notification_id: string; created: boolean }>;
+  listNotifications(tenantId: string, limit?: number): Promise<SharedNotificationSummary[]>;
+  claimNotifications(limit?: number): Promise<SharedClaimedNotification[]>;
+  finishNotification(input: {
+    notificationId: string;
+    leaseId: string;
+    delivered: boolean;
+    providerMessageId?: string;
+    submittedAt?: string;
+    errorCode?: string;
+    maxAttempts?: number;
+  }): Promise<SharedNotificationStatus | undefined>;
+  redriveNotification(tenantId: string, notificationId: string): Promise<boolean>;
+  recordNotificationProviderEvent(event: SharedNotificationProviderEvent): Promise<boolean>;
   issueApiKey(
     tenantId: string,
     scopes: SharedScope[],
@@ -248,6 +318,36 @@ type ActionControlRow = {
   updated_at: Date;
   updated_by_hash: string;
   control_hmac: string;
+};
+type NotificationRow = {
+  notification_id: string;
+  tenant_id: string;
+  kind: SharedNotificationKind;
+  recipient_hash: string;
+  idempotency_hash: string;
+  request_hash: string;
+  payload_ciphertext: string;
+  status: SharedNotificationStatus;
+  attempt_count: number;
+  next_attempt_at: Date;
+  lease_id: string | null;
+  lease_expires_at: Date | null;
+  last_attempt_at: Date | null;
+  submitted_at: Date | null;
+  provider_message_id: string | null;
+  error_code: string | null;
+  created_at: Date;
+  payload_hmac: string;
+};
+type NotificationEventRow = {
+  event_id: string;
+  notification_id: string;
+  tenant_id: string;
+  event_type: 'delivered' | 'bounced';
+  occurred_at: Date;
+  bounce_type: string | null;
+  inactive: boolean;
+  event_hmac: string;
 };
 type AuditRow = {
   sequence: string;
@@ -416,6 +516,49 @@ const ACTION_CONTROL_SCHEMA = `
     control_hmac TEXT NOT NULL
   );
 `;
+const NOTIFICATION_OUTBOX_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS sg_notification_outbox (
+    notification_id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL REFERENCES sg_control_tenants(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL
+      CHECK(kind IN ('account_invitation','account_recovery','security_alert','billing_notice','support_update')),
+    recipient_hash TEXT NOT NULL,
+    idempotency_hash TEXT NOT NULL,
+    request_hash TEXT NOT NULL,
+    payload_ciphertext TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('pending','processing','delivered','dead')),
+    attempt_count INTEGER NOT NULL DEFAULT 0 CHECK(attempt_count >= 0),
+    next_attempt_at TIMESTAMPTZ NOT NULL,
+    lease_id TEXT,
+    lease_expires_at TIMESTAMPTZ,
+    last_attempt_at TIMESTAMPTZ,
+    submitted_at TIMESTAMPTZ,
+    provider_message_id TEXT,
+    error_code TEXT,
+    created_at TIMESTAMPTZ NOT NULL,
+    payload_hmac TEXT NOT NULL,
+    UNIQUE(tenant_id,idempotency_hash)
+  );
+  CREATE INDEX IF NOT EXISTS sg_notification_outbox_due
+    ON sg_notification_outbox(status,next_attempt_at,lease_expires_at);
+  CREATE INDEX IF NOT EXISTS sg_notification_outbox_tenant_time
+    ON sg_notification_outbox(tenant_id,created_at DESC);
+  CREATE UNIQUE INDEX IF NOT EXISTS sg_notification_outbox_message
+    ON sg_notification_outbox(provider_message_id)
+    WHERE provider_message_id IS NOT NULL;
+  CREATE TABLE IF NOT EXISTS sg_notification_events (
+    event_id TEXT PRIMARY KEY,
+    notification_id TEXT NOT NULL REFERENCES sg_notification_outbox(notification_id) ON DELETE CASCADE,
+    tenant_id TEXT NOT NULL REFERENCES sg_control_tenants(id) ON DELETE CASCADE,
+    event_type TEXT NOT NULL CHECK(event_type IN ('delivered','bounced')),
+    occurred_at TIMESTAMPTZ NOT NULL,
+    bounce_type TEXT,
+    inactive BOOLEAN NOT NULL,
+    event_hmac TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS sg_notification_events_tenant_time
+    ON sg_notification_events(tenant_id,occurred_at DESC);
+`;
 
 export class PostgresControlState implements ControlState {
   readonly pool: Pool;
@@ -545,6 +688,40 @@ export class PostgresControlState implements ControlState {
     return hmac(this.masterSecret, 'shared-managed-action-control-operator-v1', {
       tenant_id: tenantId,
       operator_id: operatorId,
+    });
+  }
+  private notificationPayloadHmac(
+    row: Pick<
+      NotificationRow,
+      | 'notification_id'
+      | 'tenant_id'
+      | 'kind'
+      | 'recipient_hash'
+      | 'idempotency_hash'
+      | 'request_hash'
+      | 'payload_ciphertext'
+      | 'created_at'
+    >,
+  ): string {
+    return hmac(this.masterSecret, 'shared-managed-notification-payload-v1', {
+      notification_id: row.notification_id,
+      tenant_id: row.tenant_id,
+      kind: row.kind,
+      recipient_hash: row.recipient_hash,
+      idempotency_hash: row.idempotency_hash,
+      request_hash: row.request_hash,
+      payload_ciphertext: row.payload_ciphertext,
+      created_at: row.created_at.toISOString(),
+    });
+  }
+  private assertNotificationPayload(row: NotificationRow): void {
+    if (!equal(row.payload_hmac, this.notificationPayloadHmac(row)))
+      throw new SharedStateIntegrityError('shared notification payload integrity failed');
+  }
+  private notificationEventHmac(row: Omit<NotificationEventRow, 'event_hmac'>): string {
+    return hmac(this.masterSecret, 'shared-managed-notification-event-v1', {
+      ...row,
+      occurred_at: row.occurred_at.toISOString(),
     });
   }
   private auditAnchorHmac(row: Omit<AuditAnchorRow, 'control_hmac'>): string {
@@ -851,6 +1028,7 @@ export class PostgresControlState implements ControlState {
       const checksum = sha256(CONTROL_SCHEMA);
       const lifecycleChecksum = sha256(CONTROL_LIFECYCLE_SCHEMA);
       const actionControlChecksum = sha256(ACTION_CONTROL_SCHEMA);
+      const notificationOutboxChecksum = sha256(NOTIFICATION_OUTBOX_SCHEMA);
       const billingChecksum = sha256(BILLING_SCHEMA);
       const rows = await client.query<{ version: number; checksum: string }>(
         'SELECT version,checksum FROM sg_control_schema_migrations ORDER BY version',
@@ -859,6 +1037,7 @@ export class PostgresControlState implements ControlState {
         [1, checksum],
         [2, lifecycleChecksum],
         [3, actionControlChecksum],
+        [4, notificationOutboxChecksum],
       ]);
       if (
         rows.rows.some(
@@ -928,6 +1107,13 @@ export class PostgresControlState implements ControlState {
           [actionControlChecksum, timestamp],
         );
       }
+      await client.query(NOTIFICATION_OUTBOX_SCHEMA);
+      if (!rows.rows.some((row) => row.version === 4))
+        await client.query(
+          `INSERT INTO sg_control_schema_migrations(version,migration_name,checksum,applied_at)
+           VALUES(4,'transactional_notification_outbox',$1,$2)`,
+          [notificationOutboxChecksum, new Date()],
+        );
       await client.query(BILLING_SCHEMA);
       const billingRows = await client.query<{ version: number; checksum: string }>(
         'SELECT version,checksum FROM sg_billing_schema_migrations ORDER BY version',
@@ -981,6 +1167,29 @@ export class PostgresControlState implements ControlState {
         'SELECT * FROM sg_tenant_deletion_receipts',
       );
       for (const receipt of receipts.rows) this.assertTenantDeletionReceipt(receipt);
+      const notifications = await client.query<NotificationRow>(
+        'SELECT * FROM sg_notification_outbox',
+      );
+      for (const notification of notifications.rows) this.assertNotificationPayload(notification);
+      const notificationEvents = await client.query<NotificationEventRow>(
+        'SELECT * FROM sg_notification_events',
+      );
+      for (const event of notificationEvents.rows)
+        if (
+          !equal(
+            event.event_hmac,
+            this.notificationEventHmac({
+              event_id: event.event_id,
+              notification_id: event.notification_id,
+              tenant_id: event.tenant_id,
+              event_type: event.event_type,
+              occurred_at: event.occurred_at,
+              bounce_type: event.bounce_type,
+              inactive: event.inactive,
+            }),
+          )
+        )
+          throw new SharedStateIntegrityError('shared notification event integrity failed');
       await client.query('COMMIT');
       return true;
     } catch {
@@ -1324,6 +1533,281 @@ export class PostgresControlState implements ControlState {
       policy,
       lifecycleStatus: row.lifecycle_status,
     };
+  }
+
+  async enqueueNotification(input: {
+    tenantId: string;
+    notificationId: string;
+    kind: SharedNotificationKind;
+    recipientHash: string;
+    idempotencyHash: string;
+    requestHash: string;
+    payloadCiphertext: string;
+  }): Promise<{ notification_id: string; created: boolean }> {
+    if (
+      !/^[A-Za-z0-9_-]{1,64}$/u.test(input.tenantId) ||
+      !/^notification_[A-Za-z0-9_-]{16,128}$/u.test(input.notificationId) ||
+      !TRANSACTIONAL_NOTIFICATION_KINDS.includes(input.kind) ||
+      !/^sha256:[0-9a-f]{64}$/u.test(input.recipientHash) ||
+      !/^sha256:[0-9a-f]{64}$/u.test(input.idempotencyHash) ||
+      !/^sha256:[0-9a-f]{64}$/u.test(input.requestHash) ||
+      input.payloadCiphertext.length < 29 ||
+      input.payloadCiphertext.length > 131_072
+    )
+      throw new TypeError('shared notification input is invalid');
+    return this.transaction(async (client) => {
+      const existing = (
+        await client.query<NotificationRow>(
+          'SELECT * FROM sg_notification_outbox WHERE tenant_id=$1 AND idempotency_hash=$2 FOR UPDATE',
+          [input.tenantId, input.idempotencyHash],
+        )
+      ).rows[0];
+      if (existing) {
+        this.assertNotificationPayload(existing);
+        if (
+          existing.kind !== input.kind ||
+          existing.recipient_hash !== input.recipientHash ||
+          existing.request_hash !== input.requestHash
+        )
+          throw new SharedStateIntegrityError('shared notification idempotency conflict');
+        return { notification_id: existing.notification_id, created: false };
+      }
+      const timestamp = new Date();
+      const row = {
+        notification_id: input.notificationId,
+        tenant_id: input.tenantId,
+        kind: input.kind,
+        recipient_hash: input.recipientHash,
+        idempotency_hash: input.idempotencyHash,
+        request_hash: input.requestHash,
+        payload_ciphertext: input.payloadCiphertext,
+        created_at: timestamp,
+      };
+      await client.query(
+        `INSERT INTO sg_notification_outbox(
+           notification_id,tenant_id,kind,recipient_hash,idempotency_hash,request_hash,payload_ciphertext,
+           status,attempt_count,next_attempt_at,created_at,payload_hmac
+         ) VALUES($1,$2,$3,$4,$5,$6,$7,'pending',0,$8,$8,$9)`,
+        [
+          row.notification_id,
+          row.tenant_id,
+          row.kind,
+          row.recipient_hash,
+          row.idempotency_hash,
+          row.request_hash,
+          row.payload_ciphertext,
+          timestamp,
+          this.notificationPayloadHmac(row),
+        ],
+      );
+      return { notification_id: input.notificationId, created: true };
+    });
+  }
+
+  async listNotifications(tenantId: string, limit = 100): Promise<SharedNotificationSummary[]> {
+    const bounded = Number.isInteger(limit) ? Math.min(Math.max(limit, 1), 500) : 100;
+    const rows = (
+      await this.pool.query<NotificationRow>(
+        'SELECT * FROM sg_notification_outbox WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT $2',
+        [tenantId, bounded],
+      )
+    ).rows;
+    return rows.map((row) => {
+      this.assertNotificationPayload(row);
+      return {
+        notification_id: row.notification_id,
+        kind: row.kind,
+        recipient_hash: row.recipient_hash,
+        idempotency_hash: row.idempotency_hash,
+        request_hash: row.request_hash,
+        status: row.status,
+        attempt_count: row.attempt_count,
+        next_attempt_at: row.next_attempt_at.toISOString(),
+        last_attempt_at: row.last_attempt_at?.toISOString() ?? null,
+        submitted_at: row.submitted_at?.toISOString() ?? null,
+        provider_message_id: row.provider_message_id,
+        error_code: row.error_code,
+        created_at: row.created_at.toISOString(),
+      };
+    });
+  }
+
+  async claimNotifications(limit = 25): Promise<SharedClaimedNotification[]> {
+    const bounded = Number.isInteger(limit) ? Math.min(Math.max(limit, 1), 100) : 25;
+    return this.transaction(async (client) => {
+      const timestamp = new Date();
+      const leaseExpiresAt = new Date(timestamp.getTime() + 30_000);
+      const rows = (
+        await client.query<NotificationRow>(
+          `SELECT * FROM sg_notification_outbox
+           WHERE (status='pending' AND next_attempt_at<=$1)
+              OR (status='processing' AND lease_expires_at<=$1)
+           ORDER BY created_at
+           LIMIT $2
+           FOR UPDATE SKIP LOCKED`,
+          [timestamp, bounded],
+        )
+      ).rows;
+      const claims: SharedClaimedNotification[] = [];
+      for (const row of rows) {
+        this.assertNotificationPayload(row);
+        const leaseId = `lease_${randomBytes(18).toString('base64url')}`;
+        const updated = await client.query(
+          `UPDATE sg_notification_outbox
+             SET status='processing',attempt_count=attempt_count+1,last_attempt_at=$1,
+                 lease_id=$2,lease_expires_at=$3
+           WHERE notification_id=$4
+             AND ((status='pending' AND next_attempt_at<=$1)
+               OR (status='processing' AND lease_expires_at<=$1))`,
+          [timestamp, leaseId, leaseExpiresAt, row.notification_id],
+        );
+        if (updated.rowCount !== 1) continue;
+        claims.push({
+          notificationId: row.notification_id,
+          tenantId: row.tenant_id,
+          kind: row.kind,
+          payloadCiphertext: row.payload_ciphertext,
+          leaseId,
+          attemptCount: row.attempt_count + 1,
+        });
+      }
+      return claims;
+    });
+  }
+
+  async finishNotification(input: {
+    notificationId: string;
+    leaseId: string;
+    delivered: boolean;
+    providerMessageId?: string;
+    submittedAt?: string;
+    errorCode?: string;
+    maxAttempts?: number;
+  }): Promise<SharedNotificationStatus | undefined> {
+    return this.transaction(async (client) => {
+      const row = (
+        await client.query<NotificationRow>(
+          `SELECT * FROM sg_notification_outbox
+           WHERE notification_id=$1 AND status='processing' AND lease_id=$2 FOR UPDATE`,
+          [input.notificationId, input.leaseId],
+        )
+      ).rows[0];
+      if (!row) return undefined;
+      this.assertNotificationPayload(row);
+      const maxAttempts = Math.min(Math.max(input.maxAttempts ?? 8, 1), 20);
+      if (input.delivered) {
+        if (
+          !input.providerMessageId ||
+          !/^[A-Za-z0-9-]{8,128}$/u.test(input.providerMessageId) ||
+          !input.submittedAt ||
+          !Number.isFinite(Date.parse(input.submittedAt))
+        )
+          throw new TypeError('shared notification acknowledgement is invalid');
+        const result = await client.query(
+          `UPDATE sg_notification_outbox
+             SET status='delivered',submitted_at=$1,provider_message_id=$2,error_code=NULL,
+                 lease_id=NULL,lease_expires_at=NULL
+           WHERE notification_id=$3 AND status='processing' AND lease_id=$4`,
+          [
+            new Date(input.submittedAt),
+            input.providerMessageId,
+            input.notificationId,
+            input.leaseId,
+          ],
+        );
+        return result.rowCount === 1 ? 'delivered' : undefined;
+      }
+      const dead = row.attempt_count >= maxAttempts;
+      const nextAttemptAt = new Date(
+        Date.now() + Math.min(60_000 * 2 ** Math.min(row.attempt_count, 6), 3_600_000),
+      );
+      const result = await client.query(
+        `UPDATE sg_notification_outbox
+           SET status=$1,next_attempt_at=$2,error_code=$3,lease_id=NULL,lease_expires_at=NULL
+         WHERE notification_id=$4 AND status='processing' AND lease_id=$5`,
+        [
+          dead ? 'dead' : 'pending',
+          nextAttemptAt,
+          (input.errorCode ?? 'provider_error').slice(0, 128),
+          input.notificationId,
+          input.leaseId,
+        ],
+      );
+      return result.rowCount === 1 ? (dead ? 'dead' : 'pending') : undefined;
+    });
+  }
+
+  async redriveNotification(tenantId: string, notificationId: string): Promise<boolean> {
+    const result = await this.pool.query(
+      `UPDATE sg_notification_outbox
+         SET status='pending',attempt_count=0,next_attempt_at=$1,lease_id=NULL,
+             lease_expires_at=NULL,last_attempt_at=NULL,submitted_at=NULL,
+             provider_message_id=NULL,error_code=NULL
+       WHERE tenant_id=$2 AND notification_id=$3 AND status='dead'`,
+      [new Date(), tenantId, notificationId],
+    );
+    return result.rowCount === 1;
+  }
+
+  async recordNotificationProviderEvent(event: SharedNotificationProviderEvent): Promise<boolean> {
+    if (
+      !/^sha256:[0-9a-f]{64}$/u.test(event.eventId) ||
+      !/^sha256:[0-9a-f]{64}$/u.test(event.recipientHash) ||
+      !/^[A-Za-z0-9-]{8,128}$/u.test(event.messageId) ||
+      !Number.isFinite(Date.parse(event.occurredAt))
+    )
+      throw new TypeError('shared notification provider event is invalid');
+    return this.transaction(async (client) => {
+      const existing = (
+        await client.query<NotificationEventRow>(
+          'SELECT * FROM sg_notification_events WHERE event_id=$1 FOR UPDATE',
+          [event.eventId],
+        )
+      ).rows[0];
+      if (existing) {
+        if (
+          !equal(
+            existing.event_hmac,
+            this.notificationEventHmac({
+              event_id: existing.event_id,
+              notification_id: existing.notification_id,
+              tenant_id: existing.tenant_id,
+              event_type: existing.event_type,
+              occurred_at: existing.occurred_at,
+              bounce_type: existing.bounce_type,
+              inactive: existing.inactive,
+            }),
+          )
+        )
+          throw new SharedStateIntegrityError('shared notification event integrity failed');
+        return true;
+      }
+      const notification = (
+        await client.query<NotificationRow>(
+          'SELECT * FROM sg_notification_outbox WHERE provider_message_id=$1 FOR UPDATE',
+          [event.messageId],
+        )
+      ).rows[0];
+      if (!notification || notification.recipient_hash !== event.recipientHash) return false;
+      this.assertNotificationPayload(notification);
+      const row: Omit<NotificationEventRow, 'event_hmac'> = {
+        event_id: event.eventId,
+        notification_id: notification.notification_id,
+        tenant_id: notification.tenant_id,
+        event_type: event.eventType,
+        occurred_at: new Date(event.occurredAt),
+        bounce_type: event.bounceType,
+        inactive: event.inactive,
+      };
+      const inserted = await client.query(
+        `INSERT INTO sg_notification_events(
+           event_id,notification_id,tenant_id,event_type,occurred_at,bounce_type,inactive,event_hmac
+         ) VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+         ON CONFLICT(event_id) DO NOTHING`,
+        [...Object.values(row), this.notificationEventHmac(row)],
+      );
+      return inserted.rowCount === 1;
+    });
   }
 
   async issueApiKey(

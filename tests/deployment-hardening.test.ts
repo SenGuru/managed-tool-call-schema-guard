@@ -68,6 +68,7 @@ describe('deployment environment templates', () => {
       'deploy/docker-compose.production.yml',
       'deploy/docker-compose.postgres.yml',
       'deploy/docker-compose.edge.yml',
+      'deploy/docker-compose.postmark-staging.yml',
     ]);
     const declared = environmentKeys('deploy/env.production.example');
 

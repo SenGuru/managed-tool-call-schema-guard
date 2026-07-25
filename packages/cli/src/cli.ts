@@ -62,6 +62,7 @@ function managedResourcePath(resource: string, found: Map<string, string>): stri
   if (resource === 'audits') return limited('/v1/audits');
   if (resource === 'audit-verification') return '/v1/audits/verify';
   if (resource === 'alerts') return '/v1/alerts';
+  if (resource === 'notifications') return '/v1/admin/notifications';
   if (resource === 'environments') return '/v1/environments';
   if (resource === 'intelligence') return '/v1/intelligence';
   if (resource === 'evaluation-export') return '/v1/intelligence/evaluation-export';
@@ -78,7 +79,7 @@ function managedResourcePath(resource: string, found: Map<string, string>): stri
   if (resource === 'tenant-lifecycle') return '/v1/admin/tenant/lifecycle';
   if (resource === 'tenant-export') return '/v1/admin/tenant/export';
   throw new Error(
-    '--resource must be plans, api-keys, policy, schemas, action-descriptors, action-control, action-challenges, usage, audits, audit-verification, alerts, environments, intelligence, evaluation-export, inventory, billing-statement, schema-releases, schema-release-verification, control-plane-integrity, tenant-lifecycle, or tenant-export',
+    '--resource must be plans, api-keys, policy, schemas, action-descriptors, action-control, action-challenges, usage, audits, audit-verification, alerts, notifications, environments, intelligence, evaluation-export, inventory, billing-statement, schema-releases, schema-release-verification, control-plane-integrity, tenant-lifecycle, or tenant-export',
   );
 }
 async function managedRequest(
@@ -292,6 +293,38 @@ async function main(): Promise<void> {
     );
     return;
   }
+  if (command === 'managed-queue-notification') {
+    console.log(
+      JSON.stringify(
+        await managedRequest(
+          found,
+          '/v1/admin/notifications',
+          'POST',
+          await jsonFile(required(found, 'notification')),
+        ),
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+  if (command === 'managed-redrive-notification') {
+    const notificationId = required(found, 'notification-id');
+    if (!/^notification_[A-Za-z0-9_-]{16,128}$/u.test(notificationId))
+      throw new Error('--notification-id must be a valid notification identifier');
+    console.log(
+      JSON.stringify(
+        await managedRequest(
+          found,
+          `/v1/admin/notifications/${encodeURIComponent(notificationId)}/redrive`,
+          'POST',
+        ),
+        null,
+        2,
+      ),
+    );
+    return;
+  }
   if (command === 'managed-billing-checkout') {
     await writeSensitiveManagedResult(
       found,
@@ -307,7 +340,7 @@ async function main(): Promise<void> {
     return;
   }
   throw new Error(
-    'usage: schemaguard validate --schema FILE --args FILE [--tool NAME] [--policy FILE] [--audit FILE]\n       schemaguard normalize --adapter NAME --input FILE\n       schemaguard drift --before FILE --after FILE\n       schemaguard compile --target openai|anthropic|google_gemini|mcp --schema FILE [--tool NAME] [--description TEXT] [--openai-strict-policy reject|normalize]\n       schemaguard fixture --schema FILE --args FILE --out FILE [--tool NAME] [--policy FILE]\n       schemaguard replay --fixture FILE\n       schemaguard managed --base-url URL --api-key-file FILE --resource NAME [--limit N] [--environment NAME] [--timeout-ms N]\n       schemaguard managed-set-action-control --base-url URL --api-key-file FILE --control FILE [--timeout-ms N]\n       schemaguard managed-acknowledge-alert --base-url URL --api-key-file FILE --alert-id ID [--timeout-ms N]\n       schemaguard managed-request-deletion --base-url URL --api-key-file FILE --confirm-tenant-id ID [--timeout-ms N]\n       schemaguard managed-billing-checkout --base-url URL --api-key-file FILE --out OWNER_ONLY_FILE [--timeout-ms N]\n       schemaguard managed-billing-portal --base-url URL --api-key-file FILE --out OWNER_ONLY_FILE [--timeout-ms N]',
+    'usage: schemaguard validate --schema FILE --args FILE [--tool NAME] [--policy FILE] [--audit FILE]\n       schemaguard normalize --adapter NAME --input FILE\n       schemaguard drift --before FILE --after FILE\n       schemaguard compile --target openai|anthropic|google_gemini|mcp --schema FILE [--tool NAME] [--description TEXT] [--openai-strict-policy reject|normalize]\n       schemaguard fixture --schema FILE --args FILE --out FILE [--tool NAME] [--policy FILE]\n       schemaguard replay --fixture FILE\n       schemaguard managed --base-url URL --api-key-file FILE --resource NAME [--limit N] [--environment NAME] [--timeout-ms N]\n       schemaguard managed-set-action-control --base-url URL --api-key-file FILE --control FILE [--timeout-ms N]\n       schemaguard managed-acknowledge-alert --base-url URL --api-key-file FILE --alert-id ID [--timeout-ms N]\n       schemaguard managed-queue-notification --base-url URL --api-key-file FILE --notification FILE [--timeout-ms N]\n       schemaguard managed-redrive-notification --base-url URL --api-key-file FILE --notification-id ID [--timeout-ms N]\n       schemaguard managed-request-deletion --base-url URL --api-key-file FILE --confirm-tenant-id ID [--timeout-ms N]\n       schemaguard managed-billing-checkout --base-url URL --api-key-file FILE --out OWNER_ONLY_FILE [--timeout-ms N]\n       schemaguard managed-billing-portal --base-url URL --api-key-file FILE --out OWNER_ONLY_FILE [--timeout-ms N]',
   );
 }
 main().catch((error: unknown) => {

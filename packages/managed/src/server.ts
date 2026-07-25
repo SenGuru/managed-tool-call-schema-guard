@@ -3,6 +3,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import { readFileSync } from 'node:fs';
 import {
   assertJsonSafety,
+  canonicalJson,
   actionControlPolicyValidationError,
   compileToolContract,
   createApprovalChallenge,
@@ -64,6 +65,16 @@ import {
   dispatchSharedCheckpointAnchorsOnce,
 } from './webhook.js';
 import { billingTenantReference, StripeBillingProvider, type BillingProvider } from './billing.js';
+import { openSealedValue, sealValue } from './crypto.js';
+import {
+  dispatchNotificationsOnce,
+  parsePostmarkWebhook,
+  PostmarkEmailProvider,
+  TRANSACTIONAL_EMAIL_KINDS,
+  type ClaimedNotification,
+  type TransactionalEmailProvider,
+  type TransactionalEmailRequest,
+} from './email.js';
 import {
   createAuthState,
   humanPrincipalId,
@@ -176,6 +187,12 @@ function bearer(request: IncomingMessage): string {
 }
 const HUMAN_SESSION_COOKIE = '__Host-akriven_session';
 const HUMAN_STATE_COOKIE = '__Host-akriven_auth_state';
+function notificationPayloadPurpose(notificationId: string): string {
+  return `managed-notification-payload-v1:${notificationId}`;
+}
+function sha256Value(value: string): string {
+  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
+}
 function cookies(request: IncomingMessage): Readonly<Record<string, string>> {
   const header = request.headers.cookie;
   if (!header || header.length > 32_768) return {};
@@ -533,6 +550,7 @@ export function createManagedServer(
     billingState?: BillingState;
     billingProvider?: BillingProvider;
     identityProvider?: HumanIdentityProvider;
+    emailProvider?: TransactionalEmailProvider;
   } = {},
 ) {
   validateManagedConfig(config);
@@ -684,6 +702,21 @@ export function createManagedServer(
           organizationTenantMap: config.workosOrganizationTenantMap!,
         })
       : undefined);
+  const postmarkConfigured = [
+    config.postmarkServerToken,
+    config.postmarkFrom,
+    config.postmarkWebhookUsername,
+    config.postmarkWebhookPassword,
+  ].every((value) => value !== undefined);
+  const emailProvider =
+    dependencies.emailProvider ??
+    (postmarkConfigured
+      ? new PostmarkEmailProvider({
+          serverToken: config.postmarkServerToken!,
+          from: config.postmarkFrom!,
+          ...(config.postmarkMessageStream ? { messageStream: config.postmarkMessageStream } : {}),
+        })
+      : undefined);
   const limiter = new FixedWindowRateLimiter(config.rateLimitPerMinute ?? 120);
   const metrics = new ManagedMetrics();
   let draining = false;
@@ -806,6 +839,41 @@ export function createManagedServer(
     config.alertWebhookPollIntervalMs ?? 5_000,
   );
   webhookTimer.unref();
+  let notificationDispatch: Promise<void> | undefined;
+  const runNotificationDispatch = (): Promise<void> => {
+    if (!emailProvider) return Promise.resolve();
+    if (notificationDispatch) return notificationDispatch;
+    const outbox = controlState ?? store;
+    notificationDispatch = dispatchNotificationsOnce(
+      outbox,
+      emailProvider,
+      (claim: ClaimedNotification): TransactionalEmailRequest => {
+        const raw = openSealedValue(
+          config.masterSecret,
+          notificationPayloadPurpose(claim.notificationId),
+          claim.payloadCiphertext,
+        );
+        const parsed = JSON.parse(raw) as unknown;
+        if (!object(parsed))
+          throw new TypeError('encrypted notification payload must be an object');
+        return parsed as unknown as TransactionalEmailRequest;
+      },
+      { maxAttempts: config.notificationMaxAttempts ?? 8 },
+    )
+      .then(() => undefined)
+      .finally(() => {
+        notificationDispatch = undefined;
+      });
+    return notificationDispatch;
+  };
+  const notificationTimer = setInterval(
+    () =>
+      void runNotificationDispatch().catch(() => {
+        // Queue state remains authoritative; the next bounded poll retries.
+      }),
+    config.notificationPollIntervalMs ?? 5_000,
+  );
+  notificationTimer.unref();
   const runCheckpointAnchorDispatch = (batchSize = 25): Promise<void> => {
     if (checkpointAnchorDispatch) return checkpointAnchorDispatch;
     checkpointAnchorDispatch = (async () => {
@@ -1557,6 +1625,51 @@ export function createManagedServer(
           received: true,
           event_status: result.event_status,
         });
+        return;
+      }
+      if (request.method === 'POST' && url.pathname === '/v1/notifications/postmark/webhook') {
+        if (
+          !postmarkConfigured ||
+          !config.postmarkWebhookUsername ||
+          !config.postmarkWebhookPassword
+        )
+          throw new ManagedError(
+            501,
+            'notification_integration_required',
+            'transactional email is not configured',
+          );
+        const rawBody = await readRawBody(request, 64 * 1024);
+        let event;
+        try {
+          event = parsePostmarkWebhook(rawBody, request.headers.authorization, {
+            username: config.postmarkWebhookUsername,
+            password: config.postmarkWebhookPassword,
+          });
+        } catch {
+          throw new ManagedError(
+            401,
+            'invalid_notification_webhook',
+            'notification webhook authentication or envelope is invalid',
+          );
+        }
+        await controlStateInitialization;
+        if (controlStateInitializationFailed) throw sharedControlStateUnavailable(undefined);
+        let recorded: boolean;
+        try {
+          recorded = controlState
+            ? await controlState.recordNotificationProviderEvent(event)
+            : store.recordNotificationProviderEvent(event);
+        } catch (error) {
+          if (error instanceof ManagedError) throw error;
+          throw sharedControlStateUnavailable(error);
+        }
+        if (!recorded)
+          throw new ManagedError(
+            503,
+            'notification_binding_pending',
+            'notification event is not yet bound to an acknowledged message',
+          );
+        sendJson(response, 200, { received: true });
         return;
       }
       await controlStateInitialization;
@@ -3307,6 +3420,120 @@ export function createManagedServer(
         } else sendJson(response, 201, store.issueApiKey(principal, input.scopes as Scope[]));
         return;
       }
+      if (request.method === 'POST' && url.pathname === '/v1/admin/notifications') {
+        store.requireScope(principal, 'admin');
+        if (!emailProvider)
+          throw new ManagedError(
+            501,
+            'notification_integration_required',
+            'transactional email is not configured',
+          );
+        const input = asRecord(await guardedBody());
+        if (
+          typeof input.kind !== 'string' ||
+          !TRANSACTIONAL_EMAIL_KINDS.includes(
+            input.kind as (typeof TRANSACTIONAL_EMAIL_KINDS)[number],
+          ) ||
+          typeof input.to !== 'string' ||
+          typeof input.template_alias !== 'string' ||
+          typeof input.idempotency_key !== 'string' ||
+          !object(input.template_model)
+        )
+          throw new ManagedError(
+            400,
+            'invalid_notification',
+            'kind, recipient, template alias/model, and idempotency key are required',
+          );
+        const request: TransactionalEmailRequest = {
+          kind: input.kind as TransactionalEmailRequest['kind'],
+          to: input.to,
+          templateAlias: input.template_alias,
+          templateModel: input.template_model,
+          idempotencyKey: input.idempotency_key,
+        };
+        try {
+          assertJsonSafety(request.templateModel, 'notification template model');
+        } catch {
+          throw new ManagedError(
+            400,
+            'invalid_notification',
+            'notification template model must contain bounded JSON values',
+          );
+        }
+        const canonical = canonicalJson(request);
+        if (Buffer.byteLength(canonical) > 64 * 1024)
+          throw new ManagedError(
+            413,
+            'notification_too_large',
+            'notification payload exceeds 64 KiB',
+          );
+        const notificationId = `notification_${randomUUID()}`;
+        const queueInput = {
+          notificationId,
+          kind: request.kind,
+          recipientHash: sha256Value(request.to.toLowerCase()),
+          idempotencyHash: sha256Value(`${principal.tenantId}\0${request.idempotencyKey}`),
+          requestHash: sha256Value(canonical),
+          payloadCiphertext: sealValue(
+            config.masterSecret,
+            notificationPayloadPurpose(notificationId),
+            canonical,
+          ),
+        };
+        let queued: { notification_id: string; created: boolean };
+        try {
+          queued = controlState
+            ? await controlState.enqueueNotification({
+                tenantId: principal.tenantId,
+                ...queueInput,
+              })
+            : store.enqueueNotification(principal, queueInput);
+        } catch (error) {
+          if (error instanceof ManagedError) throw error;
+          throw sharedControlStateUnavailable(error);
+        }
+        await runNotificationDispatch().catch(() => undefined);
+        sendJson(response, queued.created ? 202 : 200, queued);
+        return;
+      }
+      if (request.method === 'GET' && url.pathname === '/v1/admin/notifications') {
+        store.requireScope(principal, 'admin');
+        try {
+          sendJson(response, 200, {
+            notifications: controlState
+              ? await controlState.listNotifications(principal.tenantId, 100)
+              : store.listNotifications(principal, 100),
+          });
+        } catch (error) {
+          if (error instanceof ManagedError) throw error;
+          throw sharedControlStateUnavailable(error);
+        }
+        return;
+      }
+      const notificationRedrive = url.pathname.match(
+        /^\/v1\/admin\/notifications\/(notification_[A-Za-z0-9_-]{16,128})\/redrive$/u,
+      );
+      if (request.method === 'POST' && notificationRedrive?.[1]) {
+        store.requireScope(principal, 'admin');
+        let redriven: boolean;
+        try {
+          redriven = controlState
+            ? await controlState.redriveNotification(principal.tenantId, notificationRedrive[1])
+            : store.redriveNotification(principal, notificationRedrive[1]);
+        } catch (error) {
+          if (error instanceof ManagedError) throw error;
+          throw sharedControlStateUnavailable(error);
+        }
+        if (!redriven)
+          throw new ManagedError(
+            404,
+            'notification_not_redrivable',
+            'dead notification was not found',
+          );
+        await runNotificationDispatch().catch(() => undefined);
+        sendJson(response, 200, { redriven: true });
+        return;
+      }
       if (request.method === 'POST' && url.pathname === '/v1/admin/environments') {
         store.requireScope(principal, 'admin');
         const input = asRecord(await guardedBody());
@@ -3483,8 +3710,10 @@ export function createManagedServer(
     async close(): Promise<void> {
       draining = true;
       clearInterval(webhookTimer);
+      clearInterval(notificationTimer);
       clearInterval(checkpointAnchorTimer);
       await webhookDispatch;
+      await notificationDispatch;
       await checkpointAnchorDispatch;
       await Promise.all([
         actionStateInitialization,
@@ -3732,6 +3961,41 @@ export function validateManagedConfig(config: ManagedConfig): void {
     )
       throw new Error('WorkOS redirect and logout URLs must use the configured service origin');
   }
+  const postmarkValues = [
+    config.postmarkServerToken,
+    config.postmarkFrom,
+    config.postmarkWebhookUsername,
+    config.postmarkWebhookPassword,
+  ];
+  if (
+    postmarkValues.some((value) => value !== undefined) &&
+    !postmarkValues.every((value) => value !== undefined)
+  )
+    throw new Error(
+      'Postmark email requires server token, sender, webhook username, and webhook password together',
+    );
+  if (postmarkValues.every((value) => value !== undefined))
+    new PostmarkEmailProvider({
+      serverToken: config.postmarkServerToken!,
+      from: config.postmarkFrom!,
+      ...(config.postmarkMessageStream ? { messageStream: config.postmarkMessageStream } : {}),
+    });
+  if (
+    config.notificationPollIntervalMs !== undefined &&
+    (!Number.isInteger(config.notificationPollIntervalMs) ||
+      config.notificationPollIntervalMs < 100 ||
+      config.notificationPollIntervalMs > 60_000)
+  )
+    throw new Error(
+      'SCHEMA_GUARD_NOTIFICATION_POLL_INTERVAL_MS must be an integer from 100 through 60000',
+    );
+  if (
+    config.notificationMaxAttempts !== undefined &&
+    (!Number.isInteger(config.notificationMaxAttempts) ||
+      config.notificationMaxAttempts < 1 ||
+      config.notificationMaxAttempts > 20)
+  )
+    throw new Error('SCHEMA_GUARD_NOTIFICATION_MAX_ATTEMPTS must be an integer from 1 through 20');
   if (config.publicMode) {
     if (!config.metricsBearerToken)
       throw new Error('public mode requires SCHEMA_GUARD_METRICS_BEARER_TOKEN');
@@ -3752,6 +4016,8 @@ export function validateManagedConfig(config: ManagedConfig): void {
       throw new Error(
         'public mode requires an independently hosted action checkpoint anchor URL and signing secret',
       );
+    if (postmarkValues.every((value) => value !== undefined) && !config.sharedControlDatabaseUrl)
+      throw new Error('public Postmark email requires shared PostgreSQL control state');
     if (config.sharedActionDatabaseUrl) {
       const sslMode = new URL(config.sharedActionDatabaseUrl).searchParams.get('sslmode');
       if (!sslMode || !['require', 'verify-ca', 'verify-full'].includes(sslMode))
@@ -3867,6 +4133,22 @@ function configFromEnvironment(): ManagedConfig {
       );
     config.workosOrganizationTenantMap = parsed as Record<string, string>;
   }
+  const postmarkServerToken = environmentValue('SCHEMA_GUARD_POSTMARK_SERVER_TOKEN');
+  if (postmarkServerToken) config.postmarkServerToken = postmarkServerToken;
+  if (process.env.SCHEMA_GUARD_POSTMARK_FROM)
+    config.postmarkFrom = process.env.SCHEMA_GUARD_POSTMARK_FROM;
+  if (process.env.SCHEMA_GUARD_POSTMARK_MESSAGE_STREAM)
+    config.postmarkMessageStream = process.env.SCHEMA_GUARD_POSTMARK_MESSAGE_STREAM;
+  const postmarkWebhookUsername = environmentValue('SCHEMA_GUARD_POSTMARK_WEBHOOK_USERNAME');
+  if (postmarkWebhookUsername) config.postmarkWebhookUsername = postmarkWebhookUsername;
+  const postmarkWebhookPassword = environmentValue('SCHEMA_GUARD_POSTMARK_WEBHOOK_PASSWORD');
+  if (postmarkWebhookPassword) config.postmarkWebhookPassword = postmarkWebhookPassword;
+  if (process.env.SCHEMA_GUARD_NOTIFICATION_POLL_INTERVAL_MS)
+    config.notificationPollIntervalMs = Number(
+      process.env.SCHEMA_GUARD_NOTIFICATION_POLL_INTERVAL_MS,
+    );
+  if (process.env.SCHEMA_GUARD_NOTIFICATION_MAX_ATTEMPTS)
+    config.notificationMaxAttempts = Number(process.env.SCHEMA_GUARD_NOTIFICATION_MAX_ATTEMPTS);
   if (process.env.SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_POLL_INTERVAL_MS)
     config.actionCheckpointAnchorPollIntervalMs = Number(
       process.env.SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_POLL_INTERVAL_MS,

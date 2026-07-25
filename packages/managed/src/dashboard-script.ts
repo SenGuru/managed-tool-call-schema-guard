@@ -157,13 +157,13 @@ function setCredentialMode(mode){
   q('key').closest('.credential-editor').hidden=connected;
 }
 
-const panelIds=['lifecycle','usage','chain','alerts','releases','schemas','policy','descriptors','challenges','intelligence','audits','webhooks','deliveries','actions','reconciliation','billing','control-integrity','rulesets','api-keys','export-result'];
+const panelIds=['lifecycle','usage','chain','alerts','releases','schemas','policy','descriptors','challenges','intelligence','audits','webhooks','deliveries','notifications','actions','reconciliation','billing','control-integrity','rulesets','api-keys','export-result'];
 const clearPanels=()=>{for(const id of panelIds)q(id).textContent='—'};
 function resetDerivedViews(){
   for(const id of ['usage-total','usage-limit','accept-rate','repair-total','rejection-total','plan-name','open-alert-total','environment-total','api-key-total','service-state','inventory-tool-total','inventory-release-total','inventory-environment-total','inventory-action-total'])text(id,'—');
   text('tenant-name','Tenant workspace');text('tenant-avatar','A');text('protection-state-text','Awaiting tenant');
   q('protection-state').className='status-pill';q('quota-meter').style.removeProperty('--quota-scale');q('quota-meter-track').setAttribute('aria-valuenow','0');
-  for(const id of ['decision-rows','schema-rows','release-rows','environment-rows','descriptor-rows','anchor-delivery-rows','reconciliation-pending-rows','reconciliation-history-rows','challenge-rows','webhook-rows','delivery-rows','compatibility-rows','quality-rows','evidence-audit-rows','api-key-rows'])q(id)?.replaceChildren();
+  for(const id of ['decision-rows','schema-rows','release-rows','environment-rows','descriptor-rows','anchor-delivery-rows','reconciliation-pending-rows','reconciliation-history-rows','challenge-rows','webhook-rows','delivery-rows','notification-rows','compatibility-rows','quality-rows','evidence-audit-rows','api-key-rows'])q(id)?.replaceChildren();
   q('decision-empty').hidden=false;
   for(const id of ['validate-result','compile-result','action-evaluate-result','checkpoint-compare-result','webhook-secret','api-key-secret']){const node=q(id);if(node){node.hidden=true;node.replaceChildren()}}
   for(const id of ['release-chain-label','checkpoint-label','reconciliation-chain-label','audit-chain-label','privacy-threshold-label']){if(q(id))text(id,'Not loaded')}
@@ -430,6 +430,14 @@ function renderAlertOperations(data){
     appendCells(row,[value(item,'webhook_id'),tag(item.status),number(item.attempt_count),formatTime(item.next_attempt_at),short(value(item,'error_code'),36),controls]);deliveryBody.append(row);
   }
   if(!deliveries.length)tableEmpty('delivery-rows',6,'No webhook deliveries recorded.');
+  const notifications=data.notifications?.notifications||[];
+  const notificationBody=q('notification-rows');notificationBody.replaceChildren();
+  for(const item of notifications){
+    const row=document.createElement('tr');const controls=document.createElement('div');controls.className='row-actions';
+    if(item.status==='dead')controls.append(actionButton('Redrive',async()=>{await request('/v1/admin/notifications/'+encodeURIComponent(item.notification_id)+'/redrive',{method:'POST'});await refreshAlerts()}));
+    appendCells(row,[String(item.kind||'—').replaceAll('_',' '),tag(item.status),number(item.attempt_count),formatTime(item.next_attempt_at),codeValue(short(value(item,'provider_message_id'),24)),short(value(item,'error_code'),36),controls]);notificationBody.append(row);
+  }
+  if(!notifications.length)tableEmpty('notification-rows',7,'No transactional notifications recorded.');
 }
 function renderIntelligence(data){
   const intel=data.intelligence||{};
@@ -627,10 +635,10 @@ q('load').onclick=async()=>{
     text('tenant-name',lifecycle.tenant_name||lifecycle.tenant_id||'Tenant');
     text('tenant-avatar',String(lifecycle.tenant_name||lifecycle.tenant_id||'Tenant').slice(0,1).toUpperCase());
     if(lifecycle.lifecycle.status!=='active'){workspace.dataset.connected='false';setCredentialMode('editing');text('connection-label','Access locked');q('protection-state').className='status-pill bad';text('protection-state-text','Tenant '+lifecycle.lifecycle.status);q('status').className='bad';q('status').textContent='Loaded — operational access is locked';return}
-    const [usage,chain,audits,alerts,intelligence,environments,releases,releaseChain,schemas,policy,descriptors,actionControl,challenges,webhooks,deliveries,checkpoint,anchorDeliveries,reconciliationPending,reconciliationHistory,reconciliationChain,billing,integrity,ruleset,apiKeys,plans,inventory]=await Promise.all([
+    const [usage,chain,audits,alerts,intelligence,environments,releases,releaseChain,schemas,policy,descriptors,actionControl,challenges,webhooks,deliveries,notifications,checkpoint,anchorDeliveries,reconciliationPending,reconciliationHistory,reconciliationChain,billing,integrity,ruleset,apiKeys,plans,inventory]=await Promise.all([
       loadGet('/v1/usage'),loadGet('/v1/audits/verify'),loadGet('/v1/audits?limit=25'),loadGet('/v1/alerts'),loadGet('/v1/intelligence'),loadGet('/v1/environments'),loadGet('/v1/schema-releases?limit=25'),loadGet('/v1/schema-releases/verify'),
       loadGet('/v1/schemas'),loadGet('/v1/admin/policy'),loadGet('/v1/admin/actions/descriptors'),loadGet('/v1/admin/actions/control'),loadGet('/v1/actions/challenges?limit=100'),
-      loadGet('/v1/alert-webhooks'),loadGet('/v1/alert-webhooks/deliveries?limit=100'),loadGet('/v1/actions/idempotency/checkpoint'),loadGet('/v1/actions/idempotency/anchors/deliveries?limit=100'),
+      loadGet('/v1/alert-webhooks'),loadGet('/v1/alert-webhooks/deliveries?limit=100'),loadGet('/v1/admin/notifications'),loadGet('/v1/actions/idempotency/checkpoint'),loadGet('/v1/actions/idempotency/anchors/deliveries?limit=100'),
       loadGet('/v1/actions/reconciliation/pending'),loadGet('/v1/actions/reconciliation/history'),loadGet('/v1/actions/reconciliation/verify'),loadGet('/v1/billing/statement'),loadGet('/v1/admin/control-plane-integrity'),loadGetOptional('/v1/rulesets/latest'),loadGet('/v1/admin/api-keys'),loadGet('/v1/plans'),loadGet('/v1/inventory')
     ]);
     if(generation!==loadGeneration)return;
@@ -646,13 +654,14 @@ q('load').onclick=async()=>{
     q('intelligence').textContent=JSON.stringify(intelligence,null,2);
     q('webhooks').textContent=JSON.stringify(webhooks,null,2);
     q('deliveries').textContent=JSON.stringify(deliveries,null,2);
+    q('notifications').textContent=JSON.stringify(notifications,null,2);
     q('actions').textContent=JSON.stringify({control:actionControl,checkpoint,anchor_deliveries:anchorDeliveries.deliveries},null,2);
     q('reconciliation').textContent=JSON.stringify({pending:reconciliationPending.pending,reconciliations:reconciliationHistory.reconciliations,chain:reconciliationChain},null,2);
     q('billing').textContent=JSON.stringify(billing,null,2);
     q('control-integrity').textContent=JSON.stringify(integrity,null,2);
     q('rulesets').textContent=JSON.stringify(ruleset,null,2);
     q('api-keys').textContent=JSON.stringify(apiKeys,null,2);
-    workspaceData={serviceHealth,serviceReadiness,lifecycle,usage,chain,audits,alerts,intelligence,environments,releases,releaseChain,schemas,policy,descriptors,actionControl,challenges,webhooks,deliveries,checkpoint,anchorDeliveries,reconciliationPending,reconciliationHistory,reconciliationChain,billing,integrity,ruleset,apiKeys,plans,inventory};
+    workspaceData={serviceHealth,serviceReadiness,lifecycle,usage,chain,audits,alerts,intelligence,environments,releases,releaseChain,schemas,policy,descriptors,actionControl,challenges,webhooks,deliveries,notifications,checkpoint,anchorDeliveries,reconciliationPending,reconciliationHistory,reconciliationChain,billing,integrity,ruleset,apiKeys,plans,inventory};
     renderOverview(workspaceData);renderSchemas(workspaceData);renderEnvironments(workspaceData);renderActions(workspaceData);renderChallenges(workspaceData);renderAlertOperations(workspaceData);renderIntelligence(workspaceData);renderEvidence(workspaceData);renderAccess(workspaceData);renderUsage(workspaceData);renderSettings(workspaceData);
     workspace.dataset.connected='true';setCredentialMode('connected');text('connection-label','Connected');q('status').className='good';q('status').textContent='Workspace loaded';
   }catch(error){if(generation!==loadGeneration||error?.name==='AbortError')return;workspace.dataset.connected='false';setCredentialMode('editing');text('connection-label','Not connected');clearPanels();resetDerivedViews();q('status').className='bad';q('status').textContent=error instanceof Error?error.message:'Request failed'}
@@ -684,8 +693,8 @@ async function refreshActions(){
 }
 async function refreshChallenges(){const challenges=await get('/v1/actions/challenges?limit=100');workspaceData.challenges=challenges;q('challenges').textContent=JSON.stringify(challenges,null,2);renderChallenges(workspaceData)}
 async function refreshAlerts(){
-  const [alerts,webhooks,deliveries]=await Promise.all([get('/v1/alerts'),get('/v1/alert-webhooks'),get('/v1/alert-webhooks/deliveries?limit=100')]);
-  Object.assign(workspaceData,{alerts,webhooks,deliveries});q('alerts').textContent=JSON.stringify(compactAlerts(alerts.alerts),null,2);q('webhooks').textContent=JSON.stringify(webhooks,null,2);q('deliveries').textContent=JSON.stringify(deliveries,null,2);renderAlertOperations(workspaceData);
+  const [alerts,webhooks,deliveries,notifications]=await Promise.all([get('/v1/alerts'),get('/v1/alert-webhooks'),get('/v1/alert-webhooks/deliveries?limit=100'),get('/v1/admin/notifications')]);
+  Object.assign(workspaceData,{alerts,webhooks,deliveries,notifications});q('alerts').textContent=JSON.stringify(compactAlerts(alerts.alerts),null,2);q('webhooks').textContent=JSON.stringify(webhooks,null,2);q('deliveries').textContent=JSON.stringify(deliveries,null,2);q('notifications').textContent=JSON.stringify(notifications,null,2);renderAlertOperations(workspaceData);
 }
 async function refreshIntelligence(){
   const [intelligence,ruleset]=await Promise.all([get('/v1/intelligence'),getOptional('/v1/rulesets/latest')]);Object.assign(workspaceData,{intelligence,ruleset});q('intelligence').textContent=JSON.stringify(intelligence,null,2);q('rulesets').textContent=JSON.stringify(ruleset,null,2);renderIntelligence(workspaceData);return refreshInventoryBestEffort();
@@ -758,6 +767,7 @@ bindForm('checkpoint-compare-form','checkpoint-compare-status',async()=>{const r
 for(const button of document.querySelectorAll('[data-challenge-filter]'))button.onclick=()=>{challengeFilter=button.dataset.challengeFilter||'all';for(const peer of document.querySelectorAll('[data-challenge-filter]'))peer.classList.toggle('active',peer===button);if(workspaceData)renderChallenges(workspaceData)};
 bindForm('challenge-form','challenge-status',async()=>{const environment=q('challenge-environment');const workload=q('challenge-workload-identity').value.trim();await request('/v1/actions/challenges',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({tool_name:q('challenge-tool').value,environment:environment.selectedOptions[0]?.dataset.name||environment.value,...(workload?{workload_identity:workload}:{}),decision:parseJson('challenge-decision'),expires_in_seconds:number(q('challenge-expires').value)})});await refreshChallenges();return 'Approval challenge created'});
 bindForm('webhook-create-form','webhook-create-status',async()=>{const result=await request('/v1/alert-webhooks',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({label:q('webhook-label').value,endpoint:q('webhook-endpoint').value})});const secret=value(result,'signing_secret','secret','webhook_secret');if(secret!=='—')showSecret('webhook-secret','Webhook signing secret',String(secret));try{await refreshAlerts();return 'Alert receiver created'}catch{return 'Alert receiver created; copy the secret now, then reload inventory'}});
+bindForm('notification-create-form','notification-create-status',async()=>{await request('/v1/admin/notifications',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({kind:q('notification-kind').value,to:q('notification-recipient').value,template_alias:q('notification-template').value,template_model:parseJson('notification-model'),idempotency_key:q('notification-idempotency').value})});q('notification-confirm').checked=false;await refreshAlerts();return 'Transactional email queued'});
 bindForm('conformance-form','conformance-status',async()=>{await request('/v1/conformance-runs',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({provider:q('conformance-provider').value,provider_version:q('conformance-provider-version').value,framework:q('conformance-framework').value,framework_version:q('conformance-framework-version').value,adapter:q('conformance-adapter').value,suite_version:q('conformance-suite').value,executed_at:new Date().toISOString(),passed:number(q('conformance-passed').value),failed:number(q('conformance-failed').value),repaired:0,rejected:0})});return savedWithInventory('Conformance run recorded',await refreshIntelligence())});
 bindForm('ruleset-form','ruleset-status',async()=>{const issued=new Date();await request('/v1/admin/rulesets',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({version:q('ruleset-version').value,issued_at:issued.toISOString(),expires_at:new Date(issued.getTime()+number(q('ruleset-days').value)*86400000).toISOString(),rules:parseJson('ruleset-body')})});return savedWithInventory('Signed ruleset published',await refreshIntelligence())});
 bindForm('api-key-form','api-key-status',async()=>{const scopes=Array.from(q('scope-picker').querySelectorAll('input:checked')).map(input=>input.value);if(!scopes.length)throw new Error('Select at least one scope');const result=await request('/v1/admin/api-keys',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({scopes})});showSecret('api-key-secret','Tenant API key',result.api_key);for(const input of q('scope-picker').querySelectorAll('input'))input.checked=false;q('api-key-confirm').checked=false;try{await refreshAccess();return 'API key created'}catch{return 'API key created; copy the key now, then reload inventory'}});
@@ -830,6 +840,8 @@ const presets={
   webhook_create:{method:'POST',path:'/v1/alert-webhooks',body:{label:'on-call',endpoint:'[REPLACE:PUBLIC_HTTPS_WEBHOOK_URL]'}},
   webhook_redrive:{method:'POST',path:'/v1/alert-webhooks/deliveries/{DELIVERY_ID}/redrive',body:{}},
   webhook_disable:{method:'DELETE',path:'/v1/alert-webhooks/{WEBHOOK_ID}',body:null,mutation:true},
+  notification_create:{method:'POST',path:'/v1/admin/notifications',body:{kind:'security_alert',to:'[REPLACE:RECIPIENT_EMAIL]',template_alias:'[REPLACE:REVIEWED_TEMPLATE_ALIAS]',template_model:{incident_reference:'[REPLACE:NON_SENSITIVE_REFERENCE]'},idempotency_key:'[REPLACE:UNIQUE_IDEMPOTENCY_KEY]'}},
+  notification_redrive:{method:'POST',path:'/v1/admin/notifications/{NOTIFICATION_ID}/redrive',body:{}},
   publish_ruleset:{method:'POST',path:'/v1/admin/rulesets',body:{version:'[REPLACE:UNIQUE_RULESET_VERSION]',issued_at:'',expires_at:'',rules:[{id:'coerce.string_to_integer',enabled_by_default:true,description:'Exact integer strings'}]}},
   create_api_key:{method:'POST',path:'/v1/admin/api-keys',body:{scopes:['validate','compile','evaluate:action','approve:action','reconcile:action','manage:webhooks','promote:schema','read:audit','read:alerts','read:billing','read:environment','read:intelligence','read:ruleset','read:usage','write:schema','admin']}},
   revoke_api_key:{method:'DELETE',path:'/v1/admin/api-keys/{KEY_ID}',body:null,mutation:true},

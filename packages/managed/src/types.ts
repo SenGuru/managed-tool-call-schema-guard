@@ -106,6 +106,13 @@ export interface ManagedConfig {
   workosRedirectUri?: string;
   workosLogoutReturnUrl?: string;
   workosOrganizationTenantMap?: Record<string, string>;
+  postmarkServerToken?: string;
+  postmarkFrom?: string;
+  postmarkMessageStream?: string;
+  postmarkWebhookUsername?: string;
+  postmarkWebhookPassword?: string;
+  notificationPollIntervalMs?: number;
+  notificationMaxAttempts?: number;
 }
 
 export interface DeliveryOperationalMetrics {

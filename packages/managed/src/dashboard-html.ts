@@ -393,7 +393,20 @@ await dispatchTool(decision.valid_arguments);</code></pre>
       </div>
       <article class="panel top-gap"><div class="panel-head"><div><h3>Alert receivers</h3><p>Signing secrets are shown only when created; endpoint values remain encrypted.</p></div></div><div class="panel-body flush table-scroll"><table><thead><tr><th>Label</th><th>Endpoint hash</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody id="webhook-rows"></tbody></table></div></article>
       <article class="panel top-gap"><div class="panel-head"><div><h3>Delivery queue</h3><p>Retry, dead-letter, and redrive state.</p></div></div><div class="panel-body flush table-scroll"><table><thead><tr><th>Receiver</th><th>Status</th><th>Attempts</th><th>Next attempt</th><th>Last error</th><th></th></tr></thead><tbody id="delivery-rows"></tbody></table></div></article>
-      <div class="evidence-grid top-gap">${evidenceBlock('alerts', 'Alert evidence')}${evidenceBlock('webhooks', 'Receiver evidence')}${evidenceBlock('deliveries', 'Delivery evidence', true)}</div>
+      <div class="content-grid equal top-gap">
+        <form class="panel task-form" id="notification-create-form"><div class="panel-head"><div><h3>Queue transactional email</h3><p>Encrypted durable delivery for reviewed provider templates. Raw recipient and model values are never shown in delivery evidence.</p></div><span class="method-badge">POST /v1/admin/notifications</span></div><div class="panel-body form-grid">
+          <label>Purpose<select class="field" id="notification-kind"><option value="account_invitation">Account invitation</option><option value="account_recovery">Account recovery</option><option value="security_alert">Security alert</option><option value="billing_notice">Billing notice</option><option value="support_update">Support update</option></select></label>
+          <label>Recipient<input class="field" id="notification-recipient" type="email" autocomplete="off" required placeholder="operator@example.com"></label>
+          <label>Template alias<input class="field" id="notification-template" required placeholder="security-alert-v1"></label>
+          <label>Idempotency key<input class="field" id="notification-idempotency" required placeholder="incident-2026-0001"></label>
+          <label class="span-2">Template model (JSON)<textarea class="field code-input" id="notification-model" required spellcheck="false">{"incident_reference":"INC-0001"}</textarea></label>
+          <label class="confirm span-2"><input id="notification-confirm" type="checkbox" required>I reviewed the recipient, provider template, and non-sensitive model values.</label>
+          <div class="form-actions span-2"><button class="btn" type="submit">Queue email</button><span class="form-status" id="notification-create-status" role="status"></span></div>
+        </div></form>
+        <article class="panel"><div class="panel-head"><div><h3>Provider boundary</h3><p>Email is sent only when the reviewed Postmark boundary is configured. Missing provider configuration fails closed.</p></div></div><div class="panel-body"><ul class="clean-list"><li><strong>Encrypted at rest</strong><span>Recipient, alias, and template model remain sealed.</span></li><li><strong>Bounded retries</strong><span>Leased dispatch, dead-letter state, and explicit redrive.</span></li><li><strong>Authenticated receipts</strong><span>Basic-auth provider webhooks bind to message and recipient hashes.</span></li></ul></div></article>
+      </div>
+      <article class="panel top-gap"><div class="panel-head"><div><h3>Transactional notification queue</h3><p>Privacy-safe delivery evidence and operator recovery controls.</p></div></div><div class="panel-body flush table-scroll"><table><thead><tr><th>Purpose</th><th>Status</th><th>Attempts</th><th>Next attempt</th><th>Provider message</th><th>Last error</th><th></th></tr></thead><tbody id="notification-rows"></tbody></table></div></article>
+      <div class="evidence-grid top-gap">${evidenceBlock('alerts', 'Alert evidence')}${evidenceBlock('webhooks', 'Receiver evidence')}${evidenceBlock('deliveries', 'Delivery evidence', true)}${evidenceBlock('notifications', 'Notification evidence', true)}</div>
     </section>
 
     <section class="route-view" data-route-view="intelligence" hidden>
@@ -442,7 +455,7 @@ await dispatchTool(decision.valid_arguments);</code></pre>
     </section>
 
     <section class="route-view" data-route-view="workbench" hidden>
-      <div class="page-head"><div class="page-head-copy"><span class="page-kicker">Operate / Advanced</span><h2>Managed API workbench</h2><p>All 30 managed operations remain available as editable examples. Replace every placeholder and review the exact request before execution.</p></div></div>
+      <div class="page-head"><div class="page-head-copy"><span class="page-kicker">Operate / Advanced</span><h2>Managed API workbench</h2><p>All 32 managed operations remain available as editable examples. Replace every placeholder and review the exact request before execution.</p></div></div>
       <section class="panel workbench" id="workbench"><div class="panel-body">
         <div class="workbench-grid">
           <label for="operation">Operation</label><div><select id="operation">
@@ -451,6 +464,7 @@ await dispatchTool(decision.valid_arguments);</code></pre>
             <option value="action_descriptor">Set action descriptor</option><option value="action_control">Update action controls</option><option value="action_challenge">Create approval challenge</option><option value="action_approve">Approve challenge</option><option value="action_cancel">Cancel challenge</option><option value="action_evaluate">Evaluate action</option>
             <option value="action_complete">Complete reservation</option><option value="action_release">Release reservation</option><option value="checkpoint_compare">Compare checkpoint</option><option value="anchor_redrive">Redrive anchor delivery</option><option value="reconcile">Reconcile uncertain action</option>
             <option value="conformance_run">Ingest conformance run</option><option value="webhook_create">Create alert webhook</option><option value="webhook_redrive">Redrive webhook delivery</option><option value="webhook_disable">Disable webhook</option>
+            <option value="notification_create">Queue transactional notification</option><option value="notification_redrive">Redrive dead notification</option>
             <option value="publish_ruleset">Publish ruleset</option><option value="create_api_key">Create API key</option><option value="revoke_api_key">Revoke API key</option><option value="billing_checkout">Start Stripe checkout</option><option value="billing_portal">Open Stripe billing portal</option><option value="plan_change">Attempt plan change</option><option value="retention_purge">Purge retained audits</option>
           </select><button id="operation-load" type="button">Reset preset</button></div>
           <label for="operation-method">Method</label><input id="operation-method" autocomplete="off">

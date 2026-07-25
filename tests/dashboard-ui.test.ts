@@ -94,6 +94,7 @@ const operationalResponses: Record<string, unknown> = {
   '/v1/actions/challenges?limit=100': { challenges: [] },
   '/v1/alert-webhooks': { webhooks: [] },
   '/v1/alert-webhooks/deliveries?limit=100': { deliveries: [] },
+  '/v1/admin/notifications': { notifications: [] },
   '/v1/actions/idempotency/checkpoint': { revision: 1 },
   '/v1/actions/idempotency/anchors/deliveries?limit=100': { deliveries: [] },
   '/v1/actions/reconciliation/pending': { pending: [] },
@@ -171,6 +172,7 @@ describe('managed dashboard interactions', () => {
       '/v1/actions/reconciliation/',
       '/v1/alerts/',
       '/v1/alert-webhooks',
+      '/v1/admin/notifications',
       '/redrive',
       '/v1/conformance-runs',
       '/v1/intelligence/evaluation-export',
@@ -729,6 +731,97 @@ describe('managed dashboard interactions', () => {
     await new Promise((resolve) => window.setTimeout(resolve, 20));
     expect(dialog.open).toBe(false);
     expect(acknowledgementPaths).toEqual(['/v1/alerts/alert_exact/acknowledge']);
+  });
+
+  it('queues and redrives transactional notifications without rendering recipient values', async () => {
+    const window = dashboard('/dashboard/alerts');
+    const document = window.document;
+    const calls: Array<{ method: string; path: string; body: unknown }> = [];
+    const notificationId = 'notification_11111111-1111-4111-8111-111111111111';
+    window.fetch = (input, init) => {
+      const path = typeof input === 'string' ? input : String(input.url);
+      const method = init?.method ?? 'GET';
+      const body = typeof init?.body === 'string' ? (JSON.parse(init.body) as unknown) : undefined;
+      if (method !== 'GET') calls.push({ method, path, body });
+      const responseBody =
+        path === '/v1/admin/tenant/lifecycle'
+          ? {
+              tenant_id: 'tenant_active',
+              tenant_name: 'Active tenant',
+              lifecycle: { status: 'active' },
+            }
+          : path === '/v1/admin/notifications' && method === 'GET'
+            ? {
+                notifications: [
+                  {
+                    notification_id: notificationId,
+                    kind: 'security_alert',
+                    recipient_hash: `sha256:${'1'.repeat(64)}`,
+                    idempotency_hash: `sha256:${'2'.repeat(64)}`,
+                    request_hash: `sha256:${'3'.repeat(64)}`,
+                    status: 'dead',
+                    attempt_count: 3,
+                    next_attempt_at: '2026-07-25T12:00:00.000Z',
+                    provider_message_id: null,
+                    error_code: 'provider_unavailable',
+                    created_at: '2026-07-25T11:00:00.000Z',
+                  },
+                ],
+              }
+            : path === '/v1/admin/notifications' && method === 'POST'
+              ? { notification_id: notificationId, created: true }
+              : path.endsWith('/redrive')
+                ? { redriven: true }
+                : operationalResponses[path];
+      return Promise.resolve(
+        new window.Response(JSON.stringify(responseBody), {
+          status: path === '/v1/admin/notifications' && method === 'POST' ? 202 : 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+    };
+    (document.getElementById('key') as HTMLInputElement).value = 'test-only-key';
+    document.getElementById('load')!.click();
+    await new Promise((resolve) => window.setTimeout(resolve, 20));
+
+    expect(document.getElementById('notification-rows')!.textContent).toContain('security alert');
+    expect(document.getElementById('notification-rows')!.textContent).not.toContain(
+      'security@example.test',
+    );
+    (document.getElementById('notification-recipient') as HTMLInputElement).value =
+      'security@example.test';
+    (document.getElementById('notification-template') as HTMLInputElement).value =
+      'security-alert-v1';
+    (document.getElementById('notification-idempotency') as HTMLInputElement).value = 'incident-7';
+    (document.getElementById('notification-confirm') as HTMLInputElement).checked = true;
+    document
+      .getElementById('notification-create-form')!
+      .dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+    await new Promise((resolve) => window.setTimeout(resolve, 20));
+    document.querySelector<HTMLButtonElement>('#notification-rows button')!.click();
+    await new Promise((resolve) => window.setTimeout(resolve, 20));
+
+    expect(calls).toEqual([
+      {
+        method: 'POST',
+        path: '/v1/admin/notifications',
+        body: {
+          kind: 'account_invitation',
+          to: 'security@example.test',
+          template_alias: 'security-alert-v1',
+          template_model: { incident_reference: 'INC-0001' },
+          idempotency_key: 'incident-7',
+        },
+      },
+      {
+        method: 'POST',
+        path: `/v1/admin/notifications/${notificationId}/redrive`,
+        body: undefined,
+      },
+    ]);
+    expect(document.getElementById('notifications')!.textContent).not.toContain(
+      'security@example.test',
+    );
   });
 
   it('renders real managed response shapes and sends row actions to exact IDs', async () => {

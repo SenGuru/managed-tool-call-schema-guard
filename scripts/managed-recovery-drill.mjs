@@ -7,7 +7,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import Database from 'better-sqlite3';
 import { createApprovalChallenge, sha256, validateToolCall } from '../packages/core/dist/index.js';
-import { hmac } from '../packages/managed/dist/crypto.js';
+import { hmac, sealValue } from '../packages/managed/dist/crypto.js';
 import { environmentValue } from '../packages/managed/dist/environment.js';
 import { ManagedStore } from '../packages/managed/dist/store.js';
 
@@ -33,6 +33,8 @@ const countedTables = [
   'alerts',
   'alert_webhooks',
   'alert_deliveries',
+  'notification_outbox',
+  'notification_events',
   'schema_releases',
 ];
 
@@ -179,6 +181,25 @@ function seed(store, masterSecret) {
   });
   const principal = store.authenticate('recovery-drill-admin-key');
   if (!principal) throw new Error('recovery drill could not authenticate its seeded tenant');
+  const notificationId = 'notification_recovery_drill_00000001';
+  store.enqueueNotification(principal, {
+    notificationId,
+    kind: 'security_alert',
+    recipientHash: sha256('security@example.test'),
+    idempotencyHash: sha256('recovery-drill-notification'),
+    requestHash: sha256('recovery-drill-notification-request'),
+    payloadCiphertext: sealValue(
+      masterSecret,
+      `managed-notification-payload-v1:${notificationId}`,
+      JSON.stringify({
+        kind: 'security_alert',
+        to: 'security@example.test',
+        templateAlias: 'security-alert-v1',
+        templateModel: { incident_reference: 'RECOVERY-DRILL' },
+        idempotencyKey: 'recovery-drill-notification',
+      }),
+    ),
+  });
   store.createAlertWebhook(
     principal,
     'recovery-drill-webhook',
