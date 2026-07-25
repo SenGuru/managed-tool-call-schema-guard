@@ -171,6 +171,16 @@ machine-to-machine/operator support boundaries. They are covered by receiver
 tests and the production container E2E rather than duplicated as customer
 dashboard forms.
 
+### Website-to-product activation
+
+The private website exposes a provider-independent `/start` journey with two
+explicit paths: offline open core and an operator-issued managed workspace.
+Desktop and 390-pixel browser runs exercised both branches, verified zero
+horizontal overflow, and followed the managed action to the real dashboard
+connection screen. The website does not collect or store tenant API keys and
+does not represent human login, invitations, recovery, or automated billing as
+available.
+
 ## Exact commands and observed results
 
 | Command                                           | Result                                                                                                                                       |
@@ -187,7 +197,7 @@ dashboard forms.
 | `npm run audit:real-repos`                        | 20 repositories, 106 extracted fixtures; source was inspected only, never executed                                                           |
 | `npm run audit:images`                            | 3 images, zero HIGH/CRITICAL vulnerabilities, zero embedded secrets                                                                          |
 | `trivy fs --scanners vuln,secret,misconfig ... .` | zero HIGH/CRITICAL vulnerabilities, secrets, or misconfigurations                                                                            |
-| private website `npm run lint && npm test`        | lint and production build passed; 17 routes built; 3/3 rendered HTML and trust/non-claim tests passed                                        |
+| private website `npm run lint && npm test`        | lint and production build passed; 18 routes built including `/start`; 3/3 rendered HTML and trust/non-claim suites passed                    |
 
 Additional measurements produced inside the extreme audit:
 
