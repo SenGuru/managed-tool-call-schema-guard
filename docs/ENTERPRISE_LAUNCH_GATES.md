@@ -4,7 +4,7 @@ Status date: 2026-07-24
 
 ## Current decision
 
-**Public deployment: NO-GO.** The deterministic enforcement product and its
+**Public production: NO-GO.** The deterministic enforcement product and its
 single-node managed runtime have strong local evidence. The repository is not a
 complete self-serve enterprise SaaS yet. A green local test run must not be used
 to imply hosted identity, payment settlement, high availability, disaster
@@ -64,7 +64,7 @@ recovery, or an operated security program.
 | Security assurance                     | Static lint/security rules, dependency audit, image scan, workflow audit, threat model, adversarial/property tests exist                                                                                                                  | Independent penetration test, OWASP ASVS verification record, dependency/license review, secret scan in protected CI, incident-response exercise, vulnerability disclosure process, and remediation SLA                        |
 | Provider fleet evidence                | Deterministic fixtures and framework runtimes pass                                                                                                                                                                                        | Protected live OpenAI/Anthropic/Gemini probes with pinned model versions, scheduled execution, retained reports, drift alerts, and reviewed failures; no skipped provider is a passing result                                  |
 | Release supply chain                   | Dependencies/images/actions are pinned and release audit is fail-closed                                                                                                                                                                   | Registry publishing decision, SBOM and provenance/attestation for the shipped digest, protected environment approval, rollback test, immutable release record, and verified consumer installation                              |
-| Legal and support operations           | Sites version 14 publicly serves reviewed terms/privacy/support/security pages and retains explicit pre-launch/no-checkout boundaries                                                                                                     | Legal review, DPA/subprocessor position, retention/deletion policy, security-contact ownership, support ownership, severity definitions, escalation, and status communication                                                  |
+| Legal and support operations           | Private owner-only Sites version 15 serves reviewed terms/privacy/support/security pages and retains explicit pre-launch/no-checkout boundaries; customer-facing DNS was not changed                                                      | Legal review, DPA/subprocessor position, retention/deletion policy, security-contact ownership, support ownership, severity definitions, escalation, and status communication                                                  |
 | Market evidence                        | Benchmarks and local failure interception exist                                                                                                                                                                                           | Design partners using real workflows, measured intercepted failures and debugging time, willingness-to-pay evidence, retention/usage evidence, and no representation of benchmark success as customer validation               |
 
 ## Required certification sequence
@@ -102,8 +102,15 @@ SCHEMA_GUARD_PUBLIC_E2E_BASE_URL=https://... \
 npm run audit:images
 npm run audit:extreme
 npm run audit:release-candidate -- --output release-candidate-report.json
+npm run audit:commercial-release -- \
+  --target private-beta \
+  --evidence-dir /owner-only/path/to/evidence \
+  --output /owner-only/path/to/private-beta-verdict.json
 ```
 
-The release-candidate command is intentionally non-skippable. It must fail when
+The release-candidate command is intentionally non-skippable for the internal
+and live-model boundary. It must fail when
 PostgreSQL, Docker, a scanner, provider credentials, or pinned provider model
-versions are absent.
+versions are absent. It reports `commercial_ready: false` even on success.
+Commercial admission separately requires the fail-closed gate documented in
+[`COMMERCIAL_RELEASE_GATE.md`](COMMERCIAL_RELEASE_GATE.md).

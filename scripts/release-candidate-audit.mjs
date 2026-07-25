@@ -75,6 +75,9 @@ if (docker.status !== 0) failures.push('a reachable Docker engine is required');
 if (failures.length) {
   const report = {
     report_version: '1',
+    scope: 'internal_and_live_model_provider',
+    commercial_ready: false,
+    commercial_gate: 'npm run audit:commercial-release',
     executed_at: executedAt,
     passed: false,
     phase: 'preflight',
@@ -125,6 +128,9 @@ run('container_vulnerability_audit', 'npm', ['run', 'audit:images']);
 
 const report = {
   report_version: '1',
+  scope: 'internal_and_live_model_provider',
+  commercial_ready: false,
+  commercial_gate: 'npm run audit:commercial-release',
   executed_at: executedAt,
   passed: failures.length === 0,
   phase: 'complete',

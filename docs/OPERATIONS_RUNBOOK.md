@@ -349,3 +349,23 @@ These are repeatable single-process regression thresholds, not deployed
 capacity evidence. Before public launch, repeat the workload against the
 deployed ingress and PostgreSQL on a disposable tenant, add sustained/soak and
 failure-injection tests, and set limits from actual service-level objectives.
+
+## Commercial release decision
+
+An internal release-candidate pass is not commercial approval. Before admitting
+a private-beta tenant or public customer, assemble the redacted provider and
+operator evidence described in
+[`COMMERCIAL_RELEASE_GATE.md`](COMMERCIAL_RELEASE_GATE.md), then run:
+
+```bash
+npm run audit:commercial-release -- \
+  --target private-beta \
+  --evidence-dir /owner-only/path/to/evidence \
+  --output /owner-only/path/to/private-beta-verdict.json
+```
+
+Use `--target public-production` only for the public gate. Missing,
+configured-only, stale, secret-bearing, un-hashed, symlinked, or incomplete
+evidence returns `no_go`. Never bypass the command by editing the verdict,
+relaxing a required check, or treating a dry-run/provider contract test as live
+evidence.
