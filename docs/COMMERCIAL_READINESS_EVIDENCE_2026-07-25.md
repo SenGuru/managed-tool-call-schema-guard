@@ -102,6 +102,7 @@ The commands below ran on 2026-07-25 after the operational-metrics delta:
 | `cd website && npm run lint && npm test`                                             | Current private-site lint, five-stage production build and rendered-route suite passed. All 18 built routes were covered by the route inventory and all 3 comprehensive render/trust tests passed.                                                                                                                                                                                                                                                                                                                                                                                                          |
 | In-app browser website and activation traversal                                      | Seventeen static routes plus the dynamic resource route were covered by build/render evidence; the browser traversed every static route without an error page or raw authentication JSON, exercised the Product menu, TypeScript/CLI/Managed API quickstarts, ambiguous-decision case and both activation branches. A stale `127.0.0.1:8788` managed link was found and fixed. The rebuilt managed handoff opened `https://api.akriven.com/dashboard/overview`, rendered the dashboard and sign-in UI, and did not expose raw `authentication_required` JSON. Authenticated onboarding remains pending MFA. |
 | Owner-only private Sites deployment                                                  | The exact pushed website revision `16cf25d` was packaged, saved as private site version 15, and deployed successfully without changing public access or customer DNS. Owner-authenticated browser verification loaded the hosted landing page and `/start` managed path at `https://akriven.neckhurts55.chatgpt.site`; the managed workspace link resolved to `https://api.akriven.com/dashboard/overview`. This proves the private hosted marketing boundary, not public-domain routing, authenticated managed onboarding, live email, or billing.                                                         |
+| Pinned isolated managed-load image on DreamHost                                      | Exact source revision `65c7bd5` built from the same digest-pinned Node base as production. The non-root image ran with a read-only filesystem, isolated network, temporary `/tmp`, no capabilities, no-new-privileges, 256-PID limit, two CPUs and 2 GiB RAM on the idle DreamHost host. It passed 2,000/2,000 requests in 6.391 seconds: 361.87 requests/s, p50 81.73 ms, p95 99.55 ms, p99 437.98 ms, 2,000 unique audit IDs, exact usage, valid audit/release chains and no persisted private sentinel. The live managed and PostgreSQL containers remained healthy.                                     |
 
 Current serial measurements:
 
@@ -111,6 +112,11 @@ Current serial measurements:
   482.88 requests/s, p50 53.99 ms, p95 104.89 ms, p99 322.56 ms, zero HTTP errors, 2,000
   unique audit IDs, valid 2,000-record audit chain, and no private sentinel in
   the database;
+- isolated two-CPU DreamHost managed HTTP load, 2,000 requests at concurrency
+  32 and four API keys: 361.87 requests/s, p50 81.73 ms, p95 99.55 ms, p99
+  437.98 ms, zero HTTP or decision errors, 2,000 unique audit IDs, exact
+  metering, valid audit/release chains, and no private sentinel in the
+  disposable database;
 - self-contained backup/restore: source and restored SQLite integrity true,
   row counts equal, control/audit/reconciliation/release chains valid, and
   backup file owner-only.

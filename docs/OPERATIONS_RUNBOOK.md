@@ -324,6 +324,19 @@ until repeated environment-level drills support it.
 npm run audit:managed-load
 ```
 
+For a reproducible isolated two-CPU/2 GiB container gate:
+
+```bash
+npm run audit:managed-load:container
+```
+
+That command builds `Dockerfile.load-audit` from the current checkout and runs
+the same audit as a non-root container with a read-only filesystem, isolated
+network namespace, capability drop, no-new-privileges, PID limit and disposable
+`/tmp`. Run it only on an otherwise idle host and record the exact source
+revision, base-image digest, host load, CPU/RAM limits and live-service health
+before and after the test.
+
 The default profile promotes the exact test schema into staging, enables
 fail-closed schema enforcement, and sends 2,000 authenticated repair requests at
 concurrency 32 through the managed HTTP boundary. It requires zero HTTP/decision errors,
@@ -332,7 +345,7 @@ private sentinel from SQLite, a valid active release chain, p95 at or below 250
 ms, and at least 100 requests per second on the test host. Override workload thresholds explicitly with
 `--requests`, `--concurrency`, `--max-p95-ms`, and `--min-rps`.
 
-This is a repeatable single-process regression threshold, not hosted capacity
-evidence. Before public launch, repeat it against the deployed ingress and
-database, add sustained/soak and failure-injection tests, and set limits from the
-actual service-level objectives.
+These are repeatable single-process regression thresholds, not deployed
+capacity evidence. Before public launch, repeat the workload against the
+deployed ingress and PostgreSQL on a disposable tenant, add sustained/soak and
+failure-injection tests, and set limits from actual service-level objectives.
