@@ -1,16 +1,42 @@
 # Akriven branded email provider checklist
 
-Status: provider selection prepared; no mailbox purchase, live DNS mutation, or
-production sender activation has been performed.
+Status: provider selection and live read-only inventory completed; no mailbox
+has been created, no live DNS mutation has been made, and no production sender
+has been activated.
+
+## Observed live state — 2026-07-26
+
+The signed-in GoDaddy account and public DNS were inspected without changing
+either:
+
+- the account already owns one unused **Professional Email powered by Titan Pro
+  Light** mailbox entitlement for `akriven.com`, expiring or renewing on
+  2027-07-21;
+- the mailbox setup form has not been submitted and the permanent local part
+  remains unselected;
+- the authoritative zone contains the live `api` A record and GoDaddy
+  nameservers, but no public MX record and no root SPF TXT record;
+- `_dmarc.akriven.com` currently publishes `p=quarantine` with relaxed DKIM/SPF
+  alignment and a GoDaddy aggregate-report destination;
+- no mailbox receive/send, recovery, DKIM, SPF alignment, DMARC alignment,
+  bounce, complaint, or independent-recipient behavior has been exercised.
+
+This means the domain is not currently ready to receive Akriven mail. The
+existing quarantine policy must be reconciled with the selected mailbox and
+transactional senders before any delivery claim.
 
 ## Required boundary
 
 A mailbox and a transactional email service solve different problems and must
 not share application credentials:
 
-- **Human mail:** use Google Workspace for addresses such as
-  `support@akriven.com` and `security@akriven.com`. This preserves the familiar
-  Gmail workflow while giving Akriven a domain-based identity.
+- **Human mail for the first private cohort:** use the already-owned GoDaddy
+  Professional Email powered by Titan mailbox unless the owner chooses to incur
+  a separate Google Workspace subscription. The Pro Light entitlement should
+  be treated as one primary inbox; GoDaddy's current documentation limits Titan
+  aliases to Premium and Ultra plans, so do not promise aliases on this plan.
+- **Human mail after a team or shared-inbox need appears:** reassess Google
+  Workspace or a dedicated support desk rather than upgrading by inertia.
 - **Transactional mail:** use Postmark for application notifications and, once
   certified, as the WorkOS custom email provider. The managed service already
   implements a fail-closed Postmark adapter and encrypted durable outbox.
@@ -28,16 +54,22 @@ Official references:
 - [WorkOS email domains](https://workos.com/docs/custom-domains/email)
 - [Postmark DKIM setup](https://postmarkapp.com/support/article/setting-up-dkim-for-your-domain)
 - [Postmark SPF and custom return-path guidance](https://postmarkapp.com/support/article/how-do-i-set-up-spf-for-postmark)
+- [GoDaddy Professional Email powered by Titan setup](https://www.godaddy.com/en-uk/help/set-up-professional-email-32288)
+- [GoDaddy Professional Email account limitations](https://www.godaddy.com/en-ph/help/professional-email-account-limitations-31970)
+- [GoDaddy Professional Email alias availability](https://www.godaddy.com/en-uk/help/create-an-alias-for-my-professional-email-41888)
 - [Google Workspace business email](https://workspace.google.com/intl/en_in/)
 
 ## Owner-confirmation gates
 
 Stop for explicit owner confirmation before:
 
-1. accepting a Google Workspace, Postmark, or WorkOS paid commitment;
-2. creating or changing GoDaddy MX, SPF, DKIM, return-path, or DMARC records;
-3. switching WorkOS production mail to the Akriven domain;
-4. enabling customer-facing email or public signup.
+1. accepting a Google Workspace, Postmark, WorkOS, or GoDaddy upgrade/renewal
+   commitment;
+2. consuming the existing single mailbox entitlement before the owner confirms
+   its permanent address;
+3. creating or changing GoDaddy MX, SPF, DKIM, return-path, or DMARC records;
+4. switching WorkOS production mail to the Akriven domain;
+5. enabling customer-facing email or public signup.
 
 Provider-generated tokens and DNS record values must go directly into an
 owner-only secret file or provider console. Do not paste them into chat, logs,
@@ -65,30 +97,41 @@ provider's current instructions require it.
 
 ### 2. Provision the human mailbox
 
-After owner approval, start Google Workspace with one least-privileged
-administrator and:
+After the owner selects the permanent address, consume the existing GoDaddy
+Professional Email powered by Titan Pro Light entitlement and:
 
-1. verify ownership of `akriven.com` using Google's current provider-generated
-   record;
-2. create the initial human mailbox and aliases only after ownership verifies;
-3. enable administrator and user MFA, recovery methods, audit logging, and
-   backup codes stored in the owner's password manager;
-4. replace MX records only after preserving the prior set and confirming the
-   exact Google-provided priorities;
-5. publish Google's current DKIM selector and verify signing;
+1. generate a unique password directly into the owner's password manager or an
+   owner-only secret file, never chat or repository state;
+2. create the primary mailbox and connect it only to the owner's GoDaddy
+   identity;
+3. add the owner's recovery address and enable all MFA/recovery controls the
+   plan exposes;
+4. preserve the current zone before allowing GoDaddy to add MX, SPF, or DKIM
+   records;
+5. verify the exact public records after propagation;
 6. test inbound delivery, outbound delivery, reply handling, spam placement,
-   account recovery, administrator recovery, and mailbox suspension.
+   account recovery, mailbox suspension, and recovery from a second provider.
 
-Recommended initial addresses:
+Do not assume that Pro Light includes aliases. If separate public roles are
+needed, verify whether GoDaddy forwarding addresses meet the operational and
+reply-identity requirements; otherwise purchase another mailbox or migrate the
+human-mail boundary after owner approval.
 
-- `support@akriven.com` — customer-visible human support;
+Candidate addresses that require an owner decision:
+
+- `support@akriven.com` — strongest customer-facing choice for a single inbox;
+- `ops@akriven.com` — stronger separation for provider verification and
+  operational recovery, but it does not satisfy a public support inbox;
 - `security@akriven.com` — vulnerability and incident reports;
 - `privacy@akriven.com` — privacy and deletion requests;
 - `billing@akriven.com` — billing replies;
 - `postmaster@akriven.com` and `abuse@akriven.com` — monitored aliases.
 
-Do not use a founder's personal mailbox as the only recovery administrator or
-the only incident destination.
+For a one-mailbox private beta, `support@akriven.com` is the recommended primary
+address if the same owner will handle support and provider verification. Add a
+separate operational mailbox before responsibility is delegated. Do not use a
+founder's personal mailbox as the only recovery administrator or the only
+incident destination.
 
 ### 3. Verify the Postmark sending domain
 
@@ -112,8 +155,8 @@ message headers.
 
 ### 4. Introduce DMARC safely
 
-After both Google Workspace and Postmark pass DKIM and aligned SPF where
-applicable:
+After both the selected human-mail provider and Postmark pass DKIM and aligned
+SPF where applicable:
 
 1. publish a reporting-only `p=none` DMARC policy with a monitored aggregate
    report destination;
@@ -170,7 +213,8 @@ file-secret configuration, then verify:
 The branded-email gate is complete only when retained evidence proves:
 
 - the authoritative DNS zone and rollback copy;
-- Google Workspace inbound/outbound/reply/recovery behavior;
+- GoDaddy Professional Email inbound/outbound/reply/recovery behavior, or
+  equivalent evidence if the owner explicitly selects Google Workspace;
 - Postmark DKIM and return-path verification;
 - DMARC reports showing every authorized sender;
 - WorkOS verification, invitation, reset, MFA, bounce, complaint, replay, and
