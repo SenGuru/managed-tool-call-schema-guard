@@ -3,7 +3,7 @@ services:
     build:
       context: ..
       target: managed
-    image: schema-guard-managed:0.2.0
+    image: ${SCHEMA_GUARD_MANAGED_IMAGE:-schema-guard-managed:0.2.0}
     restart: unless-stopped
     user: '65532:65532'
     environment:

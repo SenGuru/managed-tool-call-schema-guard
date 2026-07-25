@@ -17,7 +17,7 @@ function environmentKeys(path: string): Set<string> {
 function interpolatedVariables(paths: string[]): Set<string> {
   return new Set(
     paths.flatMap((path) =>
-      Array.from(read(path).matchAll(/\$\{([A-Z][A-Z0-9_]*)\}/gu), (match) => match[1]),
+      Array.from(read(path).matchAll(/\$\{([A-Z][A-Z0-9_]*)(?::-[^}]*)?\}/gu), (match) => match[1]),
     ),
   );
 }
@@ -50,6 +50,15 @@ describe('deployment image identities', () => {
       'install -m 0600 -o 65532 -g 65532 /dev/null "$bundle/anchor-data.tar"',
     );
     expect(script).toContain('-v "$bundle/anchor-data.tar:/destination/anchor-data.tar"');
+  });
+
+  test('production services allow an exact reviewed image without changing the fallback', () => {
+    expect(read('deploy/docker-compose.production.yml')).toContain(
+      '${SCHEMA_GUARD_MANAGED_IMAGE:-schema-guard-managed:0.2.0}',
+    );
+    expect(read('deploy/docker-compose.anchor-receiver.yml')).toContain(
+      '${SCHEMA_GUARD_ANCHOR_IMAGE:-schema-guard-anchor-receiver:0.2.0}',
+    );
   });
 });
 

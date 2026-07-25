@@ -41,7 +41,7 @@ All commands below ran on 2026-07-25 after the final provider-independent fixes:
 
 | Command                                                                              | Observed result                                                                                                                                                                                                                                                                                                    |
 | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `npm run check`                                                                      | Passed format, build, lint, script syntax, dry provider boundary, package boundary, typecheck, conformance, 231 TypeScript/JavaScript tests; 16 credentialed PostgreSQL cases skipped by the uncredentialed command; 5 Python tests passed                                                                         |
+| `npm run check`                                                                      | Passed format, build, lint, script syntax, dry provider boundary, package boundary, typecheck, conformance, 232 TypeScript/JavaScript tests; 16 credentialed PostgreSQL cases skipped by the uncredentialed command; 5 Python tests passed                                                                         |
 | `npm test -- --run tests/dashboard-ui.test.ts`                                       | 14/14 dashboard DOM tests passed, including least-privilege reset, committed-mutation refresh isolation, and evaluation-export success/failure recovery                                                                                                                                                            |
 | `npm audit`                                                                          | 0 known vulnerabilities after updating the transitive `brace-expansion` dependency that the first scan reported as High severity                                                                                                                                                                                   |
 | `npm run audit:container-e2e`                                                        | Passed in 45.870 seconds against fresh PostgreSQL 16, hardened managed and independent TLS-anchor images, two tenants, metrics, tracing, inventory/export, all decision paths, release admission, approvals/idempotency, outage/redrive, restart/persistence, tenant isolation, secret-file and log-privacy checks |
@@ -85,6 +85,39 @@ boundary and persisted database. It exercised:
 
 No destructive tenant deletion was executed in this browser pass. No external
 provider was called or represented as proven.
+
+## Purchased-host preflight
+
+Read-only checks after commit `6055990` established the following without
+switching running services:
+
+- DreamHost `208.113.209.209` is online and its observed ED25519 host key
+  matches the separately pinned local known-hosts entry.
+- The DreamHost managed service, PostgreSQL, and edge proxy are healthy; the
+  public readiness endpoint presents trusted TLS.
+- The running managed container is still the previous reviewed release. The
+  exact `6055990` amd64 candidate was transferred, loaded under a unique
+  immutable tag, and scanned with zero High/Critical vulnerabilities or
+  embedded secrets, but it was not activated.
+- The previous DreamHost image has an immutable rollback tag.
+- DreamHost can reach the independently hosted anchor readiness endpoint using
+  the pinned private CA.
+- The DigitalOcean Droplet is reported active in the provider panel, but no
+  DigitalOcean Cloud Firewall is assigned and provider automated backups are
+  not enabled.
+- The DigitalOcean ED25519 fingerprint observed over the network agrees with
+  the existing local known-hosts entry. Its authoritative value has not yet
+  been confirmed from the provider console, so no further DigitalOcean SSH
+  operation is permitted.
+- An exact `6055990` amd64 anchor candidate was built and scanned locally with
+  zero High/Critical vulnerabilities or embedded secrets. It has not been
+  transferred or deployed.
+
+The Compose profiles now accept explicit reviewed managed and anchor image
+identities. The operator runbook requires immutable selections, a preserved
+rollback tag, complete overlay rendering, and host deployment with
+`--no-build`. These are deployment controls, not evidence that the new release
+is running.
 
 ## Remaining launch blockers
 

@@ -92,6 +92,13 @@ transfer.
 
 ## Release rollback and schema compatibility
 
+Set `SCHEMA_GUARD_MANAGED_IMAGE` and `SCHEMA_GUARD_ANCHOR_IMAGE` to immutable,
+reviewed candidate tags or digests before rendering either production Compose
+profile. Do not reuse the mutable `0.2.0` fallback for a rollout. Preserve the
+previous image under its own immutable rollback tag, render both the rollout
+and rollback configurations with every required overlay, and use `--no-build`
+on the hosts so a deployment cannot silently rebuild different source.
+
 Capture an encrypted off-machine backup immediately before migration. Verify
 both the candidate image ID and every migration history table after startup.
 An image-only rollback is valid only when the previous binary has been proven

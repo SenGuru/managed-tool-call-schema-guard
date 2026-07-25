@@ -3,7 +3,7 @@ services:
     build:
       context: ..
       target: anchor-receiver
-    image: schema-guard-anchor-receiver:0.2.0
+    image: ${SCHEMA_GUARD_ANCHOR_IMAGE:-schema-guard-anchor-receiver:0.2.0}
     restart: unless-stopped
     user: '65532:65532'
     environment:
