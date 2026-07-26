@@ -60,6 +60,42 @@ Recovery, invitation acceptance, membership removal, provider-side revocation,
 organization switching and cross-organization isolation remain external
 identity evidence—not mocked success.
 
+The final provider-independent rerun on checkpoint `7371a50` produced these
+observed results:
+
+- the complete production-like container program passed in 25.810 seconds,
+  including fresh PostgreSQL, two-tenant isolation, schema/release admission,
+  safe repair and ambiguous rejection, approvals, idempotency, exact
+  checkpoint acknowledgement, anchor outage/recovery, deletion lock,
+  billing/email fail-closed behavior, PostgreSQL/container restart, container
+  hardening and secret/log-redaction checks;
+- the extreme audit passed in 29.126 seconds with zero dependency
+  vulnerabilities, a 10,000-iteration core p95 of 25.75 microseconds, a
+  self-contained integrity-matching restore, and a 2,000-request managed load
+  with zero errors and p95 31.39 ms;
+- the separately isolated non-root/read-only, two-CPU, 2 GiB load container
+  passed 2,000/2,000 requests at 682.28 requests/s, p50 37.67 ms, p95
+  72.59 ms and p99 325.87 ms, with exact metering, valid audit/release chains
+  and no persisted private sentinel;
+- credentialed coverage against a disposable pinned PostgreSQL 16.14 container
+  passed all 297 tests: 79.22% statements, 73.19% branches, 81.59% functions
+  and 81.13% lines. The uncredentialed coverage command also passed its 278
+  assertions but correctly failed the global coverage threshold because all 19
+  PostgreSQL tests were skipped; that failed measurement is retained rather
+  than hidden;
+- real installed MCP SDK 1.29.0, OpenAI Agents 0.13.5, Pydantic AI 2.13.0 and
+  Google ADK 2.5.0 integration tests passed without a model API call or package
+  install scripts. Rejected Python framework calls executed zero tools; and
+- after another encrypted off-machine backup, the current migration-5 database
+  accepted the retained `8f9c27b` schema-compatible image in three seconds and
+  returned to `c172fbf` in seven seconds, healthy with zero restarts.
+
+The exact-source commercial aggregator was also run against a newly generated,
+all-unproven ten-report skeleton. It returned exit code 1 and verdict `no_go`,
+as designed. Local evidence is not manually converted into passing commercial
+reports; each report still requires redacted, content-addressed artifacts and
+the external checks named by the gate.
+
 ### Action-control and restart-recovery completion
 
 The final runtime checkpoint adds tenant emergency action hold, reviewed
