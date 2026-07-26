@@ -431,6 +431,40 @@ describe('managed dashboard interactions', () => {
     expect(document.getElementById('usage-total')!.textContent).toBe('9');
   });
 
+  it('omits request bodies for operator-entered GET and HEAD workbench probes', async () => {
+    const window = dashboard('/dashboard/workbench');
+    const document = window.document;
+    const requests: Array<{ method: string | undefined; body: BodyInit | null | undefined }> = [];
+    window.fetch = (_input, init) => {
+      requests.push({ method: init?.method, body: init?.body });
+      return Promise.resolve(
+        new window.Response(JSON.stringify({ authenticated: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+    };
+
+    const method = document.getElementById('operation-method') as HTMLInputElement;
+    const path = document.getElementById('operation-path') as HTMLInputElement;
+    const body = document.getElementById('operation-body') as HTMLTextAreaElement;
+    method.value = 'GET';
+    path.value = '/v1/auth/session';
+    body.value = '{"ignored":"for-safe-methods"}';
+    document.getElementById('operation-run')!.click();
+    await new Promise((resolve) => window.setTimeout(resolve, 10));
+
+    method.value = 'HEAD';
+    document.getElementById('operation-run')!.click();
+    await new Promise((resolve) => window.setTimeout(resolve, 10));
+
+    expect(requests).toEqual([
+      { method: 'GET', body: undefined },
+      { method: 'HEAD', body: undefined },
+    ]);
+    expect(document.getElementById('operation-result')!.textContent).toContain('"ok": true');
+  });
+
   it('executes the dedicated validation flow and refreshes accountable evidence', async () => {
     const window = dashboard('/dashboard/decisions');
     const document = window.document;

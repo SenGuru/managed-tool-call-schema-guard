@@ -868,11 +868,14 @@ q('operation-run').onclick=async()=>{
     const path=q('operation-path').value.trim();
     if(!path.startsWith('/v1/'))throw new Error('Path must start with /v1/');
     if(/[{}]/u.test(path))throw new Error('Replace every path placeholder before execution');
-    if(method!=='GET'&&!q('operation-confirm').checked)throw new Error('Confirm this mutation before executing');
+    const bodyless=method==='GET'||method==='HEAD';
+    if(!bodyless&&!q('operation-confirm').checked)throw new Error('Confirm this mutation before executing');
     const raw=q('operation-body').value.trim();
-    if(/\\[REPLACE:[A-Z0-9_]+\\]/u.test(raw))throw new Error('Replace every JSON placeholder before execution');
     const options={method,headers:{}};
-    if(raw){options.headers['content-type']='application/json';options.body=JSON.stringify(JSON.parse(raw))}
+    if(raw&&!bodyless){
+      if(/\\[REPLACE:[A-Z0-9_]+\\]/u.test(raw))throw new Error('Replace every JSON placeholder before execution');
+      options.headers['content-type']='application/json';options.body=JSON.stringify(JSON.parse(raw));
+    }
     const result=await requestRaw(path,options);
     q('operation-result').textContent=JSON.stringify(result,null,2);
     q('operation-result').className=result.ok?'':'bad';
