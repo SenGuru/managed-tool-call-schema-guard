@@ -190,8 +190,29 @@ that input before the gate runs.
 
 ## Current observed verdict
 
-The 2026-07-26 empty-evidence negative drill exited `1` and returned `no_go`
-with all ten private-beta reports missing. This is the expected current
-commercial result until provider and operator evidence is collected. The
-internal release candidate and managed-load gates remain separate and cannot
-override it.
+The first 2026-07-26 empty-evidence negative drill exited `1` and returned
+`no_go` with all ten private-beta reports unproven. That remains a retained
+validator-negative case.
+
+The current owner-only evidence packet binds exact deployed candidate
+`c172fbf615cd9b40225c95d54b36c6b4456519f9`. Its clean exact-revision runs,
+hashes and production-like observations pass four gates:
+
+- `internal`;
+- `website`;
+- `staging`; and
+- `security`.
+
+The same real aggregator still exits `1` with verdict `no_go` because these six
+gates remain unproven:
+
+- `identity`;
+- `human_email`;
+- `transactional_email`;
+- `operations`;
+- `model_providers`; and
+- `billing`.
+
+This is the expected commercial result until provider and operator evidence is
+collected. Internal, website, staging and security proof cannot override a
+missing external or organizational gate.
