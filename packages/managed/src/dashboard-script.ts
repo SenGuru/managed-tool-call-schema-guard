@@ -151,6 +151,7 @@ function setCredentialMode(mode){
   workspace.dataset.credential=mode;
   const connected=mode==='connected';
   q('credential-connected').hidden=!connected;q('change-key').hidden=!connected;
+  q('sign-in').hidden=browserSession;
   q('sign-out').hidden=!(connected&&browserSession);
   q('change-key').hidden=!connected||browserSession;
   text('credential-connected-detail',browserSession?'Authenticated browser session; permissions follow assigned organization roles.':'The tenant key remains only in this tab’s memory.');

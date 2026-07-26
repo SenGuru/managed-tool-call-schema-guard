@@ -8,9 +8,10 @@ export class FixedWindowRateLimiter {
     private readonly windowMs = 60_000,
   ) {}
   consume(principal: Principal, currentTime = Date.now()): void {
-    const existing = this.windows.get(principal.keyId);
+    const rateLimitId = principal.rateLimitId ?? principal.keyId;
+    const existing = this.windows.get(rateLimitId);
     if (!existing || currentTime - existing.started >= this.windowMs) {
-      this.windows.set(principal.keyId, { started: currentTime, count: 1 });
+      this.windows.set(rateLimitId, { started: currentTime, count: 1 });
       return;
     }
     if (existing.count >= this.limit)

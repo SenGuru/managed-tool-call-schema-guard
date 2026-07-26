@@ -17,6 +17,7 @@ const CONTROL_TENANT_TABLES = [
   'sg_action_controls',
   'sg_conformance_runs',
   'sg_control_api_keys',
+  'sg_human_rate_limits',
   'sg_control_audit_anchors',
   'sg_control_audit_events',
   'sg_control_audit_manifests',

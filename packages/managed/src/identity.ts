@@ -347,3 +347,12 @@ export function humanPrincipalId(secret: string, userId: string, sessionId: stri
     .update(sessionId)
     .digest('base64url')}`;
 }
+
+export function humanRateLimitId(secret: string, userId: string): string {
+  bounded(userId, 'human user ID', 256);
+  return `human_rate_${createHmac('sha256', secret)
+    .update('managed-human-rate-limit-v1')
+    .update('\0')
+    .update(userId)
+    .digest('base64url')}`;
+}

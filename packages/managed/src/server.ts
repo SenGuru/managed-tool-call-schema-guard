@@ -78,6 +78,7 @@ import {
 import {
   createAuthState,
   humanPrincipalId,
+  humanRateLimitId,
   verifyAuthState,
   WorkOSIdentityProvider,
   type HumanIdentity,
@@ -284,7 +285,10 @@ async function authenticate(
     : store.principalForTenant(identity.tenantId, principalId, identity.scopes);
   if (!principal)
     throw new ManagedError(401, 'invalid_human_session', 'browser tenant binding is invalid');
-  return principal;
+  return {
+    ...principal,
+    rateLimitId: humanRateLimitId(config.masterSecret, identity.userId),
+  };
 }
 function pathOf(request: IncomingMessage): URL {
   return new URL(request.url ?? '/', 'http://local');
@@ -965,7 +969,10 @@ export function createManagedServer(
       : store.principalForTenant(identity.tenantId, principalId, identity.scopes);
     if (!principal)
       throw new ManagedError(401, 'invalid_human_session', 'browser tenant binding is invalid');
-    return principal;
+    return {
+      ...principal,
+      rateLimitId: humanRateLimitId(config.masterSecret, identity.userId),
+    };
   };
   const loadTenantIntelligence = async (principal: Principal): Promise<Record<string, unknown>> => {
     if (!intelligenceState)
@@ -1726,7 +1733,7 @@ export function createManagedServer(
         try {
           await controlState.consumeRateLimit(
             principal.tenantId,
-            principal.keyId,
+            principal.rateLimitId ?? principal.keyId,
             config.rateLimitPerMinute ?? 120,
           );
         } catch (error) {

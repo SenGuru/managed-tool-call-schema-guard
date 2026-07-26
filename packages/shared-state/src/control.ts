@@ -295,6 +295,13 @@ type ApiKeyRow = {
   revoked_at: Date | null;
   control_hmac: string;
 };
+type HumanRateLimitRow = {
+  tenant_id: string;
+  principal_id: string;
+  rate_window_started_at: Date;
+  rate_window_count: number;
+  control_hmac: string;
+};
 type TenantLifecycleRow = {
   tenant_id: string;
   status: SharedTenantLifecycleStatus;
@@ -504,6 +511,18 @@ const CONTROL_LIFECYCLE_SCHEMA = `
     receipt_hmac TEXT NOT NULL
   );
 `;
+const HUMAN_RATE_LIMIT_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS sg_human_rate_limits (
+    tenant_id TEXT NOT NULL REFERENCES sg_control_tenants(id) ON DELETE CASCADE,
+    principal_id TEXT NOT NULL,
+    rate_window_started_at TIMESTAMPTZ NOT NULL,
+    rate_window_count INTEGER NOT NULL CHECK(rate_window_count >= 0),
+    control_hmac TEXT NOT NULL,
+    PRIMARY KEY(tenant_id,principal_id)
+  );
+  CREATE INDEX IF NOT EXISTS sg_human_rate_limits_tenant
+    ON sg_human_rate_limits(tenant_id,principal_id);
+`;
 const ACTION_CONTROL_SCHEMA = `
   CREATE TABLE IF NOT EXISTS sg_action_controls (
     tenant_id TEXT PRIMARY KEY REFERENCES sg_control_tenants(id) ON DELETE CASCADE,
@@ -651,6 +670,12 @@ export class PostgresControlState implements ControlState {
       rate_window_started_at: row.rate_window_started_at.toISOString(),
       created_at: row.created_at.toISOString(),
       revoked_at: row.revoked_at?.toISOString() ?? null,
+    });
+  }
+  private humanRateLimitHmac(row: Omit<HumanRateLimitRow, 'control_hmac'>): string {
+    return hmac(this.masterSecret, 'shared-managed-human-rate-limit-v1', {
+      ...row,
+      rate_window_started_at: row.rate_window_started_at.toISOString(),
     });
   }
   private tenantLifecycleHmac(row: Omit<TenantLifecycleRow, 'control_hmac'>): string {
@@ -842,6 +867,23 @@ export class PostgresControlState implements ControlState {
       throw new SharedStateIntegrityError('shared API key control integrity failed');
     this.parseScopes(row.scopes_json);
   }
+  private assertHumanRateLimit(row: HumanRateLimitRow): void {
+    if (
+      !/^human_rate_[A-Za-z0-9_-]{32,128}$/u.test(row.principal_id) ||
+      !Number.isSafeInteger(row.rate_window_count) ||
+      row.rate_window_count < 0 ||
+      !equal(
+        row.control_hmac,
+        this.humanRateLimitHmac({
+          tenant_id: row.tenant_id,
+          principal_id: row.principal_id,
+          rate_window_started_at: row.rate_window_started_at,
+          rate_window_count: row.rate_window_count,
+        }),
+      )
+    )
+      throw new SharedStateIntegrityError('shared human rate-limit integrity failed');
+  }
   private assertTenantLifecycle(row: TenantLifecycleRow): void {
     if (
       !equal(row.control_hmac, this.tenantLifecycleHmac(this.tenantLifecycleUnsigned(row))) ||
@@ -1029,6 +1071,7 @@ export class PostgresControlState implements ControlState {
       const lifecycleChecksum = sha256(CONTROL_LIFECYCLE_SCHEMA);
       const actionControlChecksum = sha256(ACTION_CONTROL_SCHEMA);
       const notificationOutboxChecksum = sha256(NOTIFICATION_OUTBOX_SCHEMA);
+      const humanRateLimitChecksum = sha256(HUMAN_RATE_LIMIT_SCHEMA);
       const billingChecksum = sha256(BILLING_SCHEMA);
       const rows = await client.query<{ version: number; checksum: string }>(
         'SELECT version,checksum FROM sg_control_schema_migrations ORDER BY version',
@@ -1038,6 +1081,7 @@ export class PostgresControlState implements ControlState {
         [2, lifecycleChecksum],
         [3, actionControlChecksum],
         [4, notificationOutboxChecksum],
+        [5, humanRateLimitChecksum],
       ]);
       if (
         rows.rows.some(
@@ -1114,6 +1158,13 @@ export class PostgresControlState implements ControlState {
            VALUES(4,'transactional_notification_outbox',$1,$2)`,
           [notificationOutboxChecksum, new Date()],
         );
+      await client.query(HUMAN_RATE_LIMIT_SCHEMA);
+      if (!rows.rows.some((row) => row.version === 5))
+        await client.query(
+          `INSERT INTO sg_control_schema_migrations(version,migration_name,checksum,applied_at)
+           VALUES(5,'human_session_rate_limits',$1,$2)`,
+          [humanRateLimitChecksum, new Date()],
+        );
       await client.query(BILLING_SCHEMA);
       const billingRows = await client.query<{ version: number; checksum: string }>(
         'SELECT version,checksum FROM sg_billing_schema_migrations ORDER BY version',
@@ -1163,6 +1214,10 @@ export class PostgresControlState implements ControlState {
       }
       const keys = await client.query<ApiKeyRow>('SELECT * FROM sg_control_api_keys');
       for (const key of keys.rows) this.assertApiKey(key);
+      const humanRateLimits = await client.query<HumanRateLimitRow>(
+        'SELECT * FROM sg_human_rate_limits',
+      );
+      for (const humanRateLimit of humanRateLimits.rows) this.assertHumanRateLimit(humanRateLimit);
       const receipts = await client.query<TenantDeletionReceiptRow>(
         'SELECT * FROM sg_tenant_deletion_receipts',
       );
@@ -1966,6 +2021,62 @@ export class PostgresControlState implements ControlState {
       Number.isNaN(currentTime.getTime())
     )
       throw new TypeError('shared rate limit input is invalid');
+    if (/^human_rate_[A-Za-z0-9_-]{32,128}$/u.test(keyId)) {
+      await this.transaction(async (client) => {
+        const created: Omit<HumanRateLimitRow, 'control_hmac'> = {
+          tenant_id: tenantId,
+          principal_id: keyId,
+          rate_window_started_at: currentTime,
+          rate_window_count: 1,
+        };
+        const inserted = await client.query(
+          `INSERT INTO sg_human_rate_limits(
+             tenant_id,principal_id,rate_window_started_at,rate_window_count,control_hmac
+           ) VALUES($1,$2,$3,$4,$5)
+           ON CONFLICT(tenant_id,principal_id) DO NOTHING`,
+          [
+            created.tenant_id,
+            created.principal_id,
+            created.rate_window_started_at,
+            created.rate_window_count,
+            this.humanRateLimitHmac(created),
+          ],
+        );
+        if (inserted.rowCount === 1) return;
+        const row = (
+          await client.query<HumanRateLimitRow>(
+            'SELECT * FROM sg_human_rate_limits WHERE tenant_id=$1 AND principal_id=$2 FOR UPDATE',
+            [tenantId, keyId],
+          )
+        ).rows[0];
+        if (!row)
+          throw new SharedStateIntegrityError(
+            'shared human rate limit is unavailable during rate limiting',
+          );
+        this.assertHumanRateLimit(row);
+        const reset = currentTime.getTime() - row.rate_window_started_at.getTime() >= 60_000;
+        if (!reset && row.rate_window_count >= limit) throw new SharedRateLimitExceededError();
+        const updated: Omit<HumanRateLimitRow, 'control_hmac'> = {
+          tenant_id: row.tenant_id,
+          principal_id: row.principal_id,
+          rate_window_started_at: reset ? currentTime : row.rate_window_started_at,
+          rate_window_count: reset ? 1 : row.rate_window_count + 1,
+        };
+        await client.query(
+          `UPDATE sg_human_rate_limits
+           SET rate_window_started_at=$1,rate_window_count=$2,control_hmac=$3
+           WHERE tenant_id=$4 AND principal_id=$5`,
+          [
+            updated.rate_window_started_at,
+            updated.rate_window_count,
+            this.humanRateLimitHmac(updated),
+            tenantId,
+            keyId,
+          ],
+        );
+      });
+      return;
+    }
     await this.transaction(async (client) => {
       const row = (
         await client.query<ApiKeyRow>(

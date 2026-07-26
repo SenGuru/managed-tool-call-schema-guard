@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   createAuthState,
   humanPrincipalId,
+  humanRateLimitId,
   scopesForHumanRoles,
   verifyAuthState,
   WorkOSIdentityProvider,
@@ -140,6 +141,11 @@ describe('managed human identity boundary', () => {
     expect(principal).toMatch(/^human_[A-Za-z0-9_-]+$/u);
     expect(principal).not.toContain('user_raw');
     expect(principal).not.toContain('session_raw');
+    const rateLimitId = humanRateLimitId(secret, 'user_raw');
+    expect(rateLimitId).toMatch(/^human_rate_[A-Za-z0-9_-]+$/u);
+    expect(rateLimitId).not.toContain('user_raw');
+    expect(humanRateLimitId(secret, 'user_raw')).toBe(rateLimitId);
+    expect(humanRateLimitId(secret, 'another_user')).not.toBe(rateLimitId);
   });
 
   it('maps roles to least-privilege managed scopes', () => {

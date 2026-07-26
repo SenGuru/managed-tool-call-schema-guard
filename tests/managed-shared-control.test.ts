@@ -21,6 +21,7 @@ import type {
 import { SharedQuotaExceededError } from '../packages/shared-state/src/index.js';
 import { PostgresControlState } from '../packages/shared-state/src/index.js';
 import { createManagedServer } from '../packages/managed/src/server.js';
+import type { HumanIdentity, HumanIdentityProvider } from '../packages/managed/src/identity.js';
 
 const secret = 'managed-shared-control-test-secret-at-least-32-characters';
 
@@ -33,6 +34,7 @@ class MemoryControlState implements ControlState {
   readonly keyIds = new Map<string, string>();
   readonly audits = new Map<string, SharedAuditRecord[]>();
   readonly rateWindows = new Map<string, { started: number; count: number }>();
+  readonly rateLimitIds: string[] = [];
   sequence = 0;
   available = true;
   failLifecycleUpdate = false;
@@ -82,6 +84,28 @@ class MemoryControlState implements ControlState {
             tenantName: tenant.tenantName,
             keyId: key.keyId,
             scopes: [...key.scopes],
+            plan: tenant.plan,
+            monthlyLimit: tenant.monthlyLimit,
+            retentionDays: tenant.retentionDays,
+            policy: structuredClone(tenant.policy),
+            lifecycleStatus: tenant.lifecycleStatus,
+          }
+        : undefined,
+    );
+  }
+  principalForTenant(
+    tenantId: string,
+    principalId: string,
+    scopes: SharedScope[],
+  ): Promise<SharedPrincipal | undefined> {
+    const tenant = this.tenants.get(tenantId);
+    return Promise.resolve(
+      tenant
+        ? {
+            tenantId: tenant.tenantId,
+            tenantName: tenant.tenantName,
+            keyId: principalId,
+            scopes: [...scopes],
             plan: tenant.plan,
             monthlyLimit: tenant.monthlyLimit,
             retentionDays: tenant.retentionDays,
@@ -165,6 +189,21 @@ class MemoryControlState implements ControlState {
     limit: number,
     currentTime = new Date(),
   ): Promise<void> {
+    this.rateLimitIds.push(keyId);
+    if (/^human_rate_[A-Za-z0-9_-]{32,128}$/u.test(keyId)) {
+      const existing = this.rateWindows.get(keyId);
+      if (!existing || currentTime.getTime() - existing.started >= 60_000) {
+        this.rateWindows.set(keyId, { started: currentTime.getTime(), count: 1 });
+        return Promise.resolve();
+      }
+      if (existing.count >= limit) {
+        const error = new Error('shared per-human rate limit exceeded');
+        error.name = 'SharedRateLimitExceededError';
+        return Promise.reject(error);
+      }
+      existing.count += 1;
+      return Promise.resolve();
+    }
     const key = [...this.keys.values()].find(
       (candidate) => candidate.tenantId === tenantId && candidate.keyId === keyId,
     );
@@ -239,6 +278,65 @@ async function database(): Promise<string> {
 }
 
 describe('managed shared control state', () => {
+  it('authorizes a human session through a distinct shared rate-limit identity', async () => {
+    const state = new MemoryControlState();
+    await state.bootstrapTenant({
+      id: 'identity',
+      name: 'Identity tenant',
+      plan: 'trial',
+      apiKey: 'identity-admin',
+      scopes: ['admin'],
+    });
+    const identity: HumanIdentity = {
+      userId: 'user_shared_identity',
+      sessionId: 'session_shared_identity',
+      organizationId: 'org_shared_identity',
+      tenantId: 'identity',
+      email: 'owner@example.test',
+      roles: ['owner'],
+      permissions: [],
+      scopes: ['admin'],
+      authenticationMethod: 'GoogleOAuth',
+    };
+    const identityProvider: HumanIdentityProvider = {
+      authorizationUrl: () => 'https://identity.example.test/authorize',
+      exchangeCode: () => Promise.resolve({ identity, sealedSession: 'sealed-session' }),
+      authenticateSession: (sealedSession) =>
+        Promise.resolve(sealedSession === 'sealed-session' ? identity : undefined),
+      refreshSession: () => Promise.resolve({ identity, sealedSession: 'sealed-session' }),
+      logoutUrl: () => Promise.resolve('https://identity.example.test/logout'),
+    };
+    const service = createManagedServer(
+      {
+        databasePath: await database(),
+        masterSecret: secret,
+        externalUrl: 'https://guard.example.test',
+      },
+      { controlState: state, identityProvider },
+    );
+    service.store.bootstrapTenant({
+      id: 'identity',
+      name: 'Identity tenant',
+      plan: 'trial',
+      apiKey: 'local-identity-admin',
+    });
+    await new Promise<void>((resolve) => service.server.listen(0, '127.0.0.1', resolve));
+    try {
+      const address = service.server.address();
+      if (!address || typeof address === 'string') throw new Error('missing server address');
+      const response = await fetch(`http://127.0.0.1:${address.port}/v1/admin/tenant/lifecycle`, {
+        headers: { cookie: '__Host-akriven_session=sealed-session' },
+      });
+      expect(response.status).toBe(200);
+      expect(state.rateLimitIds).toHaveLength(1);
+      expect(state.rateLimitIds[0]).toMatch(/^human_rate_[A-Za-z0-9_-]+$/u);
+      expect(state.rateLimitIds[0]).not.toContain(identity.userId);
+      expect(state.rateLimitIds[0]).not.toContain(identity.sessionId);
+    } finally {
+      await service.close();
+    }
+  });
+
   it('rejects value-bearing or unknown audit-envelope fields before database access', async () => {
     const state = new PostgresControlState('postgresql://unreachable.invalid/schema_guard', secret);
     try {

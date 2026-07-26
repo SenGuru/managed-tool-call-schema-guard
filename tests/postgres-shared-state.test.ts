@@ -67,7 +67,7 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
     await firstAlerts.migrate();
     await firstIntelligence.migrate();
     await first.pool.query(
-      'TRUNCATE sg_notification_events,sg_notification_outbox,sg_billing_events,sg_billing_subscriptions,sg_billing_checkout_sessions,sg_tenant_deletion_receipts,sg_tenant_lifecycle,sg_action_controls,sg_tenant_rulesets,sg_conformance_runs,sg_failure_observations,sg_intelligence_manifests,sg_alert_deliveries,sg_alert_acknowledgements,sg_alerts,sg_alert_webhooks,sg_alert_manifests,sg_schema_releases,sg_tool_schemas,sg_tool_schema_manifests,sg_schema_environments,sg_schema_release_manifests,sg_control_audit_events,sg_control_audit_anchors,sg_control_audit_manifests,sg_control_api_keys,sg_control_tenants,sg_action_approvals,sg_action_descriptors,sg_accepted_action_decisions,sg_checkpoint_anchor_deliveries,sg_action_reconciliations,sg_action_reconciliation_manifests,sg_action_reservations,sg_action_manifests RESTART IDENTITY',
+      'TRUNCATE sg_notification_events,sg_notification_outbox,sg_billing_events,sg_billing_subscriptions,sg_billing_checkout_sessions,sg_tenant_deletion_receipts,sg_tenant_lifecycle,sg_action_controls,sg_human_rate_limits,sg_tenant_rulesets,sg_conformance_runs,sg_failure_observations,sg_intelligence_manifests,sg_alert_deliveries,sg_alert_acknowledgements,sg_alerts,sg_alert_webhooks,sg_alert_manifests,sg_schema_releases,sg_tool_schemas,sg_tool_schema_manifests,sg_schema_environments,sg_schema_release_manifests,sg_control_audit_events,sg_control_audit_anchors,sg_control_audit_manifests,sg_control_api_keys,sg_control_tenants,sg_action_approvals,sg_action_descriptors,sg_accepted_action_decisions,sg_checkpoint_anchor_deliveries,sg_action_reconciliations,sg_action_reconciliation_manifests,sg_action_reservations,sg_action_manifests RESTART IDENTITY',
     );
   });
 
@@ -163,6 +163,46 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
         new Date(rateWindowStart.getTime() + 60_000),
       ),
     ).resolves.toBeUndefined();
+    const humanRateLimitId = `human_rate_${'a'.repeat(43)}`;
+    const humanRateAttempts = await Promise.allSettled(
+      Array.from({ length: 12 }, (_unused, index) =>
+        (index % 2 ? firstControl : secondControl).consumeRateLimit(
+          'control-tenant',
+          humanRateLimitId,
+          4,
+          rateWindowStart,
+        ),
+      ),
+    );
+    expect(humanRateAttempts.filter((attempt) => attempt.status === 'fulfilled')).toHaveLength(4);
+    expect(
+      humanRateAttempts
+        .filter((attempt): attempt is PromiseRejectedResult => attempt.status === 'rejected')
+        .every(
+          (attempt) =>
+            attempt.reason instanceof SharedRateLimitExceededError ||
+            (attempt.reason instanceof Error &&
+              attempt.reason.name === 'SharedRateLimitExceededError'),
+        ),
+    ).toBe(true);
+    await expect(
+      secondControl.consumeRateLimit(
+        'control-tenant',
+        humanRateLimitId,
+        4,
+        new Date(rateWindowStart.getTime() + 60_000),
+      ),
+    ).resolves.toBeUndefined();
+    await firstControl.pool.query(
+      'UPDATE sg_human_rate_limits SET rate_window_count=0 WHERE tenant_id=$1 AND principal_id=$2',
+      ['control-tenant', humanRateLimitId],
+    );
+    await expect(secondControl.ready()).resolves.toBe(false);
+    await firstControl.pool.query(
+      'DELETE FROM sg_human_rate_limits WHERE tenant_id=$1 AND principal_id=$2',
+      ['control-tenant', humanRateLimitId],
+    );
+    await expect(secondControl.ready()).resolves.toBe(true);
     const disposable = await firstControl.issueApiKey('control-tenant', ['validate']);
     await firstControl.consumeRateLimit('control-tenant', disposable.key_id, 10);
     await firstControl.pool.query(
@@ -495,7 +535,7 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
         'SELECT version FROM sg_billing_schema_migrations ORDER BY version',
       ),
     ]);
-    expect(controlHistory.rows.map((row) => row.version)).toEqual([1, 2, 3, 4]);
+    expect(controlHistory.rows.map((row) => row.version)).toEqual([1, 2, 3, 4, 5]);
     expect(billingHistory.rows.map((row) => row.version)).toEqual([1]);
 
     await firstControl.bootstrapTenant({

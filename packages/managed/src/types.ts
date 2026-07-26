@@ -59,6 +59,7 @@ export interface Principal {
   tenantId: string;
   tenantName: string;
   keyId: string;
+  rateLimitId?: string;
   scopes: Scope[];
   plan: PlanId;
   monthlyLimit: number;

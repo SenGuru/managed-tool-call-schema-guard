@@ -1088,6 +1088,7 @@ describe('managed local control plane', () => {
     expect(dashboardJavaScript).toContain("loadGet('/v1/actions/reconciliation/verify')");
     expect(dashboardJavaScript).toContain("loadGet('/v1/alert-webhooks/deliveries?limit=100')");
     expect(dashboardJavaScript).toContain("loadGetOptional('/v1/rulesets/latest')");
+    expect(dashboardJavaScript).toContain("q('sign-in').hidden=browserSession");
     expect(dashboardJavaScript).toContain("localStorage.setItem('akriven-sidebar'");
     expect(dashboardJavaScript).toContain("history.pushState({route},'',path)");
     expect(dashboardJavaScript).toContain(
