@@ -179,7 +179,7 @@ The commands below ran on 2026-07-25 after the operational-metrics delta:
 | Owner-only private Sites deployment                                                  | Exact pushed website revision `67580263d6e2e59144564532008003251d239b5b` was rebuilt, packaged as a 52-file archive, saved as private Sites version 16 and deployed successfully without changing access, custom domains or customer DNS. The Sites source repository and GitHub `main` were advanced only by non-force fast-forward. Browser QA ran against `https://akriven.neckhurts55.chatgpt.site`. Worker-log review found no exception or server-error event; two informational `canceled` RSC prefetches corresponded to intentionally rapid navigation. This proves the owner-only hosted marketing boundary, not public-domain routing, completed human onboarding, live email or billing.                                                        |
 | Pinned isolated managed-load image on DreamHost                                      | Exact source revision `65c7bd5` built from the same digest-pinned Node base as production. The non-root image ran with a read-only filesystem, isolated network, temporary `/tmp`, no capabilities, no-new-privileges, 256-PID limit, two CPUs and 2 GiB RAM on the idle DreamHost host. It passed 2,000/2,000 requests in 6.391 seconds: 361.87 requests/s, p50 81.73 ms, p95 99.55 ms, p99 437.98 ms, 2,000 unique audit IDs, exact usage, valid audit/release chains and no persisted private sentinel. The live managed and PostgreSQL containers remained healthy.                                                                                                                                                                                     |
 | Clean local managed-load rerun                                                       | After terminating a verified orphaned busy-loop and temporarily pausing the retained browser process, the two pre-run CPU samples measured 77.77% and 82.54% idle. The unchanged audit passed 2,000/2,000 requests at concurrency 32 in 1.352 seconds: 1,479.55 requests/s, p50 19.74 ms, p95 25.04 ms, p99 109.32 ms, maximum 183.43 ms, exact metering, valid audit/release chains, and no persisted private sentinel. The owner-only report SHA-256 is `0f1dd47e44296a34eace3025f033841be85e2d86cc6389ca1a48e713cdbd1a1c`. This is a local single-process regression, not a network SLO.                                                                                                                                                                 |
-| Fail-closed commercial release gate                                                  | Eleven focused tests cover the gate and all-unproven template generator. They prove missing/stale/configured-only/incomplete/secret-bearing/wrong-revision evidence, unsafe permissions, overwrite, symlinks and hash alteration fail closed; complete synthetic fixtures prove both target schemas. A retained owner-only packet for exact deployed candidate `c172fbf615cd9b40225c95d54b36c6b4456519f9` now contains hashed real artifacts. The aggregator passes `internal`, `website`, `staging` and `security`, then exits `1`/`no_go` because `identity`, `human_email`, `transactional_email`, `operations`, `model_providers` and `billing` remain unproven. Synthetic passing fixtures validate gate logic only; they are not commercial evidence. |
+| Fail-closed commercial release gate                                                  | Eleven focused tests cover the gate and all-unproven template generator. They prove missing/stale/configured-only/incomplete/secret-bearing/wrong-revision evidence, unsafe permissions, overwrite, symlinks and hash alteration fail closed; complete synthetic fixtures prove both target schemas. A retained owner-only packet for exact deployed candidate `c172fbf615cd9b40225c95d54b36c6b4456519f9` now contains hashed real artifacts. The aggregator passes `internal`, `website`, `staging`, `operations` and `security`, then exits `1`/`no_go` because `identity`, `human_email`, `transactional_email`, `model_providers` and `billing` remain unproven. Synthetic passing fixtures validate gate logic only; they are not commercial evidence. |
 
 Current serial measurements:
 
@@ -343,19 +343,28 @@ Strictly pinned SSH checks and controlled staging operations established:
   incident creation, email delivery and recovery for that route. It does not
   prove paid phone/SMS/push delivery, multi-person escalation or a sustained
   missed-heartbeat drill.
+- On 2026-07-26 the Better Stack account onboarding was completed on the free
+  plan without a payment method or paid commitment. A synthetic test incident
+  for the live readiness monitor was delivered to the owner Gmail inbox. The
+  acknowledgement action in that received email returned Better Stack's
+  explicit acknowledgement confirmation. A redacted owner-only artifact names
+  the private-beta support and incident owner and binds this result to the
+  existing runbooks and clean restore drill. The real commercial aggregator
+  now passes `operations`.
 - A subsequent read-only provider-console recertification again showed the
   public readiness monitor and both daily backup heartbeats `Up`. It also
   showed no on-call schedule and no escalation policy. Scheduled on-call
   requires an account upgrade, and no second independently owned responder is
-  present. This strengthens the blocker evidence rather than promoting paging
-  to proven.
+  present. Those remain public-production/multi-responder blockers rather than
+  claims hidden inside the passing private-beta operations gate.
 - The separate-host outage runner now requires an owner-only SSH identity,
   a non-group/other-writable known-hosts file, `IdentitiesOnly`, and strict
   host-key checking. It no longer relies on ambient SSH trust.
 
-These are production-like staging observations on the purchased hosts. They do
-not prove customer-production traffic, external paging acknowledgement, or
-unavailable identity/email/billing/model providers.
+These are production-like staging observations on the purchased hosts. The
+separate synthetic paging delivery/acknowledgement is external-provider
+evidence, but none of this proves customer-production traffic, a real customer
+incident, or unavailable identity/email/billing/model providers.
 
 ### Notification and WorkOS staging activation
 
@@ -399,9 +408,10 @@ PostgreSQL notification contract explicitly exercised concurrent claiming,
 delivery, provider-event replay, forced dead-letter, operator redrive, recovery
 delivery and tamper detection.
 
-1. Add a second independently owned responder and exercise acknowledgement and
-   escalation. Better Stack email incident delivery and recovery are proven,
-   but the free plan does not provide the required paid call/SMS/push route.
+1. Before public production, add a second independently owned responder and
+   exercise timed multi-person escalation. Better Stack monitor delivery and
+   owner email acknowledgement are proven for private beta, but the free plan
+   does not prove call/SMS/push delivery.
 2. Exercise a customer-owned HTTPS webhook receiver and downstream side-effect
    ledger through acknowledgement, completion, timeout, duplicate, ambiguous,
    and reconciliation paths.

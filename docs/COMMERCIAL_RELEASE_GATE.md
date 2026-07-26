@@ -196,23 +196,30 @@ validator-negative case.
 
 The current owner-only evidence packet binds exact deployed candidate
 `c172fbf615cd9b40225c95d54b36c6b4456519f9`. Its clean exact-revision runs,
-hashes and production-like observations pass four gates:
+hashes and observed evidence pass five gates:
 
 - `internal`;
 - `website`;
-- `staging`; and
+- `staging`;
+- `operations`; and
 - `security`.
 
-The same real aggregator still exits `1` with verdict `no_go` because these six
+The same real aggregator still exits `1` with verdict `no_go` because these five
 gates remain unproven:
 
 - `identity`;
 - `human_email`;
 - `transactional_email`;
-- `operations`;
 - `model_providers`; and
 - `billing`.
 
-This is the expected commercial result until provider and operator evidence is
-collected. Internal, website, staging and security proof cannot override a
-missing external or organizational gate.
+The `operations` gate now passes: Better Stack independently monitors the live
+readiness endpoint, delivered a synthetic test incident to the owner mailbox,
+and accepted acknowledgement through the email action. The retained artifact
+also binds the named private-beta support/incident owner, runbooks and existing
+restore drill. This does not prove a second responder, paid call/SMS/push
+delivery, or a real customer incident.
+
+The overall no-go remains expected until the other external and organizational
+evidence is collected. Internal, website, staging, operations and security
+proof cannot override a missing gate.

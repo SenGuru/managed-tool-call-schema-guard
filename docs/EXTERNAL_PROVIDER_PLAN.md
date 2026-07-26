@@ -54,9 +54,10 @@ not live-provider proof. Use this order for the remaining account work:
 5. Install sandbox credentials and exact pinned model versions for OpenAI,
    Anthropic and Gemini through protected files. Run the live non-executing
    provider probes, retain redacted reports, and verify drift/failure alerts.
-6. Finish the private-beta operating boundary: name the support and incident
-   owners, re-run Better Stack delivery/acknowledgement, and preserve current
-   backup/restore evidence. A second independent responder and multi-channel
+6. The private-beta operating boundary is now proven: the support and incident
+   owner is named, Better Stack delivered and accepted acknowledgement of a
+   synthetic readiness-monitor incident, and the current backup/restore
+   evidence is retained. A second independent responder and multi-channel
    escalation remain public-production requirements.
 7. Select the private-beta billing variant. For manual billing, approve and
    exercise the manual invoice, entitlement, cancellation and no-automated-
@@ -210,7 +211,7 @@ startup and billing traffic are intentionally fail closed.
 - A clean host restores an Object-Locked backup, compares audit and anchor
   checkpoints, measures RPO/RTO, and removes all plaintext drill material.
 
-Observed on 2026-07-25:
+Observed through 2026-07-26:
 
 - Better Stack free-plan account and public readiness monitor: configured;
   `https://api.akriven.com/readyz` observed **Up**.
@@ -218,14 +219,14 @@ Observed on 2026-07-25:
   `0600` URL files; both real backup jobs delivered an **Up** heartbeat.
 - Controlled heartbeat failure: external incident and owner email observed;
   healthy recovery recorded after 23 seconds.
-- A fresh read-only provider-console check found the readiness monitor and both
-  daily backup heartbeats `Up`. It also confirmed that the account has no
-  on-call schedule and no escalation policy; Better Stack requires an account
-  upgrade for scheduled on-call duties and still needs at least one additional
-  independently owned responder before acknowledgement/escalation can be
-  proven.
-- Second responder, explicit acknowledgement drill, and multi-channel
-  escalation: blocked on an additional responder and paid notification route.
+- A synthetic readiness-monitor incident was delivered to the owner Gmail
+  inbox and acknowledged through its email action. Better Stack returned an
+  explicit acknowledgement confirmation. The named support/incident owner,
+  runbooks and clean restore evidence now pass the private-beta `operations`
+  gate.
+- The account has no on-call schedule, second independent responder or paid
+  multi-channel route. Those remain public-production requirements; no
+  call/SMS/push or multi-person escalation claim is made.
 - 1Password Teams registration and email verification: reached the
   owner-controlled master-password/Secret-Key step. Vault activation is blocked
   until the owner chooses the master password and retains the Emergency Kit.
