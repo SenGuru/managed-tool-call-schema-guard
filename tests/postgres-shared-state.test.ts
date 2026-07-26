@@ -115,6 +115,23 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
       plan: 'trial',
       lifecycleStatus: 'active',
     });
+    await expect(secondControl.tenantEntitlement('control-tenant')).resolves.toEqual({
+      plan: 'trial',
+      monthly_limit: 8,
+      retention_days: 7,
+    });
+    await firstControl.updatePlan('control-tenant', 'team');
+    await expect(secondControl.tenantEntitlement('control-tenant')).resolves.toEqual({
+      plan: 'team',
+      monthly_limit: 250_000,
+      retention_days: 30,
+    });
+    await secondControl.updatePlan('control-tenant', 'trial');
+    await expect(firstControl.tenantEntitlement('control-tenant')).resolves.toEqual({
+      plan: 'trial',
+      monthly_limit: 8,
+      retention_days: 7,
+    });
     await firstControl.updateTenantLifecycle(
       'control-tenant',
       'suspended',
@@ -601,6 +618,7 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
     await expect(secondControl.authenticate('billing-pg-admin')).resolves.toMatchObject({
       plan: 'team',
       monthlyLimit: 250_000,
+      retentionDays: 30,
     });
     const superseded = (
       await firstPool.query<{ status: string; reason_code: string }>(
@@ -637,6 +655,8 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
     await firstBilling.markEventApplied(cancellationInput.event_id);
     await expect(firstControl.authenticate('billing-pg-admin')).resolves.toMatchObject({
       plan: 'trial',
+      monthlyLimit: 8,
+      retentionDays: 7,
     });
 
     await secondBilling.recordCheckoutSession(

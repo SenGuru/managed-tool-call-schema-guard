@@ -83,6 +83,12 @@ export interface SharedPrincipal {
   lifecycleStatus: SharedTenantLifecycleStatus;
 }
 
+export interface SharedTenantEntitlement {
+  plan: SharedPlanId;
+  monthly_limit: number;
+  retention_days: number;
+}
+
 export interface SharedUsage {
   tenant_id: string;
   month: string;
@@ -2241,12 +2247,34 @@ export class PostgresControlState implements ControlState {
     });
   }
   async updatePlan(tenantId: string, plan: SharedPlanId): Promise<void> {
+    await this.updateEntitlement(tenantId, plan, defaultRetentionDays[plan]);
+  }
+  async updateEntitlement(
+    tenantId: string,
+    plan: SharedPlanId,
+    retentionDays: number,
+  ): Promise<void> {
+    if (!Number.isInteger(retentionDays) || retentionDays < 0 || retentionDays > 3_650)
+      throw new TypeError('shared tenant retention days must be from 0 through 3650');
     await this.updateTenant(tenantId, (row) => ({
       ...row,
       plan,
       monthly_limit: this.planLimits[plan],
+      retention_days: retentionDays,
       updated_at: new Date(),
     }));
+  }
+  async tenantEntitlement(tenantId: string): Promise<SharedTenantEntitlement> {
+    const row = (
+      await this.pool.query<TenantRow>('SELECT * FROM sg_control_tenants WHERE id=$1', [tenantId])
+    ).rows[0];
+    if (!row) throw new SharedStateIntegrityError('shared tenant does not exist');
+    this.assertTenant(row);
+    return {
+      plan: row.plan,
+      monthly_limit: row.monthly_limit,
+      retention_days: row.retention_days,
+    };
   }
 
   private async incrementDrift(tenantId: string): Promise<SharedUsage> {

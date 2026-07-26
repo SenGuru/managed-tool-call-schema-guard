@@ -1808,7 +1808,22 @@ export class ManagedStore {
       .immediate();
   }
   operatorUpdatePlan(tenantId: string, plan: PlanId): void {
-    this.updatePlan(this.operatorPrincipal(tenantId), plan);
+    this.operatorUpdateEntitlement(tenantId, plan, managedPlan(plan).entitlements.retention_days);
+  }
+  operatorTenantEntitlement(tenantId: string): {
+    plan: PlanId;
+    monthlyLimit: number;
+    retentionDays: number;
+  } {
+    const principal = this.operatorPrincipal(tenantId);
+    return {
+      plan: principal.plan,
+      monthlyLimit: principal.monthlyLimit,
+      retentionDays: principal.retentionDays,
+    };
+  }
+  operatorUpdateEntitlement(tenantId: string, plan: PlanId, retentionDays: number): void {
+    this.updateEntitlement(this.operatorPrincipal(tenantId), plan, retentionDays);
   }
   updateTenantPolicy(principal: Principal, policy: GuardPolicy): void {
     this.requireScope(principal, 'admin');
@@ -1828,16 +1843,27 @@ export class ManagedStore {
       );
   }
   updatePlan(principal: Principal, plan: PlanId): void {
+    this.updateEntitlement(principal, plan, managedPlan(plan).entitlements.retention_days);
+  }
+  private updateEntitlement(principal: Principal, plan: PlanId, retentionDays: number): void {
     this.requireScope(principal, 'admin');
+    if (!Number.isInteger(retentionDays) || retentionDays < 0 || retentionDays > 3_650)
+      throw new ManagedError(
+        400,
+        'invalid_retention',
+        'retention days must be from 0 through 3650',
+      );
     const row = this.db.prepare('SELECT * FROM tenants WHERE id=?').get(principal.tenantId) as
       Row | undefined;
     if (!row) throw new ManagedError(404, 'tenant_not_found', 'tenant does not exist');
     this.assertControlHmac(row, this.tenantControlHmac(row), 'tenant');
     const monthlyLimit = managedPlan(plan).entitlements.validations_per_month;
-    const updated = { ...row, plan, monthly_limit: monthlyLimit };
+    const updated = { ...row, plan, monthly_limit: monthlyLimit, retention_days: retentionDays };
     this.db
-      .prepare('UPDATE tenants SET plan=?,monthly_limit=?,control_hmac=? WHERE id=?')
-      .run(plan, monthlyLimit, this.tenantControlHmac(updated), principal.tenantId);
+      .prepare(
+        'UPDATE tenants SET plan=?,monthly_limit=?,retention_days=?,control_hmac=? WHERE id=?',
+      )
+      .run(plan, monthlyLimit, retentionDays, this.tenantControlHmac(updated), principal.tenantId);
   }
 
   listEnvironments(principal: Principal): Row[] {

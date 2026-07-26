@@ -1,9 +1,10 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
+import { hmac } from '../packages/managed/src/crypto.js';
 import { createManagedServer } from '../packages/managed/src/server.js';
 import { ManagedStore } from '../packages/managed/src/store.js';
 
@@ -386,6 +387,14 @@ describe('tenant lifecycle', () => {
     const path = join(directory, 'managed.db');
     const exportPath = join(directory, 'tenant-export.json');
     const confirmationPath = join(directory, 'delete-confirmation.json');
+    const entitlementConfirmationPath = join(directory, 'entitlement-confirmation.json');
+    const entitlementReceiptPath = join(directory, 'entitlement-receipt.json');
+    const cancellationConfirmationPath = join(directory, 'cancellation-confirmation.json');
+    const cancellationReceiptPath = join(directory, 'cancellation-receipt.json');
+    const blockedReceiptPath = join(directory, 'blocked-entitlement-receipt.json');
+    const insecureReceiptPath = join(directory, 'insecure-entitlement-receipt.json');
+    const symlinkReceiptPath = join(directory, 'symlink-entitlement-receipt.json');
+    const confirmationSymlinkPath = join(directory, 'entitlement-confirmation-link.json');
     const setup = new ManagedStore({ databasePath: path, masterSecret: secret });
     setup.bootstrapTenant({
       id: 'operator-flow',
@@ -398,6 +407,15 @@ describe('tenant lifecycle', () => {
     const environment = {
       ...process.env,
       SCHEMA_GUARD_MASTER_SECRET: secret,
+      SCHEMA_GUARD_STRIPE_MODE: '',
+      SCHEMA_GUARD_STRIPE_SECRET_KEY: '',
+      SCHEMA_GUARD_STRIPE_SECRET_KEY_FILE: '',
+      SCHEMA_GUARD_STRIPE_WEBHOOK_SECRET: '',
+      SCHEMA_GUARD_STRIPE_WEBHOOK_SECRET_FILE: '',
+      SCHEMA_GUARD_STRIPE_TEAM_PRICE_ID: '',
+      SCHEMA_GUARD_STRIPE_CHECKOUT_SUCCESS_URL: '',
+      SCHEMA_GUARD_STRIPE_CHECKOUT_CANCEL_URL: '',
+      SCHEMA_GUARD_STRIPE_PORTAL_RETURN_URL: '',
     };
     const common = ['--database', path, '--tenant-id', 'operator-flow'];
     const inspect = await execFileAsync(
@@ -408,7 +426,214 @@ describe('tenant lifecycle', () => {
     expect(JSON.parse(inspect.stdout)).toMatchObject({
       tenant_id: 'operator-flow',
       local: { status: 'active' },
+      entitlement: {
+        local: { plan: 'trial', monthlyLimit: 1_000, retentionDays: 7 },
+      },
     });
+    await writeFile(
+      entitlementConfirmationPath,
+      `${JSON.stringify({
+        tenant_id: 'operator-flow',
+        billing_variant: 'manual',
+        target_plan: 'team',
+        reason_code: 'manual_invoice_settled',
+        evidence_reference: 'invoice-settlement-reference-sensitive',
+        operator_id: 'private-beta-founder',
+        automated_charging_disabled: true,
+        confirm: 'set tenant operator-flow plan team',
+      })}\n`,
+      { mode: 0o600 },
+    );
+    await chmod(entitlementConfirmationPath, 0o600);
+    await chmod(entitlementConfirmationPath, 0o644);
+    await expectCommandFailure(
+      execFileAsync(
+        executable,
+        [
+          'packages/managed/src/tenant-operator.ts',
+          'entitlement',
+          ...common,
+          '--service-state',
+          'stopped',
+          '--plan',
+          'team',
+          '--confirmation-file',
+          entitlementConfirmationPath,
+          '--receipt-output',
+          insecureReceiptPath,
+        ],
+        { cwd: process.cwd(), env: environment },
+      ),
+      'must not be readable or writable by group or others',
+    );
+    await chmod(entitlementConfirmationPath, 0o600);
+    await symlink(entitlementConfirmationPath, confirmationSymlinkPath);
+    await expectCommandFailure(
+      execFileAsync(
+        executable,
+        [
+          'packages/managed/src/tenant-operator.ts',
+          'entitlement',
+          ...common,
+          '--service-state',
+          'stopped',
+          '--plan',
+          'team',
+          '--confirmation-file',
+          confirmationSymlinkPath,
+          '--receipt-output',
+          symlinkReceiptPath,
+        ],
+        { cwd: process.cwd(), env: environment },
+      ),
+      'must not be a symbolic link',
+    );
+    await expectCommandFailure(
+      execFileAsync(
+        executable,
+        [
+          'packages/managed/src/tenant-operator.ts',
+          'entitlement',
+          ...common,
+          '--service-state',
+          'stopped',
+          '--plan',
+          'team',
+          '--confirmation-file',
+          entitlementConfirmationPath,
+          '--receipt-output',
+          blockedReceiptPath,
+        ],
+        {
+          cwd: process.cwd(),
+          env: {
+            ...environment,
+            SCHEMA_GUARD_STRIPE_MODE: 'sandbox',
+          },
+        },
+      ),
+      'refuses to run while Stripe configuration is present',
+    );
+    const entitled = await execFileAsync(
+      executable,
+      [
+        'packages/managed/src/tenant-operator.ts',
+        'entitlement',
+        ...common,
+        '--service-state',
+        'stopped',
+        '--plan',
+        'team',
+        '--confirmation-file',
+        entitlementConfirmationPath,
+        '--receipt-output',
+        entitlementReceiptPath,
+      ],
+      { cwd: process.cwd(), env: environment },
+    );
+    expect(JSON.parse(entitled.stdout)).toMatchObject({
+      plan: 'team',
+      validations_per_month: 250_000,
+      retention_days: 30,
+      changed: true,
+      automated_charging: 'disabled',
+    });
+    expect(entitled.stdout).not.toContain('invoice-settlement-reference-sensitive');
+    expect((await stat(entitlementReceiptPath)).mode & 0o077).toBe(0);
+    const entitlementReceipt = JSON.parse(await readFile(entitlementReceiptPath, 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    expect(entitlementReceipt).toMatchObject({
+      receipt_version: '1',
+      status: 'applied',
+      previous_plan: 'trial',
+      target_plan: 'team',
+      previous_entitlement: { validations_per_month: 1_000, retention_days: 7 },
+      target_entitlement: { validations_per_month: 250_000, retention_days: 30 },
+      reason_code: 'manual_invoice_settled',
+      changed: true,
+      automated_charging: 'disabled',
+    });
+    expect(entitlementReceipt).not.toHaveProperty('tenant_id');
+    expect(entitlementReceipt).not.toHaveProperty('evidence_reference');
+    expect(entitlementReceipt.tenant_ref).toMatch(/^hmac-sha256:[0-9a-f]{64}$/u);
+    expect(entitlementReceipt.evidence_reference_hash).toMatch(/^hmac-sha256:[0-9a-f]{64}$/u);
+    expect(entitlementReceipt.receipt_hmac).toMatch(/^hmac-sha256:[0-9a-f]{64}$/u);
+    const entitledStore = new ManagedStore({ databasePath: path, masterSecret: secret });
+    expect(entitledStore.authenticate('operator-flow-key')).toMatchObject({
+      plan: 'team',
+      monthlyLimit: 250_000,
+      retentionDays: 30,
+    });
+    entitledStore.close();
+    const appliedReceipt = await readFile(entitlementReceiptPath, 'utf8');
+    await expectCommandFailure(
+      execFileAsync(
+        executable,
+        [
+          'packages/managed/src/tenant-operator.ts',
+          'entitlement',
+          ...common,
+          '--service-state',
+          'stopped',
+          '--plan',
+          'team',
+          '--confirmation-file',
+          entitlementConfirmationPath,
+          '--receipt-output',
+          entitlementReceiptPath,
+        ],
+        { cwd: process.cwd(), env: environment },
+      ),
+      'EEXIST',
+    );
+    expect(await readFile(entitlementReceiptPath, 'utf8')).toBe(appliedReceipt);
+    await writeFile(
+      cancellationConfirmationPath,
+      `${JSON.stringify({
+        tenant_id: 'operator-flow',
+        billing_variant: 'manual',
+        target_plan: 'trial',
+        reason_code: 'manual_cancelled',
+        evidence_reference: 'cancellation-request-reference-sensitive',
+        operator_id: 'private-beta-founder',
+        automated_charging_disabled: true,
+        confirm: 'set tenant operator-flow plan trial',
+      })}\n`,
+      { mode: 0o600 },
+    );
+    await chmod(cancellationConfirmationPath, 0o600);
+    const canceledEntitlement = await execFileAsync(
+      executable,
+      [
+        'packages/managed/src/tenant-operator.ts',
+        'entitlement',
+        ...common,
+        '--service-state',
+        'stopped',
+        '--plan',
+        'trial',
+        '--confirmation-file',
+        cancellationConfirmationPath,
+        '--receipt-output',
+        cancellationReceiptPath,
+      ],
+      { cwd: process.cwd(), env: environment },
+    );
+    expect(JSON.parse(canceledEntitlement.stdout)).toMatchObject({
+      plan: 'trial',
+      changed: true,
+      automated_charging: 'disabled',
+    });
+    expect(canceledEntitlement.stdout).not.toContain('cancellation-request-reference-sensitive');
+    const canceledStore = new ManagedStore({ databasePath: path, masterSecret: secret });
+    expect(canceledStore.authenticate('operator-flow-key')).toMatchObject({
+      plan: 'trial',
+      monthlyLimit: 1_000,
+      retentionDays: 7,
+    });
+    canceledStore.close();
     await execFileAsync(
       executable,
       [
@@ -479,5 +704,135 @@ describe('tenant lifecycle', () => {
     open.push(verified);
     expect(verified.authenticate('operator-flow-key')).toBeUndefined();
     expect(verified.readinessCheck()).toBe(true);
-  }, 20_000);
+  }, 30_000);
+
+  it('recovers a HMAC-authenticated pending manual entitlement without database edits', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'schema-guard-entitlement-recovery-'));
+    const path = join(directory, 'managed.db');
+    const confirmationPath = join(directory, 'confirmation.json');
+    const receiptPath = join(directory, 'pending-receipt.json');
+    const tamperedReceiptPath = join(directory, 'tampered-receipt.json');
+    const evidenceReference = 'pending-entitlement-evidence-reference';
+    const operatorId = 'recovery-operator';
+    const tenant = 'recovery-flow';
+    const store = new ManagedStore({ databasePath: path, masterSecret: secret });
+    store.bootstrapTenant({
+      id: tenant,
+      name: 'Recovery flow',
+      plan: 'trial',
+      apiKey: 'recovery-flow-key',
+    });
+    store.close();
+    await writeFile(
+      confirmationPath,
+      `${JSON.stringify({
+        tenant_id: tenant,
+        billing_variant: 'manual',
+        target_plan: 'team',
+        reason_code: 'manual_invoice_settled',
+        evidence_reference: evidenceReference,
+        operator_id: operatorId,
+        automated_charging_disabled: true,
+        confirm: `set tenant ${tenant} plan team`,
+      })}\n`,
+      { mode: 0o600 },
+    );
+    const unsigned = {
+      receipt_version: '1',
+      status: 'pending',
+      tenant_ref: hmac(secret, 'managed-manual-billing-tenant-reference-v1', tenant),
+      previous_plan: 'trial',
+      target_plan: 'team',
+      previous_entitlement: { validations_per_month: 1_000, retention_days: 7 },
+      target_entitlement: { validations_per_month: 250_000, retention_days: 30 },
+      reason_code: 'manual_invoice_settled',
+      evidence_reference_hash: hmac(
+        secret,
+        'managed-manual-billing-evidence-reference-v1',
+        evidenceReference,
+      ),
+      operator_hash: hmac(secret, 'managed-manual-billing-operator-reference-v1', operatorId),
+      recorded_at: '2026-07-26T00:00:00.000Z',
+      automated_charging: 'disabled',
+    };
+    const pending = {
+      ...unsigned,
+      receipt_hmac: hmac(secret, 'managed-manual-billing-receipt-v1', unsigned),
+    };
+    await writeFile(receiptPath, `${JSON.stringify(pending)}\n`, { mode: 0o600 });
+    await writeFile(
+      tamperedReceiptPath,
+      `${JSON.stringify({
+        ...pending,
+        target_entitlement: { validations_per_month: 250_000, retention_days: 99 },
+      })}\n`,
+      { mode: 0o600 },
+    );
+    const executable = join(process.cwd(), 'node_modules', '.bin', 'tsx');
+    const environment = {
+      ...process.env,
+      SCHEMA_GUARD_MASTER_SECRET: secret,
+      SCHEMA_GUARD_STRIPE_MODE: '',
+      SCHEMA_GUARD_STRIPE_SECRET_KEY: '',
+      SCHEMA_GUARD_STRIPE_SECRET_KEY_FILE: '',
+      SCHEMA_GUARD_STRIPE_WEBHOOK_SECRET: '',
+      SCHEMA_GUARD_STRIPE_WEBHOOK_SECRET_FILE: '',
+      SCHEMA_GUARD_STRIPE_TEAM_PRICE_ID: '',
+      SCHEMA_GUARD_STRIPE_CHECKOUT_SUCCESS_URL: '',
+      SCHEMA_GUARD_STRIPE_CHECKOUT_CANCEL_URL: '',
+      SCHEMA_GUARD_STRIPE_PORTAL_RETURN_URL: '',
+    };
+    const common = [
+      'packages/managed/src/tenant-operator.ts',
+      'entitlement-reconcile',
+      '--database',
+      path,
+      '--tenant-id',
+      tenant,
+      '--service-state',
+      'stopped',
+      '--plan',
+      'team',
+      '--confirmation-file',
+      confirmationPath,
+    ];
+    await expectCommandFailure(
+      execFileAsync(executable, [...common, '--receipt-output', tamperedReceiptPath], {
+        cwd: process.cwd(),
+        env: environment,
+      }),
+      'pending entitlement receipt integrity verification failed',
+    );
+    const recovered = await execFileAsync(
+      executable,
+      [...common, '--receipt-output', receiptPath],
+      { cwd: process.cwd(), env: environment },
+    );
+    expect(JSON.parse(recovered.stdout)).toMatchObject({
+      plan: 'team',
+      validations_per_month: 250_000,
+      retention_days: 30,
+      changed: true,
+      recovered: true,
+      automated_charging: 'disabled',
+    });
+    const recoveredReceipt = JSON.parse(await readFile(receiptPath, 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    expect(recoveredReceipt).toMatchObject({
+      status: 'applied',
+      previous_plan: 'trial',
+      target_plan: 'team',
+      changed: true,
+      recovered: true,
+    });
+    const verified = new ManagedStore({ databasePath: path, masterSecret: secret });
+    open.push(verified);
+    expect(verified.authenticate('recovery-flow-key')).toMatchObject({
+      plan: 'team',
+      monthlyLimit: 250_000,
+      retentionDays: 30,
+    });
+  }, 15_000);
 });

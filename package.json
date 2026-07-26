@@ -31,6 +31,7 @@
     "audit:release-candidate": "node scripts/release-candidate-audit.mjs",
     "audit:commercial-release": "node scripts/commercial-release-gate.mjs",
     "audit:commercial-template": "node scripts/commercial-evidence-template.mjs",
+    "audit:manual-billing": "npm run build --silent && tsx scripts/manual-billing-audit.ts",
     "audit:framework-integrations": "npm run build --silent && node scripts/framework-integration-audit.mjs",
     "audit:five-repos": "npm run build --silent && node scripts/five-repo-native-fixture-audit.mjs",
     "audit:benchmarks": "npm run build --silent && node scripts/multi-benchmark-replay-audit.mjs",

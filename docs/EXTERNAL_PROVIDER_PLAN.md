@@ -61,9 +61,11 @@ not live-provider proof. Use this order for the remaining account work:
    escalation remain public-production requirements.
 7. Select the private-beta billing variant. For manual billing, approve and
    exercise the manual invoice, entitlement, cancellation and no-automated-
-   charge procedures. For automated billing, rotate the previously exposed
-   Stripe test credential in the Stripe console and complete the full sandbox
-   lifecycle. Never enable live mode during certification.
+   charge procedures in
+   [`MANUAL_BILLING_PRIVATE_BETA.md`](MANUAL_BILLING_PRIVATE_BETA.md), including
+   the exact-candidate PostgreSQL/HTTP audit. For automated billing, rotate the
+   previously exposed Stripe test credential in the Stripe console and complete
+   the full sandbox lifecycle. Never enable live mode during certification.
 8. Generate the all-unproven evidence skeleton with
    `npm run audit:commercial-template`, then assemble redacted,
    content-addressed evidence bound to the exact candidate SHA and run

@@ -39,14 +39,20 @@ plan name, included validation limit, retention, overage policy, and offer
 shape.
 
 - Monthly validation quota is enforced transactionally in SQLite or PostgreSQL.
-- Retention is an enforced tenant setting and defaults from the plan at
-  bootstrap.
+- Retention is an enforced tenant setting, defaults from the plan at bootstrap,
+  and moves with a code-owned plan transition.
 - Overage is disabled; the service fails closed at quota instead of creating an
   unpriced liability.
 - The private-beta offer includes the complete implemented managed workflow.
   There are no unimplemented feature gates disguised as entitlements.
 - Payment collection remains disabled until a real provider sandbox and its
   failure cases are exercised.
+
+The private-beta operator procedure is specified in
+[`MANUAL_BILLING_PRIVATE_BETA.md`](MANUAL_BILLING_PRIVATE_BETA.md). It changes
+plan, quota, and retention as one stopped-service entitlement operation,
+requires owner-only exact confirmation and HMAC receipts, synchronizes SQLite
+with PostgreSQL, and refuses to run while Stripe configuration is present.
 
 ## Unit-economics model
 

@@ -125,6 +125,10 @@ Private beta may use a documented `manual` billing variant only when manual
 invoice policy, operator entitlement, cancellation policy, and absence of
 automated charging are all proven. It may instead use the `stripe_test`
 variant. Manual billing is not accepted for public production.
+The repeatable manual procedure and PostgreSQL/HTTP audit command are defined
+in [`MANUAL_BILLING_PRIVATE_BETA.md`](MANUAL_BILLING_PRIVATE_BETA.md). A report
+from that audit is evidence only when it is rerun against the exact committed
+candidate revision and retained under the owner-only evidence root.
 
 ## Public-production additions
 

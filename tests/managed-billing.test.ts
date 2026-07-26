@@ -225,6 +225,7 @@ describe('managed Stripe billing authority', () => {
     expect(service.store.authenticate('billing-admin-key')).toMatchObject({
       plan: 'team',
       monthlyLimit: 250_000,
+      retentionDays: 30,
     });
 
     const duplicate = await fetch(`${base}/v1/billing/stripe/webhook`, {
@@ -253,7 +254,11 @@ describe('managed Stripe billing authority', () => {
       body: '{}',
     });
     expect(pastDue.status).toBe(200);
-    expect(service.store.authenticate('billing-admin-key')?.plan).toBe('trial');
+    expect(service.store.authenticate('billing-admin-key')).toMatchObject({
+      plan: 'trial',
+      monthlyLimit: 1_000,
+      retentionDays: 7,
+    });
 
     provider.envelope = {
       event_id: 'evt_recovered',
@@ -273,7 +278,11 @@ describe('managed Stripe billing authority', () => {
       body: '{}',
     });
     expect(recovered.status).toBe(200);
-    expect(service.store.authenticate('billing-admin-key')?.plan).toBe('team');
+    expect(service.store.authenticate('billing-admin-key')).toMatchObject({
+      plan: 'team',
+      monthlyLimit: 250_000,
+      retentionDays: 30,
+    });
 
     const statement = await fetch(`${base}/v1/billing/statement`, { headers: auth });
     expect(statement.status).toBe(200);
