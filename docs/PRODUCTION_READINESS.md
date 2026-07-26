@@ -301,6 +301,30 @@ before commercial admission are tracked in
 [ENTERPRISE_LAUNCH_GATES.md](ENTERPRISE_LAUNCH_GATES.md). The historical
 revision labels above are not the current repository head.
 
+### Exact `c188d98` deployment update (2026-07-26)
+
+Revision `c188d9877275f3260b7d1b15ab1293eda84edf4e` is the current DreamHost
+managed image. Its exact amd64 image ID is
+`sha256:d4708206a7d4c3743aa93483afd466abf653d2e60d734cadb8c904092e100b6f`;
+it runs as UID/GID 65532 with a read-only root filesystem alongside the pinned,
+healthy PostgreSQL and Caddy images. Public `/healthz` and `/readyz` return
+HTTP 200.
+
+A dedicated tenant completed 64 public HTTPS requests covering repair,
+rejection, drift, action gating, duplicate blocking, integrity and lifecycle.
+A second dedicated tenant exercised the actual independent DigitalOcean
+anchor edge: the outage returned `checkpoint_anchor_unacknowledged`, delivery
+recovered in 6.884 seconds after restart, and the reserved action remained
+`duplicate_blocked`. The owner-confirmed DigitalOcean ED25519 fingerprint was
+matched before this access.
+
+The operator drill also confirmed that all production Compose overlays are
+required when recreating the managed container. Omitting the PostgreSQL overlay
+removed the private CA mount and readiness failed closed as
+`shared_control_state_unavailable`; recreating from the full pinned base,
+PostgreSQL, edge and WorkOS composition restored verified TLS and readiness.
+This is retained as negative operational evidence.
+
 ## Launch checklist
 
 Public launch is allowed only when each item has evidence:
@@ -366,8 +390,11 @@ evidence passes.
 
 The included Compose profile can host a private beta or design-user deployment
 behind a protected domain. For a broad self-serve public launch, payment
-settlement, hosted user signup, configured/tested alert receiver, independently
-deployed checkpoint receiver, receiver and primary backup automation,
-credentialed provider-version probe operation/alerting, shared multi-instance persistence,
-deployed reconciliation/failover drills, and support operations still need product decisions and external account
-configuration.
+settlement, self-service organization signup/recovery, live transactional
+email, customer-owned webhook/downstream reconciliation, credentialed
+provider-version probe operation/alerting, shared multi-instance failover,
+independent review, a second responder and mature support operations still need
+product decisions or external account configuration. The independent
+checkpoint host, backup automation, external monitoring, single-owner WorkOS
+flow and single-responder paging are deployed and exercised; they must not be
+listed as missing.

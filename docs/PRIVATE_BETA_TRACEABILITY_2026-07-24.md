@@ -14,6 +14,18 @@
 > failure/restore drills, is recorded in
 > [`COMMERCIAL_READINESS_EVIDENCE_2026-07-25.md`](COMMERCIAL_READINESS_EVIDENCE_2026-07-25.md).
 
+> Exact deployed checkpoint update — 2026-07-26: revision
+> `c188d9877275f3260b7d1b15ab1293eda84edf4e` is deployed on DreamHost as the
+> non-root, read-only amd64 managed image
+> `sha256:d4708206a7d4c3743aa93483afd466abf653d2e60d734cadb8c904092e100b6f`.
+> The final 298-test credentialed PostgreSQL suite, container lifecycle,
+> framework contracts, image scan, extreme audit, public HTTPS E2E and real
+> DreamHost-to-DigitalOcean outage/recovery results are recorded in
+> [the exact-checkpoint supplement](#2026-07-26-exact-c188d98-checkpoint).
+> Those observations supersede older exact-revision and test-count statements
+> below; external blockers and historical measurements remain scoped to their
+> named revisions.
+
 ## Verdict scope
 
 This document is the release gate for the source on
@@ -244,13 +256,75 @@ This browser evidence is local, while the supplement proves the public API TLS
 and multi-host DreamHost/DigitalOcean boundary. Neither proves real
 identity/email/payment/paging delivery or customer willingness to pay.
 
+## 2026-07-26 exact `c188d98` checkpoint
+
+The following commands and observations apply to exact source revision
+`c188d9877275f3260b7d1b15ab1293eda84edf4e`:
+
+- `npm run check` passed: 47 TypeScript/JavaScript files passed, one
+  provider-credentialed file was skipped, 279 tests passed and 19
+  provider-credentialed cases were skipped; all five Python tests, lint,
+  typecheck, conformance and package-boundary checks passed.
+- Credentialed `npm run test:coverage` against a fresh pinned PostgreSQL 16
+  container passed all 48 files and 298 tests: 79.20% statements, 73.20%
+  branches, 81.49% functions and 81.11% lines. The uncredentialed invocation
+  failed the thresholds and was retained as a negative control rather than
+  represented as a pass.
+- `npm run audit:container-e2e` passed in 21.263 seconds with fresh PostgreSQL,
+  two tenants, repair/rejection behavior, isolation, lifecycle/export,
+  approvals, idempotency, anchor outage/recovery, restart, hardening and log
+  redaction.
+- `npm run audit:extreme` passed in 36.672 seconds after its stale-child
+  cleanup was fixed. Its 2,000-request run returned 2,000 successes at 880.87
+  requests/second with 33.72 ms p50, 40.74 ms p95 and 193.87 ms p99 latency.
+- `npm run audit:framework-integrations` passed against installed MCP, OpenAI
+  Agents, Pydantic AI and Google ADK packages; rejected calls executed zero
+  tools. No model-provider API was called.
+- `npm run audit:images` and the exact managed-image Trivy candidate scan
+  reported zero High/Critical findings and zero secrets.
+- A checksum-verified amd64 artifact was transferred to DreamHost and activated
+  as `schema-guard-managed:c188d98-amd64`. The running image ID is
+  `sha256:d4708206a7d4c3743aa93483afd466abf653d2e60d734cadb8c904092e100b6f`;
+  UID/GID 65532, read-only root filesystem, healthy PostgreSQL, TLS edge and
+  exact previous-image rollback were retained.
+- A dedicated `audit-c188d98` tenant completed 64 real public HTTPS requests in
+  18.846 seconds. It proved `valid`, `valid_with_repair`, fail-closed
+  `rejected`, drift rejection, allowed-then-duplicate-blocked action
+  admission, audit/release/reconciliation/control integrity and
+  deletion-pending lifecycle.
+- The owner-confirmed DigitalOcean ED25519 host fingerprint was independently
+  matched before access. A dedicated `audit-anchor-c188d98` journey then
+  stopped the real DigitalOcean WireGuard edge: action admission returned
+  `checkpoint_anchor_unacknowledged`, recovery completed in 6.884 seconds, and
+  the outage reservation returned `duplicate_blocked`. Both anchor containers,
+  the DreamHost managed/PostgreSQL/edge containers, public `/healthz` and
+  public `/readyz` were healthy afterward.
+- A controlled offline bootstrap initially exposed an operator-composition
+  mistake: restarting only the base and WorkOS overlays omitted the PostgreSQL
+  CA overlay and readiness correctly failed as
+  `shared_control_state_unavailable`. The full pinned base, PostgreSQL, edge
+  and WorkOS composition restored certificate verification and readiness.
+  Both audit tenants were subsequently bootstrapped with file-only keys during
+  measured stop/restart windows; no key appeared in stdout.
+- WorkOS single-owner login, MFA, callback, refresh and normal logout are live.
+  A stale provider session also exposed a logout defect: upstream logout
+  failure prevented local cookie clearing. `c188d98` now always clears the
+  sealed local session and returns a safe configured fallback; deterministic
+  regression and both degraded and normal live logout paths passed.
+
+These checks make `c188d98` a stronger **conditional, operator-onboarded
+private-beta candidate**. They do not change the public-production no-go:
+recovery and cross-organization WorkOS isolation, live transactional email,
+live pinned model-provider probes, Stripe sandbox certification, a
+customer-owned side-effect ledger, independent review and real customer/market
+evidence remain absent.
+
 ## External blockers
 
 ### Must be closed before the first design partner sends action traffic
 
-1. Configure an external destination for the active uptime and backup-heartbeat
-   monitors, then prove paging delivery and observe
-   acknowledgement/escalation.
+1. Add a second responder and prove the reviewed escalation path beyond the
+   current single owner; paid call/SMS/push escalation is still unproven.
 2. Obtain a customer-owned test webhook and downstream side-effect ledger;
    prove acknowledgement-before-execution, completion and ambiguous-result
    reconciliation.
@@ -295,14 +369,17 @@ their local, PostgreSQL and static-data gates.
 
 ### Production-like network evidence
 
-Exact-source pinned containers exercised managed HTTP, fresh PostgreSQL and a
-TLS-separated checkpoint receiver with restart, outage, recovery, persistence,
-tenant isolation, fail-closed billing and secret/log hardening on one Docker
-host. Earlier reports retain real DreamHost-to-DigitalOcean evidence only for
-their named historical revisions.
+Exact `c188d98` exercised managed HTTP, persistent PostgreSQL and public TLS on
+DreamHost plus the independently administered DigitalOcean checkpoint host.
+The 64-request HTTPS workflow, a real anchor-edge outage, 6.884-second delivery
+recovery, restart, persistence, tenant isolation, fail-closed billing and
+secret/log hardening are observed. Fresh-container and local restore evidence
+also passed; the earlier destructive clean-host restore remains historical
+evidence for its named revision.
 
 ### Real customer and market evidence
 
-None. No live provider integration, automated payment, public signup, paying
-cohort, renewal, measured support burden or customer incident was produced by
-this gate.
+None. WorkOS single-owner staging, Better Stack paging and Titan inbound human
+mail are provider evidence, but they are not customer or market evidence. No
+automated payment, public signup, paying cohort, renewal, measured support
+burden or customer incident was produced by this gate.
