@@ -1744,6 +1744,8 @@ export function createManagedServer(
         store.requireScope(principal, 'admin');
         try {
           sendJson(response, 200, {
+            tenant_id: principal.tenantId,
+            tenant_name: principal.tenantName,
             lifecycle: controlState
               ? await controlState.tenantLifecycle(principal.tenantId)
               : store.tenantLifecycle(principal),

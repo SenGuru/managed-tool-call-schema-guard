@@ -200,7 +200,11 @@ describe('tenant lifecycle', () => {
 
     const lifecycle = await fetch(`${base}/v1/admin/tenant/lifecycle`, { headers });
     expect(lifecycle.status).toBe(200);
-    expect(await lifecycle.json()).toMatchObject({ lifecycle: { status: 'active' } });
+    expect(await lifecycle.json()).toMatchObject({
+      tenant_id: 'tenant-a',
+      tenant_name: 'Tenant A',
+      lifecycle: { status: 'active' },
+    });
     expect(
       (
         await fetch(`${base}/v1/admin/tenant/lifecycle`, {

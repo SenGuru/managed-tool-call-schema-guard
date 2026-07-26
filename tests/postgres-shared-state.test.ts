@@ -1298,7 +1298,11 @@ describe.runIf(Boolean(postgresUrl))('PostgreSQL multi-instance action state', (
       });
       expect(await checkpoint.json()).toMatchObject({ revision: 2, row_count: 1 });
       const lifecycle = await fetch(`${services[0]!.base}/v1/admin/tenant/lifecycle`, { headers });
-      expect(await lifecycle.json()).toMatchObject({ lifecycle: { status: 'active' } });
+      expect(await lifecycle.json()).toMatchObject({
+        tenant_id: 'tenant-http',
+        tenant_name: 'HTTP Tenant',
+        lifecycle: { status: 'active' },
+      });
       const exported = await fetch(`${services[1]!.base}/v1/admin/tenant/export`, {
         headers,
       });

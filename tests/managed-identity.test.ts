@@ -175,6 +175,11 @@ describe('managed human identity boundary', () => {
       headers: { cookie: `__Host-akriven_session=${encodeURIComponent(session)}` },
     });
     expect(lifecycle.status).toBe(200);
+    expect(await lifecycle.json()).toMatchObject({
+      tenant_id: 'identity',
+      tenant_name: 'Identity tenant',
+      lifecycle: { status: 'active' },
+    });
   });
 
   it('rejects callback CSRF, cross-origin mutation, invalid sessions, and tenant substitution', async () => {
