@@ -246,9 +246,10 @@ Observed through 2026-07-26:
   cross-organization callback rejection remain pending.
 - The already-purchased GoDaddy/Titan seat is now provisioned as
   `support@akriven.com`; owner-only password custody, Gmail recovery and public
-  MX/SPF/DKIM/DMARC/webmail records are configured. Titan's first-use terms
-  still require owner acceptance before inbound, outbound, reply and recovery
-  behavior can be certified.
+  MX/SPF/DKIM/DMARC/webmail records are configured. The owner accepted Titan's
+  first-use terms and Gmail-to-support inbound delivery is observed. An
+  outbound certification message was submitted, but destination receipt,
+  reply, recovery and header-alignment behavior remain unproven.
 - Sentry signup remains blocked at Google's device-verification boundary; no
   Sentry project, data region or irreversible retention choice was created.
 - Postmark, Stripe, Backblaze and live model credentials: not configured.

@@ -233,10 +233,27 @@ describe('managed human identity boundary', () => {
       },
     });
     expect(logout.status).toBe(200);
-    expect(await logout.json()).toEqual({ logout_url: 'https://identity.example.test/logout' });
+    expect(await logout.json()).toEqual({
+      logout_url: 'https://identity.example.test/logout',
+      provider_logout: 'redirect',
+    });
     expect(logout.headers.get('set-cookie')).toContain('Max-Age=0');
 
     provider.fail = true;
+    const degradedLogout = await fetch(`${base}/v1/auth/logout`, {
+      method: 'POST',
+      headers: {
+        cookie: `__Host-akriven_session=${encodeURIComponent(session)}`,
+        origin: 'https://guard.example.test',
+      },
+    });
+    expect(degradedLogout.status).toBe(200);
+    expect(await degradedLogout.json()).toEqual({
+      logout_url: '/',
+      provider_logout: 'unavailable',
+    });
+    expect(degradedLogout.headers.get('set-cookie')).toContain('Max-Age=0');
+
     const outage = await fetch(`${base}/v1/auth/session`, {
       headers: { cookie: `__Host-akriven_session=${encodeURIComponent(session)}` },
     });

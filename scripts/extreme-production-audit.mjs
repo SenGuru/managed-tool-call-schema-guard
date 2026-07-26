@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { createServer as createTcpServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { redactEvidence } from './evidence-redaction.mjs';
@@ -52,11 +53,30 @@ async function jsonRequest(url, init = {}) {
   return { status: response.status, body, headers: Object.fromEntries(response.headers) };
 }
 
+async function reservePort() {
+  const server = createTcpServer();
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const address = server.address();
+  if (!address || typeof address === 'string') {
+    server.close();
+    throw new Error('failed to reserve an audit port');
+  }
+  const port = address.port;
+  await new Promise((resolve, reject) =>
+    server.close((error) => (error ? reject(error) : resolve())),
+  );
+  return port;
+}
+
 function start(name, command, args, env) {
   const child = spawn(command, args, {
     cwd: root,
     env: { ...process.env, ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: process.platform !== 'win32',
   });
   let output = '';
   child.stdout.on('data', (chunk) => {
@@ -68,9 +88,22 @@ function start(name, command, args, env) {
   return {
     child,
     stop: async () => {
-      if (child.exitCode !== null) return;
-      child.kill('SIGTERM');
-      await new Promise((resolve) => child.once('exit', resolve));
+      const signalGroup = (signal) => {
+        try {
+          if (process.platform === 'win32') child.kill(signal);
+          else process.kill(-child.pid, signal);
+        } catch (error) {
+          if (error?.code !== 'ESRCH') throw error;
+        }
+      };
+      signalGroup('SIGTERM');
+      if (child.exitCode === null) {
+        await Promise.race([
+          new Promise((resolve) => child.once('exit', resolve)),
+          new Promise((resolve) => setTimeout(resolve, 5_000)),
+        ]);
+      }
+      if (child.exitCode === null) signalGroup('SIGKILL');
     },
     output: () => output,
     name,
@@ -90,13 +123,15 @@ run('managed_load', 'npm', ['run', 'audit:managed-load']);
 
 const temp = mkdtempSync(join(tmpdir(), 'schema-guard-extreme.'));
 const openAuditFile = join(temp, 'open-api', 'audit.jsonl');
+const openApiPort = await reservePort();
 const openApi = start('open_api', 'npm', ['run', 'api'], {
   SCHEMA_GUARD_AUDIT_FILE: openAuditFile,
-  PORT: '8797',
+  PORT: String(openApiPort),
 });
 
 try {
-  await waitFor('http://127.0.0.1:8797/healthz');
+  const openApiBase = `http://127.0.0.1:${openApiPort}`;
+  await waitFor(`${openApiBase}/healthz`);
   const schema = {
     type: 'object',
     required: ['count'],
@@ -111,7 +146,7 @@ try {
   const requests = [];
   for (let index = 0; index < 1000; index += 1) {
     requests.push(
-      jsonRequest('http://127.0.0.1:8797/v1/validate', {
+      jsonRequest(`${openApiBase}/v1/validate`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(repairPayload),
@@ -166,6 +201,7 @@ const bootstrap = run(
   },
 );
 const apiKey = JSON.parse(bootstrap.stdout.slice(bootstrap.stdout.indexOf('{'))).api_key;
+const managedPort = await reservePort();
 const managed = start('managed', 'npm', ['run', 'managed'], {
   SCHEMA_GUARD_DATABASE: managedDb,
   SCHEMA_GUARD_MASTER_SECRET: managedSecret,
@@ -180,13 +216,14 @@ const managed = start('managed', 'npm', ['run', 'managed'], {
   SCHEMA_GUARD_REQUEST_TIMEOUT_MS: '5000',
   SCHEMA_GUARD_ACTION_CHECKPOINT_ANCHOR_REQUEST_TIMEOUT_MS: '3000',
   HOST: '127.0.0.1',
-  PORT: '8798',
+  PORT: String(managedPort),
 });
 
 try {
-  await waitFor('http://127.0.0.1:8798/readyz');
+  const managedBase = `http://127.0.0.1:${managedPort}`;
+  await waitFor(`${managedBase}/readyz`);
   const headers = { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' };
-  const dashboard = await fetch('http://127.0.0.1:8798/dashboard');
+  const dashboard = await fetch(`${managedBase}/dashboard`);
   assert(dashboard.status === 200, 'managed dashboard must load');
   const dashboardBody = await dashboard.text();
   assert(
@@ -198,7 +235,7 @@ try {
     dashboard.headers.get('strict-transport-security')?.includes('max-age=31536000'),
     'public mode dashboard must emit HSTS',
   );
-  const unauth = await jsonRequest('http://127.0.0.1:8798/v1/usage');
+  const unauth = await jsonRequest(`${managedBase}/v1/usage`);
   assert(unauth.status === 401, 'managed API must reject unauthenticated usage');
   assert(
     unauth.headers['strict-transport-security']?.includes('max-age=31536000'),
@@ -213,7 +250,7 @@ try {
   const burst = [];
   for (let index = 0; index < 250; index += 1) {
     burst.push(
-      jsonRequest('http://127.0.0.1:8798/v1/validate', {
+      jsonRequest(`${managedBase}/v1/validate`, {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -245,7 +282,7 @@ try {
     new Set(managedResults.map((item) => item.body.audit_id)).size === 250,
     'managed audit IDs must be unique',
   );
-  const rejected = await jsonRequest('http://127.0.0.1:8798/v1/validate', {
+  const rejected = await jsonRequest(`${managedBase}/v1/validate`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -259,19 +296,19 @@ try {
     rejected.status === 422 && rejected.body.decision === 'rejected',
     'managed unsafe secret request must reject',
   );
-  const verify = await jsonRequest('http://127.0.0.1:8798/v1/audits/verify', { headers });
+  const verify = await jsonRequest(`${managedBase}/v1/audits/verify`, { headers });
   assert(verify.status === 200 && verify.body.valid === true, 'managed audit chain must verify');
-  const audits = await jsonRequest('http://127.0.0.1:8798/v1/audits?limit=300', { headers });
+  const audits = await jsonRequest(`${managedBase}/v1/audits?limit=300`, { headers });
   assert(
     audits.status === 200 && audits.body.audits.length >= 251,
     'managed audit list must contain burst and rejection',
   );
-  const billing = await jsonRequest('http://127.0.0.1:8798/v1/billing/statement', { headers });
+  const billing = await jsonRequest(`${managedBase}/v1/billing/statement`, { headers });
   assert(
     billing.status === 200 && billing.body.payment_processing === 'integration_required',
     'managed billing statement must expose integration boundary',
   );
-  const checkout = await jsonRequest('http://127.0.0.1:8798/v1/billing/checkout-session', {
+  const checkout = await jsonRequest(`${managedBase}/v1/billing/checkout-session`, {
     method: 'POST',
     headers,
   });
@@ -279,7 +316,7 @@ try {
     checkout.status === 501 && checkout.body.error === 'billing_integration_required',
     'managed checkout must remain disabled without a sandbox billing authority',
   );
-  const portal = await jsonRequest('http://127.0.0.1:8798/v1/billing/portal-session', {
+  const portal = await jsonRequest(`${managedBase}/v1/billing/portal-session`, {
     method: 'POST',
     headers,
   });
@@ -287,7 +324,7 @@ try {
     portal.status === 501 && portal.body.error === 'billing_integration_required',
     'managed billing portal must remain disabled without a sandbox billing authority',
   );
-  const stripeWebhook = await jsonRequest('http://127.0.0.1:8798/v1/billing/stripe/webhook', {
+  const stripeWebhook = await jsonRequest(`${managedBase}/v1/billing/stripe/webhook`, {
     method: 'POST',
     body: '{}',
   });

@@ -1469,20 +1469,22 @@ export function createManagedServer(
         requireSameOrigin(request, config.externalUrl);
         const sealedSession = cookies(request)[HUMAN_SESSION_COOKIE];
         let location = config.workosLogoutReturnUrl ?? '/';
+        let providerLogout: 'not_required' | 'redirect' | 'unavailable' = 'not_required';
         if (identityProvider && sealedSession)
           try {
             location = await identityProvider.logoutUrl(sealedSession);
+            providerLogout = 'redirect';
           } catch {
-            throw new ManagedError(
-              503,
-              'identity_provider_unavailable',
-              'human identity logout is unavailable',
-            );
+            // Clearing the local sealed session must not depend on provider
+            // availability. The configured return URL keeps the user on a
+            // trusted origin while the response reports that upstream SSO
+            // logout could not be completed.
+            providerLogout = 'unavailable';
           }
         sendJson(
           response,
           200,
-          { logout_url: location },
+          { logout_url: location, provider_logout: providerLogout },
           { 'set-cookie': clearSecureCookie(HUMAN_SESSION_COOKIE) },
         );
         return;

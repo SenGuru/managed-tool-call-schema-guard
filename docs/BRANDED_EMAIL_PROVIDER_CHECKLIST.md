@@ -1,8 +1,9 @@
 # Akriven branded email provider checklist
 
-Status: the single human mailbox is provisioned and its provider-managed DNS is
-public; mailbox delivery and recovery drills, Postmark, and production sending
-remain unproven.
+Status: the single human mailbox is provisioned, its provider-managed DNS is
+public, and inbound delivery is proven. Outbound destination receipt, reply,
+recovery, message-header alignment, Postmark, and production transactional
+sending remain unproven.
 
 ## Observed live state — 2026-07-26
 
@@ -21,15 +22,19 @@ address:
   alignment and a GoDaddy aggregate-report destination;
 - public DNS resolution confirms the provider-managed MX, SPF, DKIM, webmail
   and DMARC records;
-- Titan webmail authentication and recovery-address configuration succeeded,
-  but the inbox's first-use screen requires explicit owner acceptance of
-  Titan's terms before sending or receiving is exercised;
-- no mailbox receive/send/reply, recovery reset, message-header alignment, spam
-  placement, bounce, complaint, or independent-recipient behavior has yet been
-  exercised.
+- the owner explicitly accepted Titan's first-use terms; webmail authentication
+  and recovery-address configuration succeeded;
+- a non-sensitive Gmail-to-support certification message was received in the
+  Titan inbox;
+- a non-sensitive support-to-Gmail certification message was submitted, but
+  destination receipt has not yet been observed and therefore is not counted
+  as outbound-delivery proof;
+- no reply, recovery reset, message-header alignment, spam placement, bounce,
+  complaint, or independent-recipient behavior has yet been exercised.
 
-This is **configured DNS and mailbox evidence**, not delivery proof. The
-existing quarantine policy must still be reconciled with Postmark before any
+This is **configured DNS/mailbox evidence plus inbound delivery proof**, not
+complete bidirectional or transactional delivery proof. The existing
+quarantine policy must still be reconciled with Postmark before any
 transactional-sender claim.
 
 ## Required boundary
