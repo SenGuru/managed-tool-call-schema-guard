@@ -32,12 +32,13 @@ send/webhook boundary backed by an encrypted, leased, retry-bounded durable
 notification outbox. These are deterministic local and PostgreSQL evidence,
 not live-provider proof. Use this order for the remaining account work:
 
-1. Complete the fresh post-logout WorkOS MFA challenge with the owner present.
-   Initial MFA enrollment, callback/session, refresh, logout, cookie clearing,
-   managed-container restart and same-image recreation are already observed.
-   Then exercise recovery, invitation acceptance, membership removal, provider
-   revocation and cross-organization isolation. Rotate the staging test-user
-   credential afterward; the previously handled value is not launch evidence.
+1. The fresh post-logout WorkOS MFA challenge is complete with the owner
+   present. Initial MFA enrollment, a second fresh factor verification,
+   callback/session, refresh, logout, cookie clearing, managed-container restart
+   and same-image recreation are observed. Next exercise recovery, invitation
+   acceptance, membership removal, provider revocation and cross-organization
+   isolation. Rotate the staging test-user credential afterward; the previously
+   handled value is not launch evidence.
 2. Activate protected secret custody before installing more provider
    credentials. Complete the 1Password production vault/service-account
    handoff, or retain the existing owner-only mounted-file boundary with
@@ -236,10 +237,18 @@ Observed through 2026-07-26:
   application, hardened authentication settings, mapped organization, complete
   role set and owner membership are configured and deployed. The real public
   login, required MFA enrollment, callback/session, refresh, logout, cookie
-  clearing, restart persistence and same-image recreation are observed. A
-  fresh relogin is at the owner-present MFA challenge. Recovery, invitation,
-  membership removal, provider revocation and cross-organization isolation
-  remain pending.
+  clearing, restart persistence, same-image recreation and a second fresh MFA
+  verification are observed. The provider API key was rotated after console
+  exposure, installed with the documented non-root secret ownership, and
+  verified against the exact candidate image. A dedicated user with only an
+  unmapped test-organization membership is ready for the negative isolation
+  drill. Recovery, invitation acceptance, membership removal and the final
+  cross-organization callback rejection remain pending.
+- The already-purchased GoDaddy/Titan seat is now provisioned as
+  `support@akriven.com`; owner-only password custody, Gmail recovery and public
+  MX/SPF/DKIM/DMARC/webmail records are configured. Titan's first-use terms
+  still require owner acceptance before inbound, outbound, reply and recovery
+  behavior can be certified.
 - Sentry signup remains blocked at Google's device-verification boundary; no
   Sentry project, data region or irreversible retention choice was created.
 - Postmark, Stripe, Backblaze and live model credentials: not configured.

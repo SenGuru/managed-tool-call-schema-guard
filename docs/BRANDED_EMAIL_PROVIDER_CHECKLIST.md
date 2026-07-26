@@ -1,29 +1,36 @@
 # Akriven branded email provider checklist
 
-Status: provider selection and live read-only inventory completed; no mailbox
-has been created, no live DNS mutation has been made, and no production sender
-has been activated.
+Status: the single human mailbox is provisioned and its provider-managed DNS is
+public; mailbox delivery and recovery drills, Postmark, and production sending
+remain unproven.
 
 ## Observed live state — 2026-07-26
 
-The signed-in GoDaddy account and public DNS were inspected without changing
-either:
+The signed-in GoDaddy account and public DNS were inspected, then the already
+purchased mailbox entitlement was consumed for the owner-approved primary
+address:
 
-- the account already owns one unused **Professional Email powered by Titan Pro
-  Light** mailbox entitlement for `akriven.com`, expiring or renewing on
-  2027-07-21;
-- the mailbox setup form has not been submitted and the permanent local part
-  remains unselected;
-- the authoritative zone contains the live `api` A record and GoDaddy
-  nameservers, but no public MX record and no root SPF TXT record;
+- `support@akriven.com` is provisioned on **Professional Email powered by Titan
+  Pro Light**, expiring or renewing on 2027-07-21;
+- the mailbox password is held in an owner-only file outside the repository,
+  and the owner's independent Gmail address is configured for recovery;
+- GoDaddy automatically published the two documented MX records, the single
+  root `v=spf1 include:secureserver.net -all` SPF record, the `email` webmail
+  CNAME, and both `secureserver1`/`secureserver2` DKIM CNAMEs;
 - `_dmarc.akriven.com` currently publishes `p=quarantine` with relaxed DKIM/SPF
   alignment and a GoDaddy aggregate-report destination;
-- no mailbox receive/send, recovery, DKIM, SPF alignment, DMARC alignment,
-  bounce, complaint, or independent-recipient behavior has been exercised.
+- public DNS resolution confirms the provider-managed MX, SPF, DKIM, webmail
+  and DMARC records;
+- Titan webmail authentication and recovery-address configuration succeeded,
+  but the inbox's first-use screen requires explicit owner acceptance of
+  Titan's terms before sending or receiving is exercised;
+- no mailbox receive/send/reply, recovery reset, message-header alignment, spam
+  placement, bounce, complaint, or independent-recipient behavior has yet been
+  exercised.
 
-This means the domain is not currently ready to receive Akriven mail. The
-existing quarantine policy must be reconciled with the selected mailbox and
-transactional senders before any delivery claim.
+This is **configured DNS and mailbox evidence**, not delivery proof. The
+existing quarantine policy must still be reconciled with Postmark before any
+transactional-sender claim.
 
 ## Required boundary
 

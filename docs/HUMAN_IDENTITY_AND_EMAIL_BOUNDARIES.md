@@ -61,8 +61,12 @@ organization-to-tenant binding, exact owner-role mapping, same-origin refresh,
 provider logout and cookie clearing. The same sealed session remained valid
 after both a controlled managed-container restart and a full same-image
 container recreation. The dashboard and editable workbench exercised the live
-session without a bearer API key. A fresh post-logout login reached the
-required MFA challenge; its second-factor completion is owner-present evidence.
+session without a bearer API key. On 2026-07-26, a fresh post-logout
+authorization session reached the required authenticator challenge, the owner
+completed the enrolled factor directly in the hosted page, and the public-TLS
+callback returned to the authenticated tenant dashboard without a bearer API
+key. The retained evidence is redacted and does not contain the factor value,
+session material, or provider credentials.
 
 This is **partially proven external identity evidence**, not a complete
 multi-user lifecycle certification. Recovery, invitation acceptance,

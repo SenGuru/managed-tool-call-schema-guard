@@ -105,6 +105,21 @@ previous image under its own immutable rollback tag, render both the rollout
 and rollback configurations with every required overlay, and use `--no-build`
 on the hosts so a deployment cannot silently rebuild different source.
 
+Persist the admitted candidate in the host's owner-only deployment environment
+before the final Compose activation. Do not rely on a one-command shell
+override: the next `up --force-recreate`, secret rotation, host reboot, or
+operator repair would otherwise recreate the service from the stale image
+named in that file. After activation, run `docker compose config --images`
+without an override and compare the running container image ID to the admitted
+candidate. A mismatch is a failed rollout even when readiness is green.
+
+For file-backed secret rotation, preserve the source file's documented runtime
+UID/GID and mode. Replacing a secret as `root:root` mode `0600` makes it
+intentionally unreadable to the non-root container. Stage the new value in an
+owner-only file, authenticate it against the provider, install it as UID/GID
+65532 mode `0400`, recreate the dependent service, and prove readiness and the
+exact image before expiring the prior provider credential.
+
 Capture an encrypted off-machine backup immediately before migration. Verify
 both the candidate image ID and every migration history table after startup.
 An image-only rollback is valid only when the previous binary has been proven
