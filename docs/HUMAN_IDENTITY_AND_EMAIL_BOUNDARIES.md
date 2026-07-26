@@ -54,12 +54,22 @@ organization is mapped to the existing `staging-owner` tenant, and its owner
 membership has the exact `owner` role consumed by the fail-closed role mapper.
 The replacement provider key, cookie password, generated staging-user password
 and authorization map are held in owner-only files outside the repository.
-The exact application revision is deployed and the public login boundary has
-returned the real AuthKit redirect plus secure state cookie. This is
-**configured and partially exercised external evidence**, not a completed
-session certification: verified-email callback/session, MFA
-enrollment/recovery, invitation, membership removal, provider-side revocation,
-organization switching and logout still require end-to-end exercise.
+Exact revision `c172fbf` is deployed at the private staging boundary. The real
+hosted flow completed Google identity selection, required authenticator
+enrollment, the public-TLS callback, verified-email session discovery,
+organization-to-tenant binding, exact owner-role mapping, same-origin refresh,
+provider logout and cookie clearing. The same sealed session remained valid
+after both a controlled managed-container restart and a full same-image
+container recreation. The dashboard and editable workbench exercised the live
+session without a bearer API key. A fresh post-logout login reached the
+required MFA challenge; its second-factor completion is owner-present evidence.
+
+This is **partially proven external identity evidence**, not a complete
+multi-user lifecycle certification. Recovery, invitation acceptance,
+membership removal, provider-side revocation, organization switching and
+cross-organization isolation still require live provider exercise. The
+deterministic CSRF, unmapped-organization, BOLA and provider-outage cases remain
+strong internal evidence; they are not relabeled as live-provider proof.
 
 ## Transactional email
 

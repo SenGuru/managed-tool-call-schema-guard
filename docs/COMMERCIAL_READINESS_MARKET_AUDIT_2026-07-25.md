@@ -17,6 +17,37 @@ Marketing claims are treated as vendor claims, not independent proof. Pricing
 is included only where a vendor publishes it. The comparison is about product
 scope and buyer expectations; it is not an accuracy benchmark.
 
+### 2026-07-26 first-party refresh
+
+The refresh did not justify broadening Akriven into a generic AI firewall. It
+did strengthen four buyer expectations that must be explicit in positioning
+and launch evidence:
+
+1. [Check Point AI Agent Security](https://docs.lakera.ai/guard) now presents
+   discovery, risk assessment and runtime guardrails as one product surface.
+   Its agent-behavior documentation distinguishes probabilistic off-task
+   detection from deterministic tool allow/deny controls and recommends
+   monitor-first rollout. Buyers will increasingly compare a tool gate with
+   inventory and prompt/tool-response inspection even when the enforcement
+   semantics differ.
+2. [Cloudflare MCP governance](https://developers.cloudflare.com/agents/model-context-protocol/protocol/governance/)
+   documents an MCP server portal with user/group identity, device/location
+   conditions, per-tool authorization and execution logging. Akriven must state
+   clearly that it proves registered tool-call/action semantics; it does not
+   discover or proxy an enterprise's unknown MCP estate.
+3. [Cloudflare MCP authorization](https://developers.cloudflare.com/agents/model-context-protocol/protocol/authorization/)
+   reinforces OAuth 2.1, scoped delegated access and consent as the transport
+   identity baseline. A tenant API key is not a substitute for a trustworthy
+   end-user/workload grant when a customer workflow requires delegation.
+4. [CrowdStrike AI Guard](https://pangea.cloud/docs/ai-guard/apis) exposes a
+   pre-tool guard integration alongside prompt/data controls. This reinforces
+   the integration expectation around a small call-site hook, but does not
+   replace Akriven's schema-release proof, bounded repair receipt,
+   reservation/reconciliation or independent checkpoint semantics.
+
+These are official vendor claims and documentation, not comparative efficacy,
+latency, adoption or customer-value proof.
+
 ## Market map
 
 ### Runtime AI and agent security — closest commercial overlap

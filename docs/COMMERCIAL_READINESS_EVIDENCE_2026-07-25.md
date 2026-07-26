@@ -9,7 +9,7 @@ not ready for self-service signup or automated charging.
 This verdict applies to the exact source checkpoint created after this report.
 It does not promote historical staging evidence to exact-source evidence.
 
-Final checkpoint inventory:
+Historical 2026-07-25 checkpoint inventory:
 
 - managed runtime source/image: commit `32e42b3`, immutable `linux/amd64`
   image
@@ -20,6 +20,45 @@ Final checkpoint inventory:
   branch HEAD containing this report;
 - branch `codex/production-readiness-2026-07-24` is pushed. The tracked tree is
   clean; the unrelated untracked `apps/` directory was preserved and excluded.
+
+### 2026-07-26 exact-revision identity and dashboard supplement
+
+The current managed staging revision is commit `c172fbf`, built for
+`linux/amd64` as image
+`sha256:4735fd20d61807afcaab50614dcf348d6be34eb7fd1737e22764a597ba083516`.
+Trivy reported zero High/Critical vulnerabilities and zero detected image
+secrets. The checksum-verified archive was loaded only after a fresh encrypted
+off-machine backup. Revision-named Compose overlays validated, the managed
+container alone was recreated, and public/loopback readiness, healthy state
+and zero restarts were observed. Shared control migrations are now
+`1,2,3,4,5`; migration 5 adds the integrity-protected, concurrency-safe shared
+human-session rate limiter.
+
+The full source gate passed formatting, lint, script syntax, dry provider
+contracts, package-boundary verification, build, typecheck, conformance, 278
+TypeScript tests and five Python tests. The preceding server-state checkpoint
+also passed all 19 credentialed disposable-PostgreSQL tests; `c172fbf` changes
+only dashboard request construction and its DOM regression.
+
+The real hosted WorkOS flow completed Google identity selection, required
+authenticator enrollment, the public-TLS callback, verified-email session
+discovery, exact `staging-owner`/`Staging Owner` binding and owner RBAC. The
+dashboard loaded the persisted tenant without a bearer key. Live exercise
+found two production-only defects: human sessions were incorrectly sent
+through the API-key shared limiter, and the dashboard lifecycle response did
+not return tenant identity. Both were fixed fail-closed with PostgreSQL,
+concurrency, tamper and HTTP coverage.
+
+The browser then found a workbench defect where an operator-entered GET
+retained a JSON body and failed before reaching the server. `c172fbf` omits
+bodies for GET/HEAD, and the live workbench returned the authenticated session
+contract. Same-origin refresh returned `200`; dashboard Sign out cleared the
+cookie and workspace. The same sealed session survived both a controlled
+managed-container restart and a full same-image container recreation. Fresh
+relogin reached the required MFA challenge and remains an owner-present step.
+Recovery, invitation acceptance, membership removal, provider-side revocation,
+organization switching and cross-organization isolation remain external
+identity evidence—not mocked success.
 
 ### Action-control and restart-recovery completion
 
@@ -332,13 +371,14 @@ delivery and tamper detection.
 
 ### Before self-service or automated charging
 
-1. Deploy and externally exercise the configured WorkOS staging boundary:
-   verified email, public-TLS callback/session/logout, invitations, MFA
-   enrollment/recovery, membership removal, provider revocation,
-   cross-organization isolation and future SSO/SCIM. The staging project,
-   application, callbacks, hardened methods, mapped organization, owner user
-   and exact owner role are configured; the local server/session/CSRF/BOLA
-   contract is proven, but live Akriven session behavior is not yet.
+1. Finish the remaining live WorkOS organization lifecycle: fresh relogin MFA,
+   recovery, invitation acceptance, membership removal, provider-side
+   revocation, organization switching, cross-organization isolation and future
+   SSO/SCIM. Verified Google login, initial MFA enrollment, public-TLS
+   callback/session, exact organization/tenant/owner binding, refresh, logout,
+   cookie clearing, restart persistence and same-image recreation are already
+   observed. Deterministic CSRF/BOLA/outage evidence remains internal until the
+   matching provider-driven negative cases are exercised.
 2. Configure and externally exercise the implemented Postmark adapter,
    authenticated webhook normalizer, and encrypted durable notification
    outbox. The SQLite/PostgreSQL queue, leasing, idempotency, retry,
@@ -375,9 +415,11 @@ delivery and tamper detection.
 
 What is proven is a substantial deterministic checkpoint, managed control
 plane, operator dashboard, API/SDK/CLI surface, hardened container topology,
-provider-independent operational program, exact `32e42b3` managed plus
-`dd60b4e` anchor cross-host staging operation, and real backup/restore,
-anchor-outage, deletion, restart, rollback, and checkpoint evidence. What is
-not proven is a public SaaS business, a customer-production SLO, external
-paging, live identity/email/billing/model-provider integration, independent
-security/legal review, or customer demand.
+provider-independent operational program, exact `c172fbf` managed plus
+`dd60b4e` anchor cross-host staging operation, a real single-owner WorkOS
+callback/session/MFA/refresh/logout path, and real backup/restore,
+anchor-outage, deletion, restart, recreation, rollback, and checkpoint
+evidence. What is not proven is a public SaaS business, a customer-production
+SLO, multi-person paging, the complete multi-user identity lifecycle, live
+email/billing/model-provider integration, independent security/legal review,
+or customer demand.
